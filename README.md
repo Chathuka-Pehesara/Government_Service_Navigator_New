@@ -317,4 +317,4 @@ Per the original project plan, these pieces are designed but not present in the 
 
 ## License
 
-No license file is currently included in this repository. Add one (e.g., MIT, Apache-2.0) before treating this as open source, or state explicitly that it's proprietary/coursework-only.
+This project is licensed under the [MIT License](LICENSE) — Copyright (c) 2026 Krishmal2004.
