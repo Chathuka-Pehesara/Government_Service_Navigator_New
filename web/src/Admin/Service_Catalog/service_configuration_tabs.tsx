@@ -54,7 +54,9 @@ import {
   Add,
   Upload,
   Renew,
+  Document,
 } from "@carbon/icons-react";
+import type { Department } from "../Department_Management/types";
 
 const docHeaders = [
   { key: "documentName", header: "Document Type" },
@@ -190,8 +192,47 @@ export default function ServiceConfigurationTabs() {
     stageDescription?: string;
     status: string;
   }>>([]);
+  const [allAvailableTemplates, setAllAvailableTemplates] = useState<Array<{
+    id: string;
+    formName: string;
+    subTitle?: string;
+    department?: string;
+    stageOrder: number;
+    stageDescription?: string;
+    serviceProcedureId?: number;
+    fields?: Array<any>;
+    status?: string;
+  }>>([]);
+  const [departments, setDepartments] = useState<Department[]>([]);
+  const [selectedAdoptTemplatePerStage, setSelectedAdoptTemplatePerStage] = useState<Record<number, string>>({});
   const [isSavingWorkflow, setIsSavingWorkflow] = useState(false);
   const [, setIsLoadingWorkflow] = useState(false);
+
+  const fetchAllTemplates = async () => {
+    try {
+      const res = await fetch("http://localhost:5119/api/templates/all");
+      if (res.ok) {
+        const data = await res.json();
+        setAllAvailableTemplates(data || []);
+      }
+    } catch (e) {
+      console.error("Error fetching all templates:", e);
+    }
+  };
+
+  const fetchDepartments = async () => {
+    try {
+      const res = await fetch("http://localhost:5119/api/departments");
+      if (res.ok) {
+        const data = await res.json();
+        if (Array.isArray(data)) {
+          setDepartments(data);
+        }
+      }
+    } catch (e) {
+      console.error("Error fetching departments:", e);
+    }
+  };
 
   // Modal State for Adding/Editing Documents
   const [isDocModalOpen, setIsDocModalOpen] = useState(false);
@@ -230,6 +271,8 @@ export default function ServiceConfigurationTabs() {
         const data = await res.json();
         setStageTemplates(data || []);
       }
+      // Also refresh all templates
+      fetchAllTemplates();
     } catch (e) {
       console.error("Error fetching templates for service:", e);
     } finally {
@@ -459,6 +502,8 @@ export default function ServiceConfigurationTabs() {
         console.error("Error fetching services:", error);
         setIsLoading(false);
       });
+    fetchDepartments();
+    fetchAllTemplates();
   }, [deptAdminUser, scopedCategory]);
 
 
@@ -862,6 +907,12 @@ export default function ServiceConfigurationTabs() {
               isActive
             >
               Service Configuration
+            </SideNavLink>
+            <SideNavLink
+              renderIcon={Document}
+              href="/admin/services/builder"
+            >
+              Template Builder
             </SideNavLink>
             <SideNavLink renderIcon={Rule} href="/admin/services/simulator">
               Eligibility Simulator
@@ -1622,6 +1673,16 @@ export default function ServiceConfigurationTabs() {
                     const stageDept = workflowDepartments[idx] || "Civil Department";
                     const templateForStage = stageTemplates.find((t) => t.stageOrder === stageNum);
 
+                    // Find existing pre-built templates from Template Builder matching this department or service
+                    const matchingPrebuilts = allAvailableTemplates.filter((t) => {
+                      if (templateForStage && t.id === templateForStage.id) return false;
+                      // Only Active templates are available for adoption (exclude Inactive / Deactive)
+                      if (t.status === "Inactive" || t.status === "Deactive") return false;
+                      const matchesDept = t.department && t.department.toLowerCase() === stageDept.toLowerCase();
+                      const matchesService = t.serviceProcedureId && t.serviceProcedureId.toString() === selectedServiceId;
+                      return matchesDept || matchesService;
+                    });
+
                     return (
                       <Tile 
                         key={stageNum} 
@@ -1636,8 +1697,12 @@ export default function ServiceConfigurationTabs() {
                           <div>
                             <div style={{ display: "flex", alignItems: "center", gap: "0.75rem", marginBottom: "0.5rem" }}>
                               <Tag type="blue" size="md">STAGE {stageNum}</Tag>
-                              <Tag type={templateForStage ? "green" : "red"}>
-                                {templateForStage ? "Form Linked" : "Missing Application Form"}
+                              <Tag type={!templateForStage ? "red" : (templateForStage.status === "Inactive" || templateForStage.status === "Deactive") ? "magenta" : "green"}>
+                                {!templateForStage 
+                                  ? "Missing Application Form" 
+                                  : (templateForStage.status === "Inactive" || templateForStage.status === "Deactive")
+                                    ? "Form Deactivated"
+                                    : "Form Linked"}
                               </Tag>
                               <span style={{ fontSize: "0.85rem", color: "#525252", fontWeight: 600 }}>
                                 Handled by: {stageDept}
@@ -1682,6 +1747,57 @@ export default function ServiceConfigurationTabs() {
                           </div>
                         </div>
 
+                        {/* Adopt Pre-Built Template Option */}
+                        {matchingPrebuilts.length > 0 && (
+                          <div style={{ marginTop: "1.25rem", padding: "1rem", backgroundColor: "#edf5ff", border: "1px solid #a6c8ff", borderRadius: "4px" }}>
+                            <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: "0.5rem", flexWrap: "wrap", gap: "0.5rem" }}>
+                              <div style={{ display: "flex", alignItems: "center", gap: "0.5rem" }}>
+                                <span style={{ fontSize: "0.8125rem", fontWeight: 700, color: "#0043ce", textTransform: "uppercase", letterSpacing: "0.5px" }}>
+                                  Adopt Pre-built Template for {stageDept}
+                                </span>
+                                <Tag type="blue" size="sm">{matchingPrebuilts.length} Available in Builder</Tag>
+                              </div>
+                              <span style={{ fontSize: "0.75rem", color: "#525252" }}>
+                                Customizing will save as an independent Stage {stageNum} copy. The original template in Template Builder will NOT be modified.
+                              </span>
+                            </div>
+                            <div style={{ display: "flex", gap: "0.75rem", alignItems: "center", flexWrap: "wrap" }}>
+                              <div style={{ flex: 1, minWidth: "280px" }}>
+                                <Select
+                                  id={`adopt-template-${stageNum}`}
+                                  labelText=""
+                                  hideLabel
+                                  size="md"
+                                  value={selectedAdoptTemplatePerStage[stageNum] || ""}
+                                  onChange={(e) => setSelectedAdoptTemplatePerStage((prev) => ({ ...prev, [stageNum]: e.target.value }))}
+                                >
+                                  <SelectItem value="" text="-- Select an existing template from Template Builder to customize --" />
+                                  {matchingPrebuilts.map((t) => (
+                                    <SelectItem
+                                      key={t.id}
+                                      value={t.id}
+                                      text={`${t.formName} (${t.department || 'General'} • ${t.fields?.length || 0} fields)`}
+                                    />
+                                  ))}
+                                </Select>
+                              </div>
+                              <Button
+                                kind="secondary"
+                                size="md"
+                                disabled={!selectedAdoptTemplatePerStage[stageNum]}
+                                onClick={() => {
+                                  const selectedTplId = selectedAdoptTemplatePerStage[stageNum];
+                                  handleNavigateToBuilder(
+                                    `/admin/services/builder?cloneFromId=${selectedTplId}&serviceId=${selectedServiceId}&stage=${stageNum}&department=${encodeURIComponent(stageDept)}&clone=true`
+                                  );
+                                }}
+                              >
+                                Use & Customize for Stage {stageNum}
+                              </Button>
+                            </div>
+                          </div>
+                        )}
+
                         {/* Stage Department Selector */}
                         <div style={{ marginTop: "1rem", paddingTop: "1rem", borderTop: "1px solid #f4f4f4", display: "flex", alignItems: "center", gap: "1rem", flexWrap: "wrap" }}>
                           <div style={{ minWidth: "320px", flex: 1 }}>
@@ -1695,9 +1811,15 @@ export default function ServiceConfigurationTabs() {
                                 setWorkflowDepartments(updated);
                               }}
                             >
-                              {AVAILABLE_DEPARTMENTS.map((dept) => (
-                                <SelectItem key={dept} value={dept} text={dept} />
-                              ))}
+                              {departments.length > 0 ? (
+                                departments.map((dept) => (
+                                  <SelectItem key={dept.id} value={dept.name} text={`${dept.name} (${dept.departmentCode})`} />
+                                ))
+                              ) : (
+                                AVAILABLE_DEPARTMENTS.map((dept) => (
+                                  <SelectItem key={dept} value={dept} text={dept} />
+                                ))
+                              )}
                             </Select>
                           </div>
                           <div style={{ fontSize: "0.8rem", color: "#525252", maxWidth: "420px" }}>

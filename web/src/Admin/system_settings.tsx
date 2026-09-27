@@ -35,7 +35,8 @@ import {
   Save,
   Catalog,
   Rule,
-  Categories
+  Categories,
+  Document,
 } from "@carbon/icons-react";
 
 export default function SystemSettings() {
@@ -163,6 +164,12 @@ export default function SystemSettings() {
                   href="/admin/services/config"
                 >
                   Service Configuration
+                </SideNavLink>
+                <SideNavLink
+                  renderIcon={Document}
+                  href="/admin/services/builder"
+                >
+                  Template Builder
                 </SideNavLink>
                 <SideNavLink
                   renderIcon={Rule}

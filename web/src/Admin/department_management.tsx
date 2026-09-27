@@ -35,6 +35,7 @@ import {
   Grid,
   Column,
   Search,
+  Pagination,
 } from "@carbon/react";
 import {
   Dashboard,
@@ -53,6 +54,7 @@ import {
   Information,
   Phone,
   Email,
+  Document,
 } from "@carbon/icons-react";
 
 import RegisterDepartmentModal, { CATEGORIES } from "./Department_Management/RegisterDepartmentModal";
@@ -174,6 +176,9 @@ export default function DepartmentManagement() {
   };
 
   // Filtered rows
+  const [page, setPage] = useState<number>(1);
+  const [pageSize, setPageSize] = useState<number>(10);
+
   const filteredDepartments = departments.filter((d) => {
     const matchesSearch =
       d.name.toLowerCase().includes(searchTerm.toLowerCase()) ||
@@ -187,6 +192,11 @@ export default function DepartmentManagement() {
 
     return matchesSearch && matchesCategory && matchesStatus;
   });
+
+  // Reset page when filters change
+  useEffect(() => {
+    setPage(1);
+  }, [searchTerm, categoryFilter, statusFilter]);
 
   // KPI Metrics
   const totalCount = departments.length;
@@ -230,6 +240,9 @@ export default function DepartmentManagement() {
                   </SideNavLink>
                   <SideNavLink renderIcon={Categories} href="/admin/services/config">
                     Service Configuration
+                  </SideNavLink>
+                  <SideNavLink renderIcon={Document} href="/admin/services/builder">
+                    Template Builder
                   </SideNavLink>
                   <SideNavLink renderIcon={Rule} href="/admin/services/simulator">
                     Eligibility Simulator
@@ -615,7 +628,8 @@ export default function DepartmentManagement() {
                       </p>
                     </div>
                   ) : (
-                    <Table>
+                    <>
+                      <Table>
                       <TableHead>
                         <TableRow>
                           {headers.map((header) => (
@@ -624,7 +638,9 @@ export default function DepartmentManagement() {
                         </TableRow>
                       </TableHead>
                       <TableBody>
-                        {filteredDepartments.map((dept) => (
+                        {filteredDepartments
+                          .slice((page - 1) * pageSize, page * pageSize)
+                          .map((dept) => (
                           <TableRow key={dept.id}>
                             {/* Logo and Name */}
                             <TableCell>
@@ -794,6 +810,20 @@ export default function DepartmentManagement() {
                         ))}
                       </TableBody>
                     </Table>
+                    <Pagination
+                      backwardText="Previous page"
+                      forwardText="Next page"
+                      itemsPerPageText="Rows per page:"
+                      page={page}
+                      pageSize={pageSize}
+                      pageSizes={[10, 20, 50]}
+                      totalItems={filteredDepartments.length}
+                      onChange={({ page, pageSize }) => {
+                        if (page) setPage(page);
+                        if (pageSize) setPageSize(pageSize);
+                      }}
+                    />
+                  </>
                   )}
                 </TableContainer>
               </div>

@@ -35,6 +35,7 @@ import {
   Rule,
   Categories,
   TrashCan,
+  Document,
 } from "@carbon/icons-react";
 
 interface Service {
@@ -324,6 +325,9 @@ export default function EligibilityRuleBuilder() {
             </SideNavLink>
             <SideNavLink renderIcon={Categories} href="/admin/services/config">
               Service Configuration
+            </SideNavLink>
+            <SideNavLink renderIcon={Document} href="/admin/services/builder">
+              Template Builder
             </SideNavLink>
             <SideNavLink renderIcon={Rule} href="/admin/services/simulator">
               Eligibility Simulator

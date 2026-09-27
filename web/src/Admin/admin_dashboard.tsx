@@ -24,6 +24,7 @@ import {
   TableCell,
   Tag,
   Search,
+  Pagination,
 } from "@carbon/react";
 import {
   Dashboard,
@@ -90,6 +91,8 @@ function getStoredAdminName(): string {
 
 export default function AdminDashboard() {
   const [adminName] = useState(getStoredAdminName);
+  const [page, setPage] = useState<number>(1);
+  const [pageSize, setPageSize] = useState<number>(10);
 
   const handleLogout = async () => {
     const token = localStorage.getItem("officerToken");
@@ -161,6 +164,12 @@ export default function AdminDashboard() {
                   href="/admin/services/config"
                 >
                   Service Configuration
+                </SideNavLink>
+                <SideNavLink
+                  renderIcon={Document}
+                  href="/admin/services/builder"
+                >
+                  Template Builder
                 </SideNavLink>
                 <SideNavLink
                   renderIcon={Rule}
@@ -395,7 +404,7 @@ export default function AdminDashboard() {
                       </TableRow>
                     </TableHead>
                     <TableBody>
-                      {rows.map((row) => (
+                      {rows.slice((page - 1) * pageSize, page * pageSize).map((row) => (
                         <TableRow {...getRowProps({ row })} key={row.id}>
                           {row.cells.map((cell) => {
                             if (cell.info.header === "status") {
@@ -419,6 +428,19 @@ export default function AdminDashboard() {
                       ))}
                     </TableBody>
                   </Table>
+                  <Pagination
+                    backwardText="Previous page"
+                    forwardText="Next page"
+                    itemsPerPageText="Rows per page:"
+                    page={page}
+                    pageSize={pageSize}
+                    pageSizes={[10, 20, 50]}
+                    totalItems={rows.length}
+                    onChange={({ page, pageSize }) => {
+                      if (page) setPage(page);
+                      if (pageSize) setPageSize(pageSize);
+                    }}
+                  />
                 </TableContainer>
               )}
             </DataTable>
