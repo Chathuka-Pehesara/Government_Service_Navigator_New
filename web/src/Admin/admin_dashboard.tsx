@@ -171,6 +171,13 @@ export default function AdminDashboard() {
                 {/* ---------------------------------- */}
 
                 <SideNavLink
+                  renderIcon={Categories}
+                  href="/admin/departments"
+                >
+                  Department Management
+                </SideNavLink>
+
+                <SideNavLink
                   renderIcon={UserMultiple}
                   href="/admin/manage-officers"
                 >

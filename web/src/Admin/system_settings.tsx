@@ -170,7 +170,12 @@ export default function SystemSettings() {
                 >
                   Eligibility Simulator
                 </SideNavLink>
-                {/* ---------------------------------- */}
+                <SideNavLink
+                  renderIcon={Categories}
+                  href="/admin/departments"
+                >
+                  Department Management
+                </SideNavLink>
 
                 <SideNavLink
                   renderIcon={UserMultiple}

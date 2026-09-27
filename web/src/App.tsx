@@ -9,6 +9,7 @@ import SystemSettings from "./Admin/system_settings";
 import AdminInstallmentPlans from "./Admin/admin_installment_plans";
 import AdminAnalytics from "./Admin/admin_analytics";
 import AdminAnomalyReview from "./Admin/admin_anomaly_review";
+import DepartmentManagement from "./Admin/department_management";
 import ApplicationCreate from "./Officer/Application_create/application_create";
 
 /*
@@ -43,6 +44,7 @@ export default function App() {
           path="/admin/:deptSlug/dashboard"
           element={<DepartmentAdminDashboard />}
         />
+        <Route path="/admin/departments" element={<DepartmentManagement />} />
         <Route path="/admin/manage-officers" element={<ManageOfficers />} />
         <Route path="/officer/dashboard" element={<OfficerDashboard />} />
         <Route path="/admin/audit-logs" element={<AuditLogs />} />

@@ -380,6 +380,13 @@ export default function ServiceCatalogManager() {
             )}
 
             <SideNavLink
+              renderIcon={Categories}
+              href="/admin/departments"
+            >
+              Department Management
+            </SideNavLink>
+
+            <SideNavLink
               renderIcon={UserMultiple}
               href="/admin/manage-officers"
             >
