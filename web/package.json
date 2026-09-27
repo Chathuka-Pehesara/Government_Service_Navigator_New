@@ -68,7 +68,11 @@
     },
     "nsis": {
       "oneClick": false,
-      "allowToChangeInstallationDirectory": true
+      "allowToChangeInstallationDirectory": true,
+      "artifactName": "GSN-Setup-${version}.exe"
+    },
+    "portable": {
+      "artifactName": "GSN-Portable-${version}.exe"
     },
     "mac": {
       "target": [
