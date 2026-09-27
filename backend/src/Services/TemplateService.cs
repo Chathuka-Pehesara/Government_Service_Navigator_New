@@ -24,6 +24,7 @@ namespace Government_Service_Navigator.Backend.Services
                 Department = request.Department,
                 StageOrder = request.StageOrder,
                 StageDescription = request.StageDescription,
+                Status = !string.IsNullOrWhiteSpace(request.Status) ? request.Status : "Active",
                 Fields = request.Fields.Select((f, index) => new FormField
                 {
                     Label = f.Label,
@@ -73,6 +74,10 @@ namespace Government_Service_Navigator.Backend.Services
             template.Department = request.Department;
             template.StageOrder = request.StageOrder;
             template.StageDescription = request.StageDescription;
+            if (!string.IsNullOrWhiteSpace(request.Status))
+            {
+                template.Status = request.Status;
+            }
 
             _context.FormFields.RemoveRange(template.Fields);
             

@@ -9,6 +9,7 @@ namespace Government_Service_Navigator.Backend.DTOs.Requests
         public string? Department { get; set; }
         public int StageOrder { get; set; } = 1;
         public string? StageDescription { get; set; }
+        public string? Status { get; set; }
         public List<FormFieldDto> Fields { get; set; } = new List<FormFieldDto>();
     }
     public class FormFieldDto
