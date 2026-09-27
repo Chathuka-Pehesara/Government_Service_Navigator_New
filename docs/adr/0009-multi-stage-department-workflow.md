@@ -1,8 +1,5 @@
 # ADR-0009: Multi-department services are modelled as ordered stage templates
 
-**Status:** Accepted
-**Date:** 2026-09-27
-
 ## Context
 
 Some procedures pass through more than one department in sequence. For example, a police clearance step can come before the Immigration department's passport step, and each department reviews its own form and may charge its own fee. The original model had one template per service and one verification task per application, both with no notion of department or order.

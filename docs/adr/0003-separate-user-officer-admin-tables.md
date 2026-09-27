@@ -1,8 +1,5 @@
 # ADR-0003: Separate `User` / `Officer` / `Admin` tables instead of one polymorphic identity table
 
-**Status:** Accepted
-**Date:** 2026-08-07 (initial schema) — recorded 2026-09-15
-
 ## Context
 
 The system has three distinct actor types with almost no shared behavior: **citizens** (`User` — the Flutter app's audience, with `NicNumber`), **verifying/department officers** (`Officer` — has `Department`, `Status` for suspend/activate), and **system administrators** (`Admin` — has neither). Each needs email+password login, but the three have materially different fields, different login endpoints (`/api/auth/login`, `/api/auth/officer-login`, `/api/auth/admin-login`), and different management surfaces (only officers can be created/suspended/reset through `AdminController`).

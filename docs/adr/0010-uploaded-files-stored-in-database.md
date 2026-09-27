@@ -1,8 +1,5 @@
 # ADR-0010: Uploaded documents and receipts are stored in PostgreSQL as bytea
 
-**Status:** Accepted
-**Date:** 2026-09-27
-
 ## Context
 
 Citizens now upload supporting documents (`file` fields), bank deposit slips, and installment bank-transfer receipts from the Flutter app. Officers and finance staff must preview them in the web dashboard. The API runs as a single process against a hosted Neon database, with no object storage provisioned.

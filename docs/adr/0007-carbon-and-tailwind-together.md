@@ -1,8 +1,5 @@
 # ADR-0007: Carbon Design System components + Tailwind CSS utilities, together
 
-**Status:** Accepted
-**Date:** 2026-09-15
-
 ## Context
 
 The web dashboard (`web/`) is built with `@carbon/react` (IBM's Carbon Design System) for its component library — `Header`, `SideNav`, `DataTable`, `Modal`, `Select`, etc. — which ships its own layout primitives (`Grid`/`Column` with `sm`/`md`/`lg` breakpoint props) and CSS. `@tailwindcss/vite` is also a dependency and `index.css` globally imports Tailwind. Most of the app's page-level layout (inline `style={{}}` objects for colors, spacing, flex layouts) predates any responsive design work; when mobile responsiveness was added across every Admin/Officer page, it needed a way to express breakpoint-conditional styles that plain inline `style` objects can't do (no media queries in inline styles).

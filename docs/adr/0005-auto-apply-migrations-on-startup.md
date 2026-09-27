@@ -1,8 +1,5 @@
 # ADR-0005: EF Core migrations are applied automatically on API startup
 
-**Status:** Accepted, amended 2026-09-27 (see Update)
-**Date:** 2026-08-07 (initial setup) — recorded 2026-09-15
-
 ## Context
 
 The database schema changes frequently during active development (16 migrations as of 2026-09-15, most recently `AddRevokedTokens` and `AddTemplateServiceProcedureLink`), across a team of four working against one shared/dev PostgreSQL instance (Neon, per `backend/src/.env`'s `DATABASE_URL`). Forgetting to run `dotnet ef database update` after pulling new migrations is a common source of "works on my machine" / 500-errors-on-missing-column friction.

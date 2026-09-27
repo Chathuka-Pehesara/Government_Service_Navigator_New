@@ -86,6 +86,11 @@ graph TB
 
 See `docs/adr/0009-multi-stage-department-workflow.md` for how stages are modelled.
 
+Detailed diagrams:
+- `docs/diagrams/end-to-end-workflow.md` — the full cross-platform path, with sequence diagrams
+- `docs/diagrams/agentic-ai-architecture.md` — agent components, tools, RAG and the pipeline state machine
+- `docs/diagrams/human-in-the-loop-workflow.md` — the pause points, approval gates and guards
+
 ## What's actually enforced vs. what looks enforced
 
 Registering the JWT middleware globally isn't the same as a controller requiring it. As of this writing:

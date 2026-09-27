@@ -1,8 +1,5 @@
 # ADR-0006: Application Templates link to a Service Catalog entry via an optional FK
 
-**Status:** Accepted, amended 2026-09-27 (see Update)
-**Date:** 2026-09-15
-
 ## Context
 
 `Template` (the officer-built dynamic application form — `web/src/Officer/Application_create/TemplateBuilder.tsx`) and `ServiceProcedure` (the Service Catalog entry, with its `EligibilityRule`/`DocumentRequirement`/`FeeSchedule` children) were built as two completely disconnected features. An officer building a template had no way to see, at build time, which documents or fees the citizen would actually need for the service that template represents — that information only existed in the separate Service Catalog admin pages.

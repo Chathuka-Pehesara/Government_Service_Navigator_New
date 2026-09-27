@@ -1,8 +1,5 @@
 # ADR-0002: Single ASP.NET Core project with folder-based layering
 
-**Status:** Accepted
-**Date:** 2026-08-07 (initial structure) — recorded 2026-09-15
-
 ## Context
 
 The backend needs some separation between HTTP concerns, business logic, persistence, and domain models, but the team is small (4 people, one backend) and working against a 9-week deadline (see `docs/Government_Service_Navigator_Project_Plan.md`). A common alternative in .NET is a "Clean Architecture" style solution split into separate class library projects (e.g. `Domain`, `Application`, `Infrastructure`, `Api`), each with its own `.csproj` and enforced project-reference boundaries.

@@ -1,8 +1,5 @@
 # ADR-0001: Stateless JWT auth with a database revocation table for logout
 
-**Status:** Accepted
-**Date:** 2026-09-15
-
 ## Context
 
 All three actor types (`User`, `Officer`, `Admin`) authenticate via HMAC-SHA256-signed JWTs (`AuthService.GenerateJwtToken*`), issued with a 7-day expiry and validated by ASP.NET Core's standard `AddJwtBearer` pipeline (`Program.cs`). Stateless JWTs have no server-side session to destroy, so a naive "logout" endpoint can only ever be a client-side `localStorage.removeItem` — the token itself stays valid until it expires naturally, even after the user has "logged out." That was in fact the original implementation: `POST /api/auth/logout` was an unauthenticated no-op that returned `{ success: true }` regardless of what was sent.

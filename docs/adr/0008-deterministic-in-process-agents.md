@@ -1,8 +1,5 @@
 # ADR-0008: The four agents run in-process and deterministically, with local hashed embeddings
 
-**Status:** Accepted
-**Date:** 2026-09-27
-
 ## Context
 
 The project plan (§2) calls for a four-agent "Navigator Agent Workflow":

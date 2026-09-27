@@ -1,8 +1,5 @@
 # ADR-0004: Department scoping is enforced client-side, not server-side
 
-**Status:** Partially superseded 2026-09-27 (see Update) — gap remains for admin, catalog, template and agent endpoints
-**Date:** 2026-09-15
-
 ## Context
 
 A Department Admin (an `Officer` row with `Role` containing "Admin" and a non-empty `Department`) should only see and manage their own department's officers and Service Catalog entries — not other departments'. A System Admin (an `Admin` row, no `Department` at all) should see everything.

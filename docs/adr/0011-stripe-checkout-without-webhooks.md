@@ -1,8 +1,5 @@
 # ADR-0011: Stripe Checkout is confirmed by client-triggered polling, not webhooks; manual slips are verified by Finance
 
-**Status:** Accepted (development configuration)
-**Date:** 2026-09-27
-
 ## Context
 
 Citizens pay service fees and installments either online or by bank deposit/transfer, which is still the norm for Sri Lankan government fees. The API runs on developer machines and a local network (`http://0.0.0.0:5119`), with no public HTTPS endpoint that Stripe could deliver webhooks to.
