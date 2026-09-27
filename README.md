@@ -317,4 +317,4 @@ Per the original project plan, these pieces are designed but not present in the 
 
 ## License
 
-This project is licensed under the [MIT License](LICENSE) — Copyright (c) 2026 Krishmal2004.
+This project is licensed under the [MIT License](LICENSE) - Copyright (c) 2026 Krishmal2004.
