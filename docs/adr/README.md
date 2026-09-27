@@ -1,6 +1,6 @@
 # Architecture Decision Records
 
-Each ADR documents one real decision made in this codebase — the context that forced it, the options actually considered, what was chosen, and the honest trade-offs accepted (including known gaps, not just upsides). They describe the system as built, not the aspirational design in `docs/Government_Service_Navigator_Project_Plan.md`.
+Each ADR documents one real decision made in this codebase - the context that forced it, the options actually considered, what was chosen, and the honest trade-offs accepted (including known gaps, not just upsides). They describe the system as built, not the aspirational design in `docs/Government_Service_Navigator_Project_Plan.md`.
 
 | # | Decision |
 |---|---|

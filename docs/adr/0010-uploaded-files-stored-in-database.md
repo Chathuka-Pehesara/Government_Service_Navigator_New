@@ -26,7 +26,7 @@ Option 3.
 
 - No extra infrastructure or credentials. Uploads are transactional with the application and are covered by the database's backups.
 - Magic-byte detection plus `nosniff` stops a renamed HTML/script file from being served as something executable.
-- **Database size and cost grow with every upload** — on Neon this is the metered resource. Every read streams the whole blob through the API process and into memory (`MemoryStream` on upload, a `byte[]` on read).
+- **Database size and cost grow with every upload** - on Neon this is the metered resource. Every read streams the whole blob through the API process and into memory (`MemoryStream` on upload, a `byte[]` on read).
 - **Orphans accumulate.** Documents uploaded but never submitted keep `ApplicationId = NULL` forever, and nothing cleans them up.
 - The document content endpoint checks the officer *role* but not the officer's *department*. Any officer with a document's GUID can read it.
 - Moving to object storage later only requires swapping the `Content` column for a storage key and changing the two read endpoints, because clients only ever see the API URLs.

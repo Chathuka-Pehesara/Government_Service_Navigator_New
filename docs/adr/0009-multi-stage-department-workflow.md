@@ -6,7 +6,7 @@ Some procedures pass through more than one department in sequence. For example, 
 
 ## Options Considered
 
-1. **A dedicated workflow model** — `WorkflowStage` rows with their own department, form, fee and transitions, plus an application state machine.
+1. **A dedicated workflow model** - `WorkflowStage` rows with their own department, form, fee and transitions, plus an application state machine.
 2. **Separate applications per department**, linked by a parent reference.
 3. **Reuse templates as stages.** Add `StageOrder`, `Department` and `StageDescription` to `Template`, `TotalStages` and `WorkflowDepartments` to `ServiceProcedure`, and stage/department tracking columns to `ApplicationSubmission` and `VerificationTask`. A template's `payment` field defines that stage's fee.
 

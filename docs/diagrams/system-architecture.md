@@ -14,7 +14,7 @@ graph TB
         React["React Dashboard (Officer / Finance / Admin)<br/>Vite, Carbon, Tailwind<br/>also packaged as Electron desktop app<br/>(Windows / macOS / Linux)"]
     end
 
-    subgraph Backend["ASP.NET Core API (.NET 10) — http://0.0.0.0:5119"]
+    subgraph Backend["ASP.NET Core API (.NET 10) - http://0.0.0.0:5119"]
         JwtMw["JWT Bearer middleware<br/>+ RevokedTokens check"]
 
         subgraph Open["No [Authorize]"]
@@ -43,8 +43,8 @@ graph TB
         Monitor["InstallmentMonitorService<br/>hourly hosted service"]
     end
 
-    DB[("PostgreSQL — app DB<br/>Neon via DATABASE_URL, or local DB_*<br/>schema: migrations + idempotent SQL on startup<br/>uploaded files stored as bytea")]
-    VDB[("PostgreSQL + pgvector — VectorDb<br/>KnowledgeChunks, HNSW cosine index")]
+    DB[("PostgreSQL - app DB<br/>Neon via DATABASE_URL, or local DB_*<br/>schema: migrations + idempotent SQL on startup<br/>uploaded files stored as bytea")]
+    VDB[("PostgreSQL + pgvector - VectorDb<br/>KnowledgeChunks, HNSW cosine index")]
     Stripe["Stripe Checkout<br/>(polled, no webhook)"]
     SMTP["SMTP email"]
 
@@ -87,9 +87,9 @@ graph TB
 See `docs/adr/0009-multi-stage-department-workflow.md` for how stages are modelled.
 
 Detailed diagrams:
-- `docs/diagrams/end-to-end-workflow.md` — the full cross-platform path, with sequence diagrams
-- `docs/diagrams/agentic-ai-architecture.md` — agent components, tools, RAG and the pipeline state machine
-- `docs/diagrams/human-in-the-loop-workflow.md` — the pause points, approval gates and guards
+- `docs/diagrams/end-to-end-workflow.md` - the full cross-platform path, with sequence diagrams
+- `docs/diagrams/agentic-ai-architecture.md` - agent components, tools, RAG and the pipeline state machine
+- `docs/diagrams/human-in-the-loop-workflow.md` - the pause points, approval gates and guards
 
 ## What's actually enforced vs. what looks enforced
 
@@ -109,7 +109,7 @@ See `docs/api.md` for the per-endpoint breakdown and `docs/adr/0004-client-side-
 | Vector DB | `ConnectionStrings:VectorDb` in `appsettings.json` | **Not** an env var. There's also a hardcoded copy in `VectorDbContextFactory` for design-time `dotnet ef` |
 | JWT | `JWT_KEY`, `JWT_ISSUER`, `JWT_AUDIENCE` | Without `JWT_KEY`, the auth scheme isn't registered at all. `JWT_EXPIRY_HOURS` is unused (7 days is hardcoded) |
 | Stripe | `STRIPE_SECRET_KEY` | |
-| Email | `SMTP_HOST`, `SMTP_PORT`, `SMTP_USER`, `SMTP_PASSWORD`, `SMTP_FROM_EMAIL`, `SMTP_FROM_NAME`, `SMTP_USE_SSL` | Best effort — failures don't fail the request |
+| Email | `SMTP_HOST`, `SMTP_PORT`, `SMTP_USER`, `SMTP_PASSWORD`, `SMTP_FROM_EMAIL`, `SMTP_FROM_NAME`, `SMTP_USE_SSL` | Best effort - failures don't fail the request |
 | Bank transfer details | `BANK_ACCOUNT_NAME`, `BANK_NAME`, `BANK_BRANCH`, `BANK_ACCOUNT_NUMBER` | Missing from `.env.example` |
 | Agent 4 | `ValidationSafetyConfig` singleton in `Program.cs` | Hardcoded: block duplicates, minimum age 16, adversarial filter on |
 
@@ -119,7 +119,7 @@ CORS allows any origin, header and method. HTTPS redirection is commented out.
 
 Neither client reads an environment variable for the API base URL:
 
-- **React:** `http://localhost:5119` is hardcoded — in `web/src/utils/api.ts` (`BASE_URL`), and as a literal in many page components.
+- **React:** `http://localhost:5119` is hardcoded - in `web/src/utils/api.ts` (`BASE_URL`), and as a literal in many page components.
 - **Flutter:** `mobile/lib/config/app_config.dart` picks one per platform: `http://10.0.2.2:5119/api` on the Android emulator, `http://localhost:5119/api` everywhere else. A physical device needs this file edited to the host's LAN IP.
 
 ## Build & delivery

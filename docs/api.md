@@ -1,6 +1,6 @@
 # API Reference
 
-Base URL: `http://localhost:5119` (hardcoded — see `docs/diagrams/system-architecture.md`). Swagger UI is available at `/swagger` when `ASPNETCORE_ENVIRONMENT=Development`.
+Base URL: `http://localhost:5119` (hardcoded - see `docs/diagrams/system-architecture.md`). Swagger UI is available at `/swagger` when `ASPNETCORE_ENVIRONMENT=Development`.
 
 All request/response bodies are JSON unless marked *multipart*. ASP.NET Core's default `System.Text.Json` camelCases property names in responses (e.g. the C# `FormName` property serializes as `"formName"`), which is reflected below.
 
@@ -8,15 +8,15 @@ Reflects `backend/src/Controllers/` as of 2026-09-27.
 
 ---
 
-## How auth actually works — read this first
+## How auth actually works - read this first
 
 The JWT middleware is registered globally, but that only makes `Authorization: Bearer <token>` *available* to check. A route rejects unauthenticated requests only if its controller/action carries `[Authorize]`. There are three tiers in the codebase today:
 
 | Tier | Meaning | Where |
 |---|---|---|
 | **None** | Callable with no token at all | `AuthController` (except `logout`), `AdminController`, `ServicesController`, `TemplateController`, `IntakeAgentController`, `EligibilityAgentController`, `ActionAgentController`, `RagSetupController`, `GET /api/verification/seed` |
-| **Any token** | `[Authorize]` — any valid, non-revoked token (citizen, officer or admin) | `ApplicationsController`, `NotificationsController`, `AuditLogsController`, `AnalyticsController`, `AnomalyDetectionController`, `RefundsController`, most of `PaymentsController` and `InstallmentPlansController`, `GET /api/verification/my-applications` |
-| **Role** | `[Authorize(Roles = "...")]` — checked against the token's `ClaimTypes.Role` claim | Every other `VerificationController` action, finance actions in `PaymentsController`, staff actions in `InstallmentPlansController` |
+| **Any token** | `[Authorize]` - any valid, non-revoked token (citizen, officer or admin) | `ApplicationsController`, `NotificationsController`, `AuditLogsController`, `AnalyticsController`, `AnomalyDetectionController`, `RefundsController`, most of `PaymentsController` and `InstallmentPlansController`, `GET /api/verification/my-applications` |
+| **Role** | `[Authorize(Roles = "...")]` - checked against the token's `ClaimTypes.Role` claim | Every other `VerificationController` action, finance actions in `PaymentsController`, staff actions in `InstallmentPlansController` |
 
 The role lists used are:
 
@@ -26,9 +26,9 @@ The role lists used are:
 
 Citizens' tokens carry role `User`, so they are excluded from all three.
 
-**Department scoping** is enforced server-side for the verification queue and finance payment views: the caller's `department` claim filters results, and single-item reads/writes for another department return `403`. Callers with role `Admin` or containing `System Admin` (or with no `department` claim) see everything. Everywhere else — officers, service catalog, templates — scoping is still client-side only; see `docs/adr/0004-client-side-department-scoping.md`.
+**Department scoping** is enforced server-side for the verification queue and finance payment views: the caller's `department` claim filters results, and single-item reads/writes for another department return `403`. Callers with role `Admin` or containing `System Admin` (or with no `department` claim) see everything. Everywhere else - officers, service catalog, templates - scoping is still client-side only; see `docs/adr/0004-client-side-department-scoping.md`.
 
-**Things "Any token" does not protect:** refund approve/reject/process/complete, analytics, anomaly resolution and all audit-log reads are callable by a *citizen* token too — there's no role check on them (`RefundsController` has a `TODO` saying so). Likewise `GET /api/payments/{id}`, `GET /api/payments/{id}/ledger`, `GET /api/installment-plans/{id}` and `POST /api/installment-plans/{id}/cancel` don't check that the payment/plan belongs to the caller.
+**Things "Any token" does not protect:** refund approve/reject/process/complete, analytics, anomaly resolution and all audit-log reads are callable by a *citizen* token too - there's no role check on them (`RefundsController` has a `TODO` saying so). Likewise `GET /api/payments/{id}`, `GET /api/payments/{id}/ledger`, `GET /api/installment-plans/{id}` and `POST /api/installment-plans/{id}/cancel` don't check that the payment/plan belongs to the caller.
 
 ### JWT claims
 
@@ -38,11 +38,11 @@ Citizens' tokens carry role `User`, so they are excluded from all three.
 | `officer-login` | `sub`, `email`, `role` (e.g. `Verifying Officer`), `department`, `jti` |
 | `admin-login` | `sub`, `email`, `role` (e.g. `Admin`), `jti` |
 
-Tokens are HMAC-SHA256-signed with `JWT_KEY` and expire after **7 days** (hardcoded `DateTime.UtcNow.AddDays(7)` in `AuthService` — `.env`'s `JWT_EXPIRY_HOURS` is **not read anywhere**). The `jti` is checked against the `RevokedTokens` table on every request (`docs/adr/0001-jwt-auth-with-revocation-table.md`). Citizen-facing endpoints identify the caller by the `nicNumber` claim (applications, notifications, installment ownership) or the `email` claim (payments/refunds "mine").
+Tokens are HMAC-SHA256-signed with `JWT_KEY` and expire after **7 days** (hardcoded `DateTime.UtcNow.AddDays(7)` in `AuthService` - `.env`'s `JWT_EXPIRY_HOURS` is **not read anywhere**). The `jti` is checked against the `RevokedTokens` table on every request (`docs/adr/0001-jwt-auth-with-revocation-table.md`). Citizen-facing endpoints identify the caller by the `nicNumber` claim (applications, notifications, installment ownership) or the `email` claim (payments/refunds "mine").
 
 ---
 
-## Auth — `AuthController`, `api/auth`
+## Auth - `AuthController`, `api/auth`
 
 | Method | Path | Auth | Body → Response |
 |---|---|---|---|
@@ -74,13 +74,13 @@ Creates a `User` row (citizen). Fails with `{ success: false, errorMessage: "Use
   "admin": { "email": "", "role": "" }
 }
 ```
-Only one of `user`/`officer`/`admin` is populated. **These actions return `200 OK` even on failure** — check `success`/`errorMessage`, not the status code.
+Only one of `user`/`officer`/`admin` is populated. **These actions return `200 OK` even on failure** - check `success`/`errorMessage`, not the status code.
 
 `logout` reads the caller's `jti`/`exp` and inserts a `RevokedToken` row, so that exact token is rejected from then on regardless of expiry.
 
 ---
 
-## Admin — `AdminController`, `api/admin`
+## Admin - `AdminController`, `api/admin`
 
 **Auth: None** on every action.
 
@@ -99,11 +99,11 @@ Only one of `user`/`officer`/`admin` is populated. **These actions return `200 O
 ```json
 { "fullName": "", "email": "", "password": "", "department": "", "role": "" }
 ```
-`role` and `department` are free-form strings — only the web UI's dropdowns constrain them. Because role-gated endpoints compare against these exact strings, a typo here (e.g. `Finance officer`) silently locks that officer out of finance endpoints. Email and status can't be changed through `PUT`.
+`role` and `department` are free-form strings - only the web UI's dropdowns constrain them. Because role-gated endpoints compare against these exact strings, a typo here (e.g. `Finance officer`) silently locks that officer out of finance endpoints. Email and status can't be changed through `PUT`.
 
 ---
 
-## Services / Eligibility — `ServicesController`, `api/services`
+## Services / Eligibility - `ServicesController`, `api/services`
 
 **Auth: None** on every action.
 
@@ -113,7 +113,7 @@ Only one of `user`/`officer`/`admin` is populated. **These actions return `200 O
 | GET | `/api/services/{id}` | → `ServiceProcedure` with rules, documents and fees, or `404` |
 | POST | `/api/services` | `ServiceProcedure` → `201`, or `500` |
 | PUT | `/api/services/{id}` | `ServiceProcedure` (only `serviceId`/`name`/`category`/`status` applied) → `200` or `404` |
-| DELETE | `/api/services/{id}` | → `204` or `404` — **soft delete**, sets `Status = "Retired"` |
+| DELETE | `/api/services/{id}` | → `204` or `404` - **soft delete**, sets `Status = "Retired"` |
 | PUT | `/api/services/{id}/eligibility-rules` | `EligibilityRule[]` (full replace) → `ServiceProcedure` or `404` |
 | PUT | `/api/services/{id}/documents` | `DocumentRequirement[]` (diffed by `id`; `id: 0` = new) → `ServiceProcedure` or `404` |
 | DELETE | `/api/services/documents/{documentId}` | → `204` or `404` |
@@ -137,7 +137,7 @@ Only one of `user`/`officer`/`admin` is populated. **These actions return `200 O
 ```json
 { "id": 0, "serviceProcedureId": 0, "field": "Age | Citizenship", "operator": ">= | == | <= | !=", "value": "", "isStrict": true }
 ```
-The `eligibility-score` endpoint only evaluates `Age` (`>=`, `==`) and `Citizenship` (`==`); any other field always fails. `isStrict` is stored but not read. (Agent 2's `CheckEligibilityRulesTool` is a separate evaluator — see [Agents](#agentic-ai-endpoints).)
+The `eligibility-score` endpoint only evaluates `Age` (`>=`, `==`) and `Citizenship` (`==`); any other field always fails. `isStrict` is stored but not read. (Agent 2's `CheckEligibilityRulesTool` is a separate evaluator - see [Agents](#agentic-ai-endpoints).)
 
 ### `DocumentRequirement` / `FeeSchedule`
 ```json
@@ -164,7 +164,7 @@ Built from the active template for that stage: each `file`/`document`/`documentU
 
 ---
 
-## Templates — `TemplateController`, `api/templates`
+## Templates - `TemplateController`, `api/templates`
 
 **Auth: None** on every action. Templates are the per-stage application forms citizens fill in.
 
@@ -191,13 +191,13 @@ Built from the active template for that stage: each `file`/`document`/`documentU
   "fields": [ { "label": "", "type": "", "options": null, "required": false } ]
 }
 ```
-- `serviceProcedureId` may be `null` (unlinked template — `docs/adr/0006-optional-template-service-link.md`).
+- `serviceProcedureId` may be `null` (unlinked template - `docs/adr/0006-optional-template-service-link.md`).
 - `stageOrder` + `department` make the template the form for that stage of a multi-department workflow (`docs/adr/0009-multi-stage-department-workflow.md`). Only `Active` templates are served to citizens.
 - `type` is free-form on the backend. The builder (`TemplateBuilder.tsx`) offers `text`, `textarea`, `number`, `select`, `multiselect`, `date`, `file`, `heading`, `paragraph`, `table` and `payment`. The backend treats `heading`/`paragraph` as display-only, `file`/`document`/`documentUpload` as uploads, and `payment` as the stage's fee, where `options` is a JSON string such as `{"amount": 3500, "feeType": "Passport Fee"}`.
 
 ---
 
-## Applications (citizen) — `ApplicationsController`, `api/applications`
+## Applications (citizen) - `ApplicationsController`, `api/applications`
 
 **Auth: Any token** on every action, but each action also requires a `nicNumber` claim (so only citizen tokens work) and returns `403` without one.
 
@@ -232,7 +232,7 @@ What `submit` does, in order:
 3. Runs **Agent 4 (Validation & Safety)**. Its checks are:
    - schema and required documents
    - a prompt-injection keyword filter
-   - age 16–125, derived from the NIC (falling back to an `age` answer, then to 25)
+   - age 16-125, derived from the NIC (falling back to an `age` answer, then to 25)
    - a duplicate check (same NIC + service with an application not `Completed`/`Rejected`)
    - a non-negative fee
 
@@ -261,7 +261,7 @@ What `submit` does, in order:
 
 ---
 
-## Verification — `VerificationController`, `api/verification`
+## Verification - `VerificationController`, `api/verification`
 
 **Auth:** `my-applications` = any token. `seed` = none (`[AllowAnonymous]`). Everything else = **`OfficerRoles`**. "Current officer" in audit rows is `"<email> (<department>)"` from the token.
 
@@ -281,12 +281,12 @@ What `submit` does, in order:
 | PUT | `/api/verification/tasks/{id}/decision` | [`VerificationDecisionRequest`](#verificationdecisionrequest) → `200`, `400` or `404` |
 | PUT | `/api/verification/tasks/{id}/approve-stage` | `{ "notes": "" }` → `{ currentStage, maxStages, status, currentDepartment }` |
 | POST | `/api/verification/tasks/bulk-verify` | [`BulkVerifyRequest`](#bulkverifyrequest) → `200` or `400` |
-| DELETE | `/api/verification/tasks/{id}?reason=` | → `{ success, message }` — removes from queue, audit-logged |
+| DELETE | `/api/verification/tasks/{id}?reason=` | → `{ success, message }` - removes from queue, audit-logged |
 | POST | `/api/verification/tasks/{id}/delete` | `{ "reason": "" }` → same as above (for clients that can't send a DELETE body) |
 | DELETE | `/api/verification/applications/{applicationId}?reason=` | → deletes the application's task, or marks the submission `Deleted`; audit-logged |
 | GET / POST | `/api/verification/rejection-reasons` | → `RejectionReason[]` / create one `{ code, description }` |
 | PUT / DELETE | `/api/verification/rejection-reasons/{id}` | update → `200` / delete → `204` |
-| GET | `/api/verification/seed` | Inserts 5 random `Pending` tasks with fake application IDs — **dev only, unauthenticated** |
+| GET | `/api/verification/seed` | Inserts 5 random `Pending` tasks with fake application IDs - **dev only, unauthenticated** |
 
 ### Queue row
 ```json
@@ -331,7 +331,7 @@ Applies the decision to all IDs in one transaction and **silently skips unknown 
 
 ---
 
-## Payments — `PaymentsController`, `api/payments`
+## Payments - `PaymentsController`, `api/payments`
 
 Amounts are in `LKR`. `Payment.status` is one of `Pending`, `PendingVerification`, `Paid`, `Failed`.
 
@@ -354,7 +354,7 @@ Amounts are in `LKR`. `Payment.status` is one of `Pending`, `PendingVerification
 
 ---
 
-## Installment plans — `InstallmentPlansController`, `api`
+## Installment plans - `InstallmentPlansController`, `api`
 
 | Method | Path | Auth | Body → Response |
 |---|---|---|---|
@@ -385,9 +385,9 @@ Rules:
 
 ---
 
-## Refunds — `RefundsController`, `api/refunds`
+## Refunds - `RefundsController`, `api/refunds`
 
-**Auth: Any token** on every action — including the officer-side approve/reject/process/complete (see the warning at the top).
+**Auth: Any token** on every action - including the officer-side approve/reject/process/complete (see the warning at the top).
 
 | Method | Path | Body → Response |
 |---|---|---|
@@ -405,7 +405,7 @@ Status lifecycle: `Pending → Approved | Rejected`, then `Approved → Processi
 
 ---
 
-## Notifications — `NotificationsController`, `api/notifications`
+## Notifications - `NotificationsController`, `api/notifications`
 
 **Auth: Any token.** A notification is "mine" if its `citizenNic` matches the `nicNumber` claim, or its `userEmail` matches the `email` claim.
 
@@ -417,7 +417,7 @@ Status lifecycle: `Pending → Approved | Rejected`, then `Approved → Processi
 
 ---
 
-## Audit logs — `AuditLogsController`, `api/audit-logs`
+## Audit logs - `AuditLogsController`, `api/audit-logs`
 
 **Auth: Any token.**
 
@@ -433,7 +433,7 @@ Officer actions record `performedBy` as `"<email> (<department>)"`, so `by-perfo
 
 ---
 
-## Analytics & anomalies — `AnalyticsController` (`api`), `AnomalyDetectionController` (`api/anomalies`)
+## Analytics & anomalies - `AnalyticsController` (`api`), `AnomalyDetectionController` (`api/anomalies`)
 
 **Auth: Any token.**
 
@@ -459,7 +459,7 @@ The anomaly scan is rule-based. `HighAmount` flags any `Paid` payment of LKR 100
 
 ## Agentic AI endpoints
 
-The four agents live in `agentic-ai/` and run **in-process** inside the API (project reference, not a separate service). They are **deterministic — no LLM is called** (`docs/adr/0008-deterministic-in-process-agents.md`). In normal use, Agent 4 runs inside `applications/submit`, and Agents 2 + 3 run from the officer's `verification/tasks/{id}/agent-draft`. The endpoints below expose each agent directly.
+The four agents live in `agentic-ai/` and run **in-process** inside the API (project reference, not a separate service). They are **deterministic - no LLM is called** (`docs/adr/0008-deterministic-in-process-agents.md`). In normal use, Agent 4 runs inside `applications/submit`, and Agents 2 + 3 run from the officer's `verification/tasks/{id}/agent-draft`. The endpoints below expose each agent directly.
 
 **Auth: None** on all of them.
 
@@ -473,7 +473,7 @@ The four agents live in `agentic-ai/` and run **in-process** inside the API (pro
 
 - **Agent 1 (Intake & Planning)** embeds the text, takes the top 3 vector matches, and accepts one only if it shares a keyword with the request. Otherwise it returns `recommendedService: "Service Not Found"`.
 - **Agent 2 (Eligibility & Documents)** evaluates the catalog's eligibility rules (`CheckEligibilityRulesTool`) and required documents (`GetDocumentRequirementsTool`), plus retrieved policy chunks.
-- **Agent 3 (Action/Tool)** calls `PrefillApplicationTool`, `CalculateFeeTool` and `FindAppointmentSlotTool` (Mon–Fri 09:00–15:00 SLT, 30-min slots, ≥ 2 working days out). A slot is only a proposal until an officer approves.
+- **Agent 3 (Action/Tool)** calls `PrefillApplicationTool`, `CalculateFeeTool` and `FindAppointmentSlotTool` (Mon-Fri 09:00-15:00 SLT, 30-min slots, ≥ 2 working days out). A slot is only a proposal until an officer approves.
 - **Agent 4 (Validation & Safety)** is not exposed directly. It runs `SchemaValidatorTool` + `DuplicateCheckTool` from `applications/submit` and `submit-stage`.
 
 ### `EligibilityAgentQueryDto`
@@ -494,9 +494,9 @@ Missing `age`, `citizenshipStatus` and `employmentStatus` default to `25`, `Sri 
 
 ---
 
-## RAG knowledge base — `RagSetupController`, `api/RagSetup`
+## RAG knowledge base - `RagSetupController`, `api/RagSetup`
 
-Manages the `KnowledgeChunks` table in the **separate pgvector database** (`ConnectionStrings:VectorDb`). **Auth: None** — anyone who can reach the API can wipe or rewrite the knowledge base.
+Manages the `KnowledgeChunks` table in the **separate pgvector database** (`ConnectionStrings:VectorDb`). **Auth: None** - anyone who can reach the API can wipe or rewrite the knowledge base.
 
 | Method | Path | Body → Response |
 |---|---|---|

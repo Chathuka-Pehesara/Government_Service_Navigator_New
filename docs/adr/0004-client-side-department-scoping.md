@@ -2,7 +2,7 @@
 
 ## Context
 
-A Department Admin (an `Officer` row with `Role` containing "Admin" and a non-empty `Department`) should only see and manage their own department's officers and Service Catalog entries — not other departments'. A System Admin (an `Admin` row, no `Department` at all) should see everything.
+A Department Admin (an `Officer` row with `Role` containing "Admin" and a non-empty `Department`) should only see and manage their own department's officers and Service Catalog entries - not other departments'. A System Admin (an `Admin` row, no `Department` at all) should see everything.
 
 ## Options Considered
 
@@ -12,12 +12,12 @@ A Department Admin (an `Officer` row with `Role` containing "Admin" and a non-em
 
 ## Decision
 
-What's actually implemented is Option 3, arrived at incrementally rather than chosen upfront: `GET /api/admin/officers?department=X` (`AdminController`/`AdminService`) does filter server-side when a `department` query parameter is passed. Every other department-sensitive read — the Service Catalog manager, eligibility rule builder, eligibility simulator, service configuration tabs, and the application-template builder's "linked service" picker — filters entirely in the React components (`web/src/Admin/**`, `web/src/Officer/Application_create/TemplateBuilder.tsx`) using `currentUser.department` read out of `localStorage` and mapped to a Service Catalog category via `getCategoryForDepartment` (`web/src/constants/departments.ts`).
+What's actually implemented is Option 3, arrived at incrementally rather than chosen upfront: `GET /api/admin/officers?department=X` (`AdminController`/`AdminService`) does filter server-side when a `department` query parameter is passed. Every other department-sensitive read - the Service Catalog manager, eligibility rule builder, eligibility simulator, service configuration tabs, and the application-template builder's "linked service" picker - filters entirely in the React components (`web/src/Admin/**`, `web/src/Officer/Application_create/TemplateBuilder.tsx`) using `currentUser.department` read out of `localStorage` and mapped to a Service Catalog category via `getCategoryForDepartment` (`web/src/constants/departments.ts`).
 
 ## Consequences
 
-- **This is a real security gap, not just a UX nicety.** `ServicesController`, `TemplateController`, and most of `AdminController` have no `[Authorize]` attribute at all (see `docs/adr/0001-jwt-auth-with-revocation-table.md` and `docs/api.md` for the full picture) — so department scoping being client-side is compounded by there being no authentication requirement to bypass in the first place. Anyone who can reach the API (not just a logged-in Department Admin poking at another department through dev tools) can call `GET /api/services` or `GET /api/admin/officers` directly and get every department's data, fully unfiltered. The department-scoped UI only stops a well-behaved browser session from *displaying* another department's data; it enforces nothing.
-- Fixing this properly means: (a) adding `[Authorize]` to `AdminController`, `ServicesController`, and `TemplateController`; (b) adding a `Department` (or role) claim check server-side in `AdminService`/`ServiceCatalogService` for every department-sensitive query, not just the one that already accepts a `department` query param. Neither is done yet — this ADR exists specifically to make that gap visible rather than let "the dropdown is scoped now" be mistaken for "the data is protected now."
+- **This is a real security gap, not just a UX nicety.** `ServicesController`, `TemplateController`, and most of `AdminController` have no `[Authorize]` attribute at all (see `docs/adr/0001-jwt-auth-with-revocation-table.md` and `docs/api.md` for the full picture) - so department scoping being client-side is compounded by there being no authentication requirement to bypass in the first place. Anyone who can reach the API (not just a logged-in Department Admin poking at another department through dev tools) can call `GET /api/services` or `GET /api/admin/officers` directly and get every department's data, fully unfiltered. The department-scoped UI only stops a well-behaved browser session from *displaying* another department's data; it enforces nothing.
+- Fixing this properly means: (a) adding `[Authorize]` to `AdminController`, `ServicesController`, and `TemplateController`; (b) adding a `Department` (or role) claim check server-side in `AdminService`/`ServiceCatalogService` for every department-sensitive query, not just the one that already accepts a `department` query param. Neither is done yet - this ADR exists specifically to make that gap visible rather than let "the dropdown is scoped now" be mistaken for "the data is protected now."
 - Until fixed, treat department scoping in this app as a **display convenience for legitimate users**, not an access-control boundary.
 
 ## Partially superseded
@@ -29,6 +29,6 @@ Server-side scoping (Option 1) is now implemented for the case-handling endpoint
 - These controllers also enforce role lists (`[Authorize(Roles = ...)]`), so a citizen token can no longer read the officer queue.
 - A role of `Admin` or containing `System Admin` bypasses the department filter. So does a token with **no** `department` claim, which means any officer row with an empty `Department` sees every department.
 
-**Still client-side only:** everything this ADR originally described — `AdminController`, `ServicesController` and `TemplateController`. They have no `[Authorize]` at all, so the original security gap stands for officer management, the service catalog and templates. The agent and `RagSetup` endpoints added since are in the same state. The remediation steps under Consequences still apply to them.
+**Still client-side only:** everything this ADR originally described - `AdminController`, `ServicesController` and `TemplateController`. They have no `[Authorize]` at all, so the original security gap stands for officer management, the service catalog and templates. The agent and `RagSetup` endpoints added since are in the same state. The remediation steps under Consequences still apply to them.
 
 Department identity is a free-form string, compared by exact match in list queries and case-insensitively in single-item checks (`Officer.Department` vs `Template.Department` / `ApplicationSubmission.CurrentDepartment`). A department renamed in one place but not the other silently drops its applications out of that department's queue.

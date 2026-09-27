@@ -119,8 +119,8 @@ The dependency direction is deliberate: `agentic-ai` defines interfaces such as 
 |---|---|---|---|---|
 | 1 | **Intake & Planning** (`IntakePlanningAgent`) | `IntakePlanRequest(text)` → `IntakePlanResponse(recommendedService, requiredDocuments, stepByStepPlan, retrievedContextSnippets)` | Embed the query → top 3 catalog chunks (`VectorRetrieverService`) → keep the first chunk that **shares a keyword** with the query | No shared keyword → `"Service Not Found"` + "contact the main helpdesk" |
 | 2 | **Eligibility & Document Analysis** (`EligibilityDocumentAgent`) | `EligibilityPlanRequest(serviceName, serviceId, CitizenProfile, planSummary, stage)` → `EligibilityPlanResponse(isEligible, matchPercentage, missingCriteria, requiredDocuments, missingDocuments, reasoning, snippets)` | `check_eligibility_rules` (age / citizenship), `get_document_requirements` (per stage when `stage` is set), eligibility chunks from the vector DB | Criteria not met → `isEligible: false` with `missingCriteria`. Unmatched documents are flagged for the officer, not blocking. Vector DB down → falls back to the tool |
-| 3 | **Action / Tool** (`ActionToolAgent`) | `ActionDraftRequest(applicant, eligibility, providedDocuments, preferredDate, express, stage)` → `ActionDraftResponse(isReadyForValidation, draft, fee, appointment, unfilledRequiredFields, blockers, notesForOfficer, reasoning, toolCalls, snippets)` | `prefill_application` (template fields ← citizen answers), `calculate_fee` (express fees only if requested), `find_appointment_slot` (Mon–Fri 09:00–15:00 SLT, 30 min, ≥ 2 working days), fee/form/policy chunks | Never drafts for an ineligible citizen (`draft: null`). Any blocker → `isReadyForValidation: false` |
-| 4 | **Validation & Safety** (`ValidationSafetyAgent`) | `DraftApplication` + required documents → `ValidationResult(isValid, decision, summary, complianceChecks, rejectionReasons, verificationTaskId)` | `validate_schema` (NIC format, age 16–125, mandatory documents, injection keywords), `check_duplicate_application` (in-memory registry + DB), fee ≥ 0 | Any violation → `Rejected`, halted **before** the officer queue |
+| 3 | **Action / Tool** (`ActionToolAgent`) | `ActionDraftRequest(applicant, eligibility, providedDocuments, preferredDate, express, stage)` → `ActionDraftResponse(isReadyForValidation, draft, fee, appointment, unfilledRequiredFields, blockers, notesForOfficer, reasoning, toolCalls, snippets)` | `prefill_application` (template fields ← citizen answers), `calculate_fee` (express fees only if requested), `find_appointment_slot` (Mon-Fri 09:00-15:00 SLT, 30 min, ≥ 2 working days), fee/form/policy chunks | Never drafts for an ineligible citizen (`draft: null`). Any blocker → `isReadyForValidation: false` |
+| 4 | **Validation & Safety** (`ValidationSafetyAgent`) | `DraftApplication` + required documents → `ValidationResult(isValid, decision, summary, complianceChecks, rejectionReasons, verificationTaskId)` | `validate_schema` (NIC format, age 16-125, mandatory documents, injection keywords), `check_duplicate_application` (in-memory registry + DB), fee ≥ 0 | Any violation → `Rejected`, halted **before** the officer queue |
 
 Every tool call Agent 3 makes is logged as a `ToolCallRecord(toolName, input, output, calledAt)`. The log is stored with the draft and shown to the officer, so the reasoning is persisted rather than hidden.
 
@@ -162,8 +162,8 @@ stateDiagram-v2
 
 | What | Where it's persisted |
 |---|---|
-| Plan (Agent 1) | Not persisted — returned to the Flutter app only |
-| Eligibility + draft + tool calls + validation (Agents 2–4, officer-triggered) | `AgentDrafts.DraftJson` (one per application, overwritten on regenerate) |
+| Plan (Agent 1) | Not persisted - returned to the Flutter app only |
+| Eligibility + draft + tool calls + validation (Agents 2-4, officer-triggered) | `AgentDrafts.DraftJson` (one per application, overwritten on regenerate) |
 | Agent 4 compliance checks at submit | `ComplianceChecks` rows on the verification task |
 | Approval decision | `VerificationTasks.Status`, `OfficerReviews`, `AuditLogs` |
 | Final outcome | `ApplicationSubmissions.StageStatus` |
@@ -206,7 +206,7 @@ sequenceDiagram
     A2-->>DS: EligibilityPlanResponse
     DS->>A3: PrepareDraftAsync(eligibility, stage)
     A3-->>DS: ActionDraftResponse + toolCalls
-    DS->>A4: ValidateAndEnqueueAsync(draft) — re-check
+    DS->>A4: ValidateAndEnqueueAsync(draft) - re-check
     A4-->>DS: ValidationResult
     DS->>DB: upsert AgentDraft
     DS-->>VO: AgentDraftView
@@ -226,14 +226,14 @@ Chunks are text snapshots. After catalog, template or embedding changes, re-run 
 
 ## Configuration
 
-`ValidationSafetyConfig` is registered as a singleton in `Program.cs` with `BlockDuplicateSubmissions = true`, `MinimumLegalAge = 16` and `EnableAdversarialDefense = true`. These values are hardcoded, not read from `.env`. The age bound actually applied is also hardcoded in `SchemaValidatorTool` (16–125).
+`ValidationSafetyConfig` is registered as a singleton in `Program.cs` with `BlockDuplicateSubmissions = true`, `MinimumLegalAge = 16` and `EnableAdversarialDefense = true`. These values are hardcoded, not read from `.env`. The age bound actually applied is also hardcoded in `SchemaValidatorTool` (16-125).
 
 ## Evaluation
 
 The xUnit suites in `agentic-ai/tests/` use fakes for the repositories and the vector retriever:
-- `IntakeAndEligibilityAgentTests` — 5 tests
-- `ActionToolAgentTests` — 7 tests
-- `ValidationSafetyAgentTests` — 6 tests
+- `IntakeAndEligibilityAgentTests` - 5 tests
+- `ActionToolAgentTests` - 7 tests
+- `ValidationSafetyAgentTests` - 6 tests
 
 `tests/golden-cases/` holds only a README so far. The `agentic-ai.yml` workflow runs the build and a scaffold-structure check on changes under `agentic-ai/`.
 

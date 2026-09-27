@@ -5,8 +5,8 @@ The project plan (§2) names one **high-impact action that requires human approv
 This document shows where the workflow **pauses**, **who** resumes it, **what evidence** they see, and **which server-side guards** stop the pause from being skipped. It reflects the code as of 2026-09-27.
 
 Related docs:
-- `docs/diagrams/end-to-end-workflow.md` — the whole path
-- `docs/diagrams/agentic-ai-architecture.md` — the agents
+- `docs/diagrams/end-to-end-workflow.md` - the whole path
+- `docs/diagrams/agentic-ai-architecture.md` - the agents
 
 ## Pause points at a glance
 

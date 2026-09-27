@@ -149,7 +149,7 @@ sequenceDiagram
 
 ## Multi-stage, multi-department services
 
-When a service has `TotalStages > 1`, steps 2–4 repeat once per stage. Each stage uses its own template, and each goes to its own department's queue (`docs/adr/0009-multi-stage-department-workflow.md`).
+When a service has `TotalStages > 1`, steps 2-4 repeat once per stage. Each stage uses its own template, and each goes to its own department's queue (`docs/adr/0009-multi-stage-department-workflow.md`).
 
 ```mermaid
 sequenceDiagram
