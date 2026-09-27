@@ -3,6 +3,9 @@ name: Build Windows App
 on:
   push:
     branches: [ "main", "Front-Dev", "Testing" ]
+    # Pushing a tag like v1.0.1 also publishes a GitHub Release that
+    # install/install.ps1 downloads from. Path filters are ignored for tags.
+    tags: [ "v*" ]
     paths:
       - "web/**"
       - ".github/workflows/windows-software-build.yml"
@@ -21,6 +24,8 @@ jobs:
   build:
     name: Windows installer (NSIS + portable)
     runs-on: windows-latest
+    permissions:
+      contents: write
     defaults:
       run:
         working-directory: web
@@ -38,6 +43,10 @@ jobs:
       - name: Install dependencies
         run: npm ci
 
+      - name: Set version from tag
+        if: startsWith(github.ref, 'refs/tags/v')
+        run: npm version "${{ github.ref_name }}" --no-git-tag-version --allow-same-version
+
       # tsc -b && vite build -> web/dist, which Electron serves via electron/main.cjs.
       - name: Build web app
         run: npm run build
@@ -52,3 +61,13 @@ jobs:
           path: |
             web/release/*.exe
           retention-days: 14
+
+      - name: Publish GitHub Release
+        if: startsWith(github.ref, 'refs/tags/v')
+        shell: bash
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          gh release create "${{ github.ref_name }}" release/*.exe \
+            --title "Government Service Navigator ${{ github.ref_name }}" \
+            --generate-notes
