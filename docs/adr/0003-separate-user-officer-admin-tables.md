@@ -2,7 +2,7 @@
 
 ## Context
 
-The system has three distinct actor types with almost no shared behavior: **citizens** (`User` — the Flutter app's audience, with `NicNumber`), **verifying/department officers** (`Officer` — has `Department`, `Status` for suspend/activate), and **system administrators** (`Admin` — has neither). Each needs email+password login, but the three have materially different fields, different login endpoints (`/api/auth/login`, `/api/auth/officer-login`, `/api/auth/admin-login`), and different management surfaces (only officers can be created/suspended/reset through `AdminController`).
+The system has three distinct actor types with almost no shared behavior: **citizens** (`User` - the Flutter app's audience, with `NicNumber`), **verifying/department officers** (`Officer` - has `Department`, `Status` for suspend/activate), and **system administrators** (`Admin` - has neither). Each needs email+password login, but the three have materially different fields, different login endpoints (`/api/auth/login`, `/api/auth/officer-login`, `/api/auth/admin-login`), and different management surfaces (only officers can be created/suspended/reset through `AdminController`).
 
 ## Options Considered
 
@@ -11,7 +11,7 @@ The system has three distinct actor types with almost no shared behavior: **citi
 
 ## Decision
 
-Option 2. `AppDbContext` has three separate `DbSet`s, each with a unique index on `Email`; `AuthService` has three parallel `LoginAsync`/`GenerateJwtToken*` methods; `AuthController` exposes three login routes that the frontend tries in sequence (`officer-login`, falling back to `admin-login` — see `officer_login.tsx`).
+Option 2. `AppDbContext` has three separate `DbSet`s, each with a unique index on `Email`; `AuthService` has three parallel `LoginAsync`/`GenerateJwtToken*` methods; `AuthController` exposes three login routes that the frontend tries in sequence (`officer-login`, falling back to `admin-login` - see `officer_login.tsx`).
 
 ## Consequences
 

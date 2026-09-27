@@ -2,13 +2,13 @@
 
 ## Context
 
-All three actor types (`User`, `Officer`, `Admin`) authenticate via HMAC-SHA256-signed JWTs (`AuthService.GenerateJwtToken*`), issued with a 7-day expiry and validated by ASP.NET Core's standard `AddJwtBearer` pipeline (`Program.cs`). Stateless JWTs have no server-side session to destroy, so a naive "logout" endpoint can only ever be a client-side `localStorage.removeItem` — the token itself stays valid until it expires naturally, even after the user has "logged out." That was in fact the original implementation: `POST /api/auth/logout` was an unauthenticated no-op that returned `{ success: true }` regardless of what was sent.
+All three actor types (`User`, `Officer`, `Admin`) authenticate via HMAC-SHA256-signed JWTs (`AuthService.GenerateJwtToken*`), issued with a 7-day expiry and validated by ASP.NET Core's standard `AddJwtBearer` pipeline (`Program.cs`). Stateless JWTs have no server-side session to destroy, so a naive "logout" endpoint can only ever be a client-side `localStorage.removeItem` - the token itself stays valid until it expires naturally, even after the user has "logged out." That was in fact the original implementation: `POST /api/auth/logout` was an unauthenticated no-op that returned `{ success: true }` regardless of what was sent.
 
 This is a real problem for this app specifically: officer/admin accounts can be suspended (`PATCH /api/admin/officers/{id}/suspend`) or have passwords reset, but a token issued before that action would keep working for up to 7 more days with no way to revoke it.
 
 ## Options Considered
 
-1. **Leave logout as a client-only no-op.** Zero backend cost, but a "logged out" or suspended account's token stays valid for up to 7 days — unacceptable given the suspend/reset-password features already exist.
+1. **Leave logout as a client-only no-op.** Zero backend cost, but a "logged out" or suspended account's token stays valid for up to 7 days - unacceptable given the suspend/reset-password features already exist.
 2. **Short-lived access tokens + refresh tokens.** The standard fix, but a larger change (refresh endpoint, refresh-token storage/rotation, client changes to silently refresh) than the problem currently warrants for a 3-client coursework project.
 3. **Revocation (blacklist) table, checked on every request.** Store each revoked token's `jti` (JWT ID claim) and natural expiry in a `RevokedTokens` table; reject any request whose `jti` is in that table via a custom `OnTokenValidated` event; prune expired entries opportunistically on each logout call so the table doesn't grow unbounded.
 

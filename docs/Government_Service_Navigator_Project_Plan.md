@@ -49,15 +49,15 @@ Pick one and route it through ASP.NET Core:
 | **3. Action/Tool Agent** | Prepares the draft application: pre-fills form fields, calculates fees, proposes an appointment slot | Eligibility result → draft application object | `calculate_fee`, `find_appointment_slot`, `prefill_application` |
 | **4. Validation & Safety Agent** | Runs deterministic checks (schema, business rules, duplicate-application check) and prepares the case for human approval | Draft application → validated application or rejection reasons | `validate_schema`, `check_duplicate_application` |
 
-**High-impact action requiring human approval:** final submission of the completed application into the officer's queue (this could commit fee charges or reserve a limited appointment slot) — an authorized Verifying Officer must approve, reject, or request revision before it's marked accepted.
+**High-impact action requiring human approval:** final submission of the completed application into the officer's queue (this could commit fee charges or reserve a limited appointment slot) - an authorized Verifying Officer must approve, reject, or request revision before it's marked accepted.
 
-**Persisted workflow state:** workflow ID, objective, plan, each agent's output, tool call results, validation results, approval decision, final outcome — stored in a `WorkflowExecutions` (or similar) PostgreSQL table, not in hidden reasoning.
+**Persisted workflow state:** workflow ID, objective, plan, each agent's output, tool call results, validation results, approval decision, final outcome - stored in a `WorkflowExecutions` (or similar) PostgreSQL table, not in hidden reasoning.
 
-**Safe failure example:** if the citizen's query doesn't match any known service, or eligibility fails, the agent returns a clear "no matching procedure" or "not eligible — missing X" result rather than guessing.
+**Safe failure example:** if the citizen's query doesn't match any known service, or eligibility fails, the agent returns a clear "no matching procedure" or "not eligible - missing X" result rather than guessing.
 
 ### Agentic AI Service — Folder Structure
 
-Deployed as its own service (see startup order in §5.1: DB → API → **Agentic AI service** → React → Flutter). Scaffolding only at this stage — implementation language/framework is finalized in the ADR (§5.2, decision 3) before any code is written.
+Deployed as its own service (see startup order in §5.1: DB → API → **Agentic AI service** → React → Flutter). Scaffolding only at this stage - implementation language/framework is finalized in the ADR (§5.2, decision 3) before any code is written.
 
 ```
 agentic-ai/
@@ -92,7 +92,7 @@ agentic-ai/
     └── unit/
 ```
 
-Each `agents/*` and `tools/*` folder currently holds only a `README.md` placeholder describing its responsibility — no implementation yet (see Week 4 in §4).
+Each `agents/*` and `tools/*` folder currently holds only a `README.md` placeholder describing its responsibility - no implementation yet (see Week 4 in §4).
 
 ---
 
@@ -107,7 +107,7 @@ Each `agents/*` and `tools/*` folder currently holds only a `README.md` placehol
 6. Shared status update     → citizen's Flutter app shows updated status in real time
 ```
 
-This single path is your **minimum acceptance workflow** — get it airtight before polishing anything else.
+This single path is your **minimum acceptance workflow** - get it airtight before polishing anything else.
 
 ---
 
@@ -125,7 +125,7 @@ This single path is your **minimum acceptance workflow** — get it airtight bef
 | **8** | 18–24 Sep | Deployment (API, DB, React live; Flutter APK); write all documentation | Live URLs, Swagger URL, APK, README, ADRs, reports drafted |
 | **9** | 25–30 Sep | Freeze features, rehearse demo, finalize individual reports, record demo video, submit | Consolidated PDF, demo video, final submission by leader |
 
-**Rule of thumb:** don't start polishing UI until the Week 5 end-to-end workflow works — that single path is worth the most marks (Integrated Architecture criterion, 10 marks; Agentic AI Contribution, 12 marks each).
+**Rule of thumb:** don't start polishing UI until the Week 5 end-to-end workflow works - that single path is worth the most marks (Integrated Architecture criterion, 10 marks; Agentic AI Contribution, 12 marks each).
 
 ---
 
@@ -145,9 +145,9 @@ Everything below goes into **one consolidated PDF**, named `SE3090_GroupNumber.p
 
 ### 5.2 Architecture Decision Record (ADR) — 3 to 6 decisions, one page each
 Minimum required decisions:
-1. React state-management approach (e.g. Context API vs Redux Toolkit) — for officer dashboard
-2. Flutter state-management approach — for citizen app
-3. Agentic AI framework & orchestration method (e.g. LangGraph) — why it fits a 4-agent plan/approve pattern
+1. React state-management approach (e.g. Context API vs Redux Toolkit) - for officer dashboard
+2. Flutter state-management approach - for citizen app
+3. Agentic AI framework & orchestration method (e.g. LangGraph) - why it fits a 4-agent plan/approve pattern
 4. Database schema strategy for agent workflow state (e.g. JSONB column vs normalized tables for plan/steps)
 5. Cloud deployment platform choice
 
