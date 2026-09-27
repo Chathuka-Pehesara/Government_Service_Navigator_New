@@ -185,6 +185,26 @@ Default route (`/`) redirects to `/officer/login`. Key routes:
 | Admin | `/admin/dashboard`, `/admin/manage-officers`, `/admin/audit-logs`, `/admin/system-settings` | |
 | Admin | `/admin/services`, `/admin/services/rules`, `/admin/services/config`, `/admin/services/simulator` | Service Catalog manager, eligibility rule builder, service configuration tabs, eligibility simulator |
 
+### Install the desktop app (Windows)
+
+Government staff can install the officer/admin dashboard as a Windows desktop app with a single command. It downloads the latest installer from [GitHub Releases](https://github.com/Goverment-Service/Government_Service_Navigator/releases) and installs it silently for the current user (no admin rights needed). Running the same command again updates to the newest version.
+
+**PowerShell:**
+
+```powershell
+irm https://raw.githubusercontent.com/Goverment-Service/Government_Service_Navigator/main/install/install.ps1 | iex
+```
+
+**CMD:**
+
+```cmd
+powershell -NoProfile -ExecutionPolicy Bypass -Command "irm https://raw.githubusercontent.com/Goverment-Service/Government_Service_Navigator/main/install/install.ps1 | iex"
+```
+
+After installing, open **Government Service Navigator** from the Start menu.
+
+> Releases are published by the `Build Windows App` workflow when a version tag is pushed (e.g. `git tag v1.0.0 && git push origin v1.0.0`). The installer is not code-signed yet, so Windows SmartScreen may show a warning.
+
 ---
 
 ## Mobile Setup (Flutter Citizen App)
