@@ -1,6 +1,6 @@
 # ADR-0006: Application Templates link to a Service Catalog entry via an optional FK
 
-**Status:** Accepted
+**Status:** Accepted, amended 2026-09-27 (see Update)
 **Date:** 2026-09-15
 
 ## Context
@@ -22,3 +22,13 @@ Option 2. `Template.ServiceProcedureId` is `int?`, configured in `AppDbContext.O
 - A service being deleted (`DELETE /api/services/{id}`, which is a soft "retire," not a hard delete — see `docs/api.md`) doesn't orphan or cascade-delete any templates that referenced it; they just lose the link and stop showing reference info.
 - The link is purely descriptive today — nothing enforces that a template's *fields* actually match its linked service's document requirements, and nothing prevents linking a template to a service outside the officer's own department (the dropdown is scoped to the officer's department per `docs/adr/0004-client-side-department-scoping.md`, but that's a client-side UI convenience, not a constraint the backend enforces).
 - `GetAllTemplatesAsync`/`GetTemplateByIdAsync` now `.Include(t => t.ServiceProcedure)`, so every template list/detail response carries the full linked service (including its rules/documents/fees) even when the caller only needed the template's own fields — acceptable at current data volumes, worth revisiting (e.g. a lighter summary DTO) if the catalog or template count grows significantly.
+
+The link is **no longer purely descriptive**. It's now how a citizen's form is found:
+- `GET /api/applications/form/{serviceProcedureId}` serves the active template linked to that service.
+- `submit` rejects a `templateId` that isn't linked to the submitted service.
+
+Templates also gained `Department`, `StageOrder` and `StageDescription`, which make each linked template one stage of a multi-department workflow (`docs/adr/0009-multi-stage-department-workflow.md`). The FK stays nullable, but in practice:
+
+- An **unlinked** template is invisible to citizens. It's only usable as a draft in the builder.
+- Retiring a service doesn't touch its templates, but the citizen endpoints already `404` for retired services.
+- Deleting a service (not possible through the API, since `DELETE` is a soft retire) would `SetNull` the link and strand any in-flight applications, whose later stages are looked up by `ServiceProcedureId` + `StageOrder`.

@@ -1,6 +1,6 @@
 # ADR-0004: Department scoping is enforced client-side, not server-side
 
-**Status:** Accepted (with a known, documented security gap — see Consequences)
+**Status:** Partially superseded 2026-09-27 (see Update) — gap remains for admin, catalog, template and agent endpoints
 **Date:** 2026-09-15
 
 ## Context
@@ -22,3 +22,16 @@ What's actually implemented is Option 3, arrived at incrementally rather than ch
 - **This is a real security gap, not just a UX nicety.** `ServicesController`, `TemplateController`, and most of `AdminController` have no `[Authorize]` attribute at all (see `docs/adr/0001-jwt-auth-with-revocation-table.md` and `docs/api.md` for the full picture) — so department scoping being client-side is compounded by there being no authentication requirement to bypass in the first place. Anyone who can reach the API (not just a logged-in Department Admin poking at another department through dev tools) can call `GET /api/services` or `GET /api/admin/officers` directly and get every department's data, fully unfiltered. The department-scoped UI only stops a well-behaved browser session from *displaying* another department's data; it enforces nothing.
 - Fixing this properly means: (a) adding `[Authorize]` to `AdminController`, `ServicesController`, and `TemplateController`; (b) adding a `Department` (or role) claim check server-side in `AdminService`/`ServiceCatalogService` for every department-sensitive query, not just the one that already accepts a `department` query param. Neither is done yet — this ADR exists specifically to make that gap visible rather than let "the dropdown is scoped now" be mistaken for "the data is protected now."
 - Until fixed, treat department scoping in this app as a **display convenience for legitimate users**, not an access-control boundary.
+
+## Partially superseded
+
+Server-side scoping (Option 1) is now implemented for the case-handling endpoints, driven by the `department` and `role` claims in the officer's JWT:
+
+- `GET /api/verification/tasks/pending` and `tasks/verified` filter to the caller's department (`VerificationService.GetPendingTasksAsync(deptScope)`). `GET tasks/{id}` returns `403` for another department's task.
+- `GET /api/payments/pending-slips` and `department-payments` filter by the submission's `CurrentDepartment`. `POST /api/payments/{id}/verify` and `PUT /api/payments/{id}/status` return `403` across departments.
+- These controllers also enforce role lists (`[Authorize(Roles = ...)]`), so a citizen token can no longer read the officer queue.
+- A role of `Admin` or containing `System Admin` bypasses the department filter. So does a token with **no** `department` claim, which means any officer row with an empty `Department` sees every department.
+
+**Still client-side only:** everything this ADR originally described — `AdminController`, `ServicesController` and `TemplateController`. They have no `[Authorize]` at all, so the original security gap stands for officer management, the service catalog and templates. The agent and `RagSetup` endpoints added since are in the same state. The remediation steps under Consequences still apply to them.
+
+Department identity is a free-form string, compared by exact match in list queries and case-insensitively in single-item checks (`Officer.Department` vs `Template.Department` / `ApplicationSubmission.CurrentDepartment`). A department renamed in one place but not the other silently drops its applications out of that department's queue.
