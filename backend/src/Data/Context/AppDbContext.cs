@@ -36,10 +36,18 @@ namespace Government_Service_Navigator.Backend.Data.Context
         public DbSet<SubmissionDocument> SubmissionDocuments { get; set; }
         public DbSet<PaymentReceipt> PaymentReceipts { get; set; }
         public DbSet<CitizenNotification> CitizenNotifications { get; set; }
+        public DbSet<Department> Departments { get; set; }
     
         protected override void OnModelCreating(ModelBuilder modelBuilder)
         {
             base.OnModelCreating(modelBuilder);
+
+            modelBuilder.Entity<Department>(entity =>
+            {
+                entity.HasKey(e => e.Id);
+                entity.HasIndex(e => e.DepartmentCode).IsUnique();
+                entity.HasIndex(e => e.Name).IsUnique();
+            });
 
             modelBuilder.Entity<ServiceProcedure>()
                 .HasIndex(s => s.ServiceId)
