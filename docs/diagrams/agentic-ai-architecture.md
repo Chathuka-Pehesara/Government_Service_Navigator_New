@@ -183,7 +183,7 @@ sequenceDiagram
     participant A2 as Agent 2
     participant A3 as Agent 3
     participant DB as App DB
-    actor Off as Verifying Officer
+    actor VO as Verifying Officer
 
     Cit->>API: POST /api/IntakeAgent/ask
     API->>A1: GeneratePlanAsync
@@ -198,7 +198,7 @@ sequenceDiagram
         API->>DB: submission, VerificationTask, ComplianceChecks
     end
 
-    Off->>API: POST /api/verification/tasks/{id}/agent-draft
+    VO->>API: POST /api/verification/tasks/{id}/agent-draft
     API->>DS: GenerateDraftAsync(applicationId)
     DS->>DB: submission answers, uploads, User.FullName
     DS->>DS: CitizenProfile (age from NIC, income, citizenship)
@@ -209,7 +209,7 @@ sequenceDiagram
     DS->>A4: ValidateAndEnqueueAsync(draft) — re-check
     A4-->>DS: ValidationResult
     DS->>DB: upsert AgentDraft
-    DS-->>Off: AgentDraftView
+    DS-->>VO: AgentDraftView
 ```
 
 At submit time, Agent 4 validates a draft built directly from the citizen's form answers, without running Agents 2 and 3 first. Agents 2 and 3 run later, and only when the officer asks. So the pipeline's order at runtime is 1 → 4 → (officer) → 2 → 3 → 4, not 1 → 2 → 3 → 4. The `/orchestrate` endpoints run individual stages in the planned order for demos and evaluation.

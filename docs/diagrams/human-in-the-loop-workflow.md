@@ -72,7 +72,7 @@ The dotted edge marks a real behaviour: when a slip is uploaded at submit, the v
 ```mermaid
 sequenceDiagram
     autonumber
-    actor Off as Verifying Officer (React)
+    actor VO as Verifying Officer (React)
     participant WS as VerificationWorkspace.tsx
     participant API as VerificationController
     participant DS as ApplicationDraftingService
@@ -80,7 +80,7 @@ sequenceDiagram
     participant DB as App DB
     actor Cit as Citizen
 
-    Off->>WS: open task from Pending Reviews
+    VO->>WS: open task from Pending Reviews
     WS->>API: GET tasks/{id}
     API->>API: role in OfficerRoles, department matches
     API-->>WS: answers, documents metadata, payment summary
@@ -93,17 +93,17 @@ sequenceDiagram
         DS->>DB: upsert AgentDraft
     end
     API-->>WS: AgentDraftView
-    WS-->>Off: AgentDraftPanel (differences from citizen answers flagged)
-    Off->>API: GET documents/{docId}/content
-    API-->>Off: file inline (nosniff)
+    WS-->>VO: AgentDraftPanel (differences from citizen answers flagged)
+    VO->>API: GET documents/{docId}/content
+    API-->>VO: file inline (nosniff)
 
     alt Approve, more stages remain
-        Off->>API: PUT tasks/{id}/approve-stage { notes }
+        VO->>API: PUT tasks/{id}/approve-stage { notes }
         API->>DB: check latest Payment is Paid (if stage has fee)
         API->>DB: advance stage, move department, AuditLog
         API-->>Cit: email "Stage N approved"
     else Approve (final) / Reject / Revise
-        Off->>API: PUT tasks/{id}/decision { status, comments, rejectionReasonId }
+        VO->>API: PUT tasks/{id}/decision { status, comments, rejectionReasonId }
         API->>DB: payment lock (Approve only)
         API->>DB: task status + OfficerReview + AuditLog (one transaction)
     end

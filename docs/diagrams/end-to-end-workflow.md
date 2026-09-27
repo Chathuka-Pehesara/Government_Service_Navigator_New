@@ -87,7 +87,7 @@ sequenceDiagram
     participant DB as PostgreSQL
     participant VDB as Vector DB
     actor Fin as Finance Officer (React)
-    actor Off as Verifying Officer (React)
+    actor VO as Verifying Officer (React)
 
     Note over Cit,API: 1. Discover
     Cit->>API: POST /api/auth/login
@@ -131,14 +131,14 @@ sequenceDiagram
     API->>DB: Payment Paid + AuditLog
     API-->>Cit: payment status email (SMTP)
 
-    Note over Off,DB: 4. Review (human in the loop)
-    Off->>API: GET /api/verification/tasks/pending (dept scoped)
-    Off->>API: GET /api/verification/tasks/{id}
-    Off->>API: POST /api/verification/tasks/{id}/agent-draft
+    Note over VO,DB: 4. Review (human in the loop)
+    VO->>API: GET /api/verification/tasks/pending (dept scoped)
+    VO->>API: GET /api/verification/tasks/{id}
+    VO->>API: POST /api/verification/tasks/{id}/agent-draft
     API->>AG: Agent 2 then Agent 3 (then Agent 4 re-check)
     AG->>DB: AgentDraft
-    API-->>Off: eligibility, prefill, fee, slot, tool calls
-    Off->>API: PUT /api/verification/tasks/{id}/decision { status }
+    API-->>VO: eligibility, prefill, fee, slot, tool calls
+    VO->>API: PUT /api/verification/tasks/{id}/decision { status }
     API->>API: payment lock (stage fee must be Paid)
     API->>DB: task status + OfficerReview + AuditLog
 
