@@ -1,8 +1,8 @@
 import '@carbon/styles/css/styles.css';
 import { useState, useEffect } from "react";
 import CurrentUserBadge from "../components/CurrentUserBadge";
-import { getStoredUser, getAdminOverviewHref, canManageServices } from "../utils/currentUser";
-import { getDepartmentSlug } from "../constants/departments";
+import { getStoredUser, getAdminOverviewHref, isDeptAdmin, isSystemAdmin } from "../utils/currentUser";
+import { getDepartmentSlug, DEPARTMENTS } from "../constants/departments";
 import {
   Header,
   HeaderContainer,
@@ -55,7 +55,11 @@ interface CollectionSlot {
   startTime: string;
   endTime: string;
   maxCapacity: number;
+  bookedCount?: number;
+  remainingCapacity?: number;
   isActive: boolean;
+  departmentName?: string;
+  departmentId?: number;
 }
 
 const DAY_MAP: Record<number, string> = {
@@ -70,32 +74,58 @@ const DAY_MAP: Record<number, string> = {
 const headers = [
   { key: "day", header: "Day of Week" },
   { key: "timeWindow", header: "Time Window" },
+  { key: "department", header: "Department" },
   { key: "capacity", header: "Max Capacity" },
+  { key: "booked", header: "Booked" },
+  { key: "remaining", header: "Remaining" },
   { key: "status", header: "Status" },
   { key: "actions", header: "Actions" },
 ];
 
+const bookingHeaders = [
+  { key: "confirmationCode", header: "Booking Ref" },
+  { key: "applicationCode", header: "Application Ref" },
+  { key: "citizenNic", header: "Citizen NIC" },
+  { key: "serviceName", header: "Service" },
+  { key: "departmentName", header: "Department" },
+  { key: "bookedSlotTime", header: "Booked Date & Time" },
+  { key: "preferredTimes", header: "Citizen Input (Free Style)" },
+  { key: "status", header: "Status" },
+];
+
 export default function ManageCollectionSlots() {
   const [currentUser] = useState(getStoredUser);
-  const isSysAdmin = canManageServices(currentUser);
+  const isDepartmentAdmin = isDeptAdmin(currentUser);
+  const isSysAdmin = isSystemAdmin(currentUser);
   const deptSlug = currentUser?.department ? getDepartmentSlug(currentUser.department) : null;
   const [overviewHref] = useState(() => getAdminOverviewHref(currentUser));
 
+  // If department admin, lock to their department. If system admin, default to "All" or their choice.
+  const [selectedDeptFilter, setSelectedDeptFilter] = useState<string>(
+    isDepartmentAdmin && currentUser?.department ? currentUser.department : "All"
+  );
+
+  const [activeView, setActiveView] = useState<"slots" | "bookings">("slots");
   const [slots, setSlots] = useState<CollectionSlot[]>([]);
+  const [bookings, setBookings] = useState<any[]>([]);
   const [isModalOpen, setIsModalOpen] = useState(false);
   const [editingSlot, setEditingSlot] = useState<CollectionSlot | null>(null);
   const [notification, setNotification] = useState<{ kind: "success" | "error"; message: string } | null>(null);
 
   // Form State: Strictly typed as strings to prevent Carbon Select/TextInput crashes
+  const [slotDepartment, setSlotDepartment] = useState<string>(
+    currentUser?.department || DEPARTMENTS[0].label
+  );
   const [dayOfWeek, setDayOfWeek] = useState<string>("1");
   const [startTime, setStartTime] = useState<string>("09:00");
-  const [endTime, setEndTime] = useState<string>("17:00");
-  const [maxCapacity, setMaxCapacity] = useState<string>("5");
+  const [endTime, setEndTime] = useState<string>("11:30");
+  const [maxCapacity, setMaxCapacity] = useState<string>("15");
   const [isActive, setIsActive] = useState<boolean>(true);
 
   useEffect(() => {
     fetchSlots();
-  }, []);
+    fetchBookings();
+  }, [selectedDeptFilter]);
 
   const getHeaders = () => {
     const token = localStorage.getItem("officerToken"); 
@@ -119,7 +149,13 @@ export default function ManageCollectionSlots() {
 
   const fetchSlots = async () => {
     try {
-      const res = await fetch("http://localhost:5119/api/admin/collection-slots", { headers: getHeaders() });
+      const deptQuery = isDepartmentAdmin && currentUser?.department
+        ? `?department=${encodeURIComponent(currentUser.department)}`
+        : selectedDeptFilter !== "All"
+          ? `?department=${encodeURIComponent(selectedDeptFilter)}`
+          : "";
+
+      const res = await fetch(`http://localhost:5119/api/admin/collection-slots${deptQuery}`, { headers: getHeaders() });
       if (!res.ok) {
         throw new Error(await parseSafeError(res, "Failed to load collection slots."));
       }
@@ -131,10 +167,29 @@ export default function ManageCollectionSlots() {
     }
   };
 
+  const fetchBookings = async () => {
+    try {
+      const deptQuery = isDepartmentAdmin && currentUser?.department
+        ? `?department=${encodeURIComponent(currentUser.department)}`
+        : selectedDeptFilter !== "All"
+          ? `?department=${encodeURIComponent(selectedDeptFilter)}`
+          : "";
+
+      const res = await fetch(`http://localhost:5119/api/admin/collection-slots/bookings${deptQuery}`, { headers: getHeaders() });
+      if (res.ok) {
+        const data = await res.json();
+        setBookings(data);
+      }
+    } catch (err: any) {
+      console.error("Failed to load collection bookings", err);
+    }
+  };
+
   const handleOpenModal = (slot?: CollectionSlot) => {
     setNotification(null);
     if (slot) {
       setEditingSlot(slot);
+      setSlotDepartment(slot.departmentName || currentUser?.department || DEPARTMENTS[0].label);
       setDayOfWeek(slot.dayOfWeek.toString());
       setStartTime(slot.startTime.substring(0, 5));
       setEndTime(slot.endTime.substring(0, 5));
@@ -142,10 +197,17 @@ export default function ManageCollectionSlots() {
       setIsActive(slot.isActive);
     } else {
       setEditingSlot(null);
+      setSlotDepartment(
+        isDepartmentAdmin && currentUser?.department
+          ? currentUser.department
+          : selectedDeptFilter !== "All"
+            ? selectedDeptFilter
+            : DEPARTMENTS[0].label
+      );
       setDayOfWeek("1");
       setStartTime("09:00");
-      setEndTime("17:00");
-      setMaxCapacity("5");
+      setEndTime("11:30");
+      setMaxCapacity("15");
       setIsActive(true);
     }
     setIsModalOpen(true);
@@ -153,6 +215,7 @@ export default function ManageCollectionSlots() {
 
   const handleSave = async () => {
     const payload = {
+      departmentName: slotDepartment,
       dayOfWeek: Number(dayOfWeek),
       startTime: `${startTime}:00`,
       endTime: `${endTime}:00`,
@@ -176,7 +239,7 @@ export default function ManageCollectionSlots() {
         throw new Error(await parseSafeError(res, "Failed to save slot."));
       }
 
-      setNotification({ kind: "success", message: `Slot successfully ${editingSlot ? "updated" : "created"}.` });
+      setNotification({ kind: "success", message: `Slot successfully ${editingSlot ? "updated" : "created"} for ${slotDepartment}.` });
       setIsModalOpen(false);
       fetchSlots();
     } catch (err: any) {
@@ -222,12 +285,31 @@ export default function ManageCollectionSlots() {
     }
   };
 
-  const rows = slots.map((s) => ({
-    id: s.id.toString(),
-    day: DAY_MAP[s.dayOfWeek],
-    timeWindow: `${s.startTime.substring(0, 5)} - ${s.endTime.substring(0, 5)}`,
-    capacity: s.maxCapacity.toString(),
-    status: s.isActive ? "Active" : "Inactive",
+  const rows = slots.map((s) => {
+    const booked = s.bookedCount ?? 0;
+    const remaining = s.remainingCapacity !== undefined ? s.remainingCapacity : Math.max(0, s.maxCapacity - booked);
+    return {
+      id: s.id.toString(),
+      day: DAY_MAP[s.dayOfWeek],
+      timeWindow: `${s.startTime.substring(0, 5)} - ${s.endTime.substring(0, 5)}`,
+      department: s.departmentName || "General",
+      capacity: s.maxCapacity.toString(),
+      booked: `${booked} / ${s.maxCapacity}`,
+      remaining: remaining.toString(),
+      status: s.isActive ? "Active" : "Inactive",
+    };
+  });
+
+  const bookingRows = bookings.map((b, idx) => ({
+    id: b.id ? b.id.toString() : idx.toString(),
+    confirmationCode: b.confirmationCode || "SL-APT-0000",
+    applicationCode: b.applicationCode || "APP-0000",
+    citizenNic: b.citizenNic || "CITIZEN",
+    serviceName: b.serviceName || "Government Service",
+    departmentName: b.departmentName || "General",
+    bookedSlotTime: b.bookedSlotTime || "Confirmed Slot",
+    preferredTimes: b.preferredTimes || "Natural Language Request",
+    status: b.status || "Confirmed",
   }));
 
   return (
@@ -242,7 +324,7 @@ export default function ManageCollectionSlots() {
               isCollapsible
             />
             <HeaderName href="#" prefix="GSN">
-              Registry Admin
+              {isDepartmentAdmin && currentUser?.department ? `${currentUser.department} Admin` : "Registry Admin"}
             </HeaderName>
 
             <HeaderGlobalBar>
@@ -274,6 +356,13 @@ export default function ManageCollectionSlots() {
                       href={`/admin/${deptSlug}/dashboard?view=financial`}
                     >
                       Financial Verifications
+                    </SideNavLink>
+                    <SideNavLink 
+                      renderIcon={Calendar} 
+                      href="/admin/collection-slots" 
+                      isActive
+                    >
+                      Collection Slots
                     </SideNavLink>
                   </>
                 )}
@@ -312,16 +401,13 @@ export default function ManageCollectionSlots() {
                     >
                       Collection Slots
                     </SideNavLink>
+                    <SideNavLink
+                      renderIcon={Categories}
+                      href="/admin/departments"
+                    >
+                      Department Management
+                    </SideNavLink>
                   </>
-                )}
-
-                {isSysAdmin && (
-                  <SideNavLink
-                    renderIcon={Categories}
-                    href="/admin/departments"
-                  >
-                    Department Management
-                  </SideNavLink>
                 )}
 
                 <SideNavLink
@@ -356,16 +442,73 @@ export default function ManageCollectionSlots() {
           </Header>
 
           <main className="mt-12 min-h-screen p-4 min-[66rem]:p-8 ml-0 min-[66rem]:ml-64" style={{ backgroundColor: '#f4f4f4' }}>
-            <div style={{ marginBottom: "1.5rem", display: "flex", justifyContent: "space-between", alignItems: "center" }}>
+            <div style={{ marginBottom: "1.5rem", display: "flex", justifyContent: "space-between", alignItems: "flex-start", flexWrap: "wrap", gap: "1rem" }}>
               <div>
-                <h1 style={{ fontSize: "2rem", fontWeight: 400, color: "#161616" }}>Collection Time Slots</h1>
+                <h1 style={{ fontSize: "2rem", fontWeight: 400, color: "#161616" }}>
+                  {activeView === "slots" 
+                    ? (isDepartmentAdmin && currentUser?.department ? `${currentUser.department} Collection Slots` : "Collection Time Slots")
+                    : (isDepartmentAdmin && currentUser?.department ? `${currentUser.department} Received Appointments (Agent 3)` : "Booked Appointments Received (Agent 3)")
+                  }
+                </h1>
                 <p style={{ color: "#525252", marginTop: "0.5rem" }}>
-                  Create and manage available time slots for citizens to collect their documents in person.
+                  {activeView === "slots"
+                    ? "Manage unique departmental counter collection slots, capacities, and live bookings scheduled by Agent 3."
+                    : "Live collection appointments scheduled by Agent 3 for collection desks upon completing procedural stages."}
                 </p>
+
+                {/* View Toggles */}
+                <div style={{ display: "flex", gap: "10px", marginTop: "1rem" }}>
+                  <Button
+                    size="sm"
+                    kind={activeView === "slots" ? "primary" : "tertiary"}
+                    onClick={() => setActiveView("slots")}
+                  >
+                    Manage Slots ({slots.length})
+                  </Button>
+                  <Button
+                    size="sm"
+                    kind={activeView === "bookings" ? "primary" : "tertiary"}
+                    onClick={() => {
+                      setActiveView("bookings");
+                      fetchBookings();
+                    }}
+                  >
+                    Appointments Received ({bookings.length})
+                  </Button>
+                </div>
               </div>
-              <Button renderIcon={Add} onClick={() => handleOpenModal()}>
-                New Time Slot
-              </Button>
+
+              <div style={{ display: "flex", alignItems: "center", gap: "1rem" }}>
+                {/* Department Filter for System Admins */}
+                {isSysAdmin && (
+                  <div style={{ width: "260px" }}>
+                    <Select
+                      id="department-filter"
+                      labelText="Filter by Department"
+                      size="sm"
+                      value={selectedDeptFilter}
+                      onChange={(e) => setSelectedDeptFilter(e.target.value)}
+                    >
+                      <SelectItem value="All" text="All Departments" />
+                      {DEPARTMENTS.map((dept) => (
+                        <SelectItem key={dept.slug} value={dept.label} text={dept.label} />
+                      ))}
+                    </Select>
+                  </div>
+                )}
+
+                {isDepartmentAdmin && currentUser?.department && (
+                  <Tag type="blue" size="md" style={{ padding: "0.5rem 1rem", fontSize: "0.875rem" }}>
+                    Department Scope: {currentUser.department}
+                  </Tag>
+                )}
+
+                {activeView === "slots" && (
+                  <Button renderIcon={Add} onClick={() => handleOpenModal()}>
+                    New Time Slot
+                  </Button>
+                )}
+              </div>
             </div>
 
             {notification && (
@@ -378,82 +521,178 @@ export default function ManageCollectionSlots() {
               />
             )}
 
-            <DataTable rows={rows} headers={headers}>
-              {({ rows: tableRows, headers: tableHeaders, getTableProps, getHeaderProps, getRowProps }) => (
-                <TableContainer>
-                  <Table {...getTableProps()}>
-                    <TableHead>
-                      <TableRow>
-                        {tableHeaders.map((header) => (
-                          <TableHeader {...getHeaderProps({ header })} key={header.key}>
-                            {header.header}
-                          </TableHeader>
-                        ))}
-                      </TableRow>
-                    </TableHead>
-                    <TableBody>
-                      {tableRows.length === 0 ? (
+            {activeView === "slots" ? (
+              <DataTable rows={rows} headers={headers}>
+                {({ rows: tableRows, headers: tableHeaders, getTableProps, getHeaderProps, getRowProps }) => (
+                  <TableContainer>
+                    <Table {...getTableProps()}>
+                      <TableHead>
                         <TableRow>
-                          <TableCell colSpan={tableHeaders.length} style={{ textAlign: "center", padding: "2rem" }}>
-                            No time slots configured.
-                          </TableCell>
+                          {tableHeaders.map((header) => (
+                            <TableHeader {...getHeaderProps({ header })} key={header.key}>
+                              {header.header}
+                            </TableHeader>
+                          ))}
                         </TableRow>
-                      ) : (
-                        tableRows.map((row) => (
-                          <TableRow {...getRowProps({ row })} key={row.id}>
-                            {row.cells.map((cell) => {
-                              if (cell.info.header === "status") {
-                                const isActive = cell.value === "Active";
-                                return (
-                                  <TableCell key={cell.id}>
-                                    <Tag type={isActive ? "green" : "red"}>{cell.value}</Tag>
-                                  </TableCell>
-                                );
-                              }
-                              if (cell.info.header === "actions") {
-                                return (
-                                  <TableCell key={cell.id} style={{ padding: "0.5rem", whiteSpace: "nowrap" }}>
-                                    <Button
-                                      size="sm"
-                                      kind="ghost"
-                                      renderIcon={Edit}
-                                      iconDescription="Edit"
-                                      hasIconOnly
-                                      onClick={() => handleOpenModal(slots.find((s) => s.id.toString() === row.id))}
-                                    />
-                                    <Button
-                                      size="sm"
-                                      kind="danger--ghost"
-                                      renderIcon={TrashCan}
-                                      iconDescription="Delete"
-                                      hasIconOnly
-                                      onClick={() => handleDelete(Number(row.id))}
-                                    />
-                                  </TableCell>
-                                );
-                              }
-                              return <TableCell key={cell.id}>{cell.value}</TableCell>;
-                            })}
+                      </TableHead>
+                      <TableBody>
+                        {tableRows.length === 0 ? (
+                          <TableRow>
+                            <TableCell colSpan={tableHeaders.length} style={{ textAlign: "center", padding: "2rem" }}>
+                              No time slots configured for this department. Click "New Time Slot" to create one.
+                            </TableCell>
                           </TableRow>
-                        ))
-                      )}
-                    </TableBody>
-                  </Table>
-                </TableContainer>
-              )}
-            </DataTable>
+                        ) : (
+                          tableRows.map((row) => (
+                            <TableRow {...getRowProps({ row })} key={row.id}>
+                              {row.cells.map((cell) => {
+                                if (cell.info.header === "department") {
+                                  return (
+                                    <TableCell key={cell.id}>
+                                      <Tag type="teal" style={{ fontWeight: 500 }}>{cell.value}</Tag>
+                                    </TableCell>
+                                  );
+                                }
+                                if (cell.info.header === "remaining") {
+                                  const rem = parseInt(cell.value, 10);
+                                  return (
+                                    <TableCell key={cell.id}>
+                                      <Tag type={rem > 0 ? "green" : "red"}>
+                                        {rem > 0 ? `${rem} spots available` : "Full"}
+                                      </Tag>
+                                    </TableCell>
+                                  );
+                                }
+                                if (cell.info.header === "status") {
+                                  const isActive = cell.value === "Active";
+                                  return (
+                                    <TableCell key={cell.id}>
+                                      <Tag type={isActive ? "green" : "red"}>{cell.value}</Tag>
+                                    </TableCell>
+                                  );
+                                }
+                                if (cell.info.header === "actions") {
+                                  return (
+                                    <TableCell key={cell.id} style={{ padding: "0.5rem", whiteSpace: "nowrap" }}>
+                                      <Button
+                                        size="sm"
+                                        kind="ghost"
+                                        renderIcon={Edit}
+                                        iconDescription="Edit"
+                                        hasIconOnly
+                                        onClick={() => handleOpenModal(slots.find((s) => s.id.toString() === row.id))}
+                                      />
+                                      <Button
+                                        size="sm"
+                                        kind="danger--ghost"
+                                        renderIcon={TrashCan}
+                                        iconDescription="Delete"
+                                        hasIconOnly
+                                        onClick={() => handleDelete(Number(row.id))}
+                                      />
+                                    </TableCell>
+                                  );
+                                }
+                                return <TableCell key={cell.id}>{cell.value}</TableCell>;
+                              })}
+                            </TableRow>
+                          ))
+                        )}
+                      </TableBody>
+                    </Table>
+                  </TableContainer>
+                )}
+              </DataTable>
+            ) : (
+              <DataTable rows={bookingRows} headers={bookingHeaders}>
+                {({ rows: tableRows, headers: tableHeaders, getTableProps, getHeaderProps, getRowProps }) => (
+                  <TableContainer>
+                    <Table {...getTableProps()}>
+                      <TableHead>
+                        <TableRow>
+                          {tableHeaders.map((header) => (
+                            <TableHeader {...getHeaderProps({ header })} key={header.key}>
+                              {header.header}
+                            </TableHeader>
+                          ))}
+                        </TableRow>
+                      </TableHead>
+                      <TableBody>
+                        {tableRows.length === 0 ? (
+                          <TableRow>
+                            <TableCell colSpan={tableHeaders.length} style={{ textAlign: "center", padding: "2rem" }}>
+                              No appointments received yet for this department.
+                            </TableCell>
+                          </TableRow>
+                        ) : (
+                          tableRows.map((row) => (
+                            <TableRow {...getRowProps({ row })} key={row.id}>
+                              {row.cells.map((cell) => {
+                                if (cell.info.header === "departmentName") {
+                                  return (
+                                    <TableCell key={cell.id}>
+                                      <Tag type="teal">{cell.value}</Tag>
+                                    </TableCell>
+                                  );
+                                }
+                                if (cell.info.header === "status") {
+                                  return (
+                                    <TableCell key={cell.id}>
+                                      <Tag type="green">{cell.value}</Tag>
+                                    </TableCell>
+                                  );
+                                }
+                                if (cell.info.header === "confirmationCode") {
+                                  return (
+                                    <TableCell key={cell.id}>
+                                      <Tag type="blue" style={{ fontWeight: 600 }}>{cell.value}</Tag>
+                                    </TableCell>
+                                  );
+                                }
+                                return <TableCell key={cell.id}>{cell.value}</TableCell>;
+                              })}
+                            </TableRow>
+                          ))
+                        )}
+                      </TableBody>
+                    </Table>
+                  </TableContainer>
+                )}
+              </DataTable>
+            )}
           </main>
           
           {/* Modal moved outside of <main> to prevent z-index clipping */}
           <Modal
             open={isModalOpen}
-            modalHeading={editingSlot ? "Edit Time Slot" : "Create New Time Slot"}
+            modalHeading={editingSlot ? "Edit Collection Slot" : "Create New Department Collection Slot"}
             primaryButtonText={editingSlot ? "Save Changes" : "Create Slot"}
             secondaryButtonText="Cancel"
             onRequestSubmit={handleSave}
             onRequestClose={() => setIsModalOpen(false)}
           >
             <div style={{ display: "flex", flexDirection: "column", gap: "1rem", paddingTop: "1rem" }}>
+              {isDepartmentAdmin && currentUser?.department ? (
+                <TextInput
+                  id="department-readonly"
+                  labelText="Department"
+                  value={currentUser.department}
+                  disabled
+                  helperText="Department admins manage collection slots for their assigned department only."
+                />
+              ) : (
+                <Select
+                  id="modal-dept-select"
+                  labelText="Assign to Department"
+                  value={slotDepartment}
+                  onChange={(e) => setSlotDepartment(e.target.value)}
+                >
+                  {DEPARTMENTS.map((dept) => (
+                    <SelectItem key={dept.slug} value={dept.label} text={dept.label} />
+                  ))}
+                </Select>
+              )}
+
               <Select
                 id="day-select"
                 labelText="Day of Week"
@@ -488,8 +727,8 @@ export default function ManageCollectionSlots() {
                 id="max-capacity"
                 type="number"
                 min={1}
-                labelText="Maximum Capacity"
-                helperText="Number of citizens allowed to book this specific time window."
+                labelText="Maximum Counter Capacity"
+                helperText="Maximum number of citizen collection appointments permitted for this counter slot."
                 value={maxCapacity}
                 onChange={(e) => setMaxCapacity(e.target.value)}
               />

@@ -38,7 +38,6 @@ import {
 } from "@carbon/icons-react";
 import FinanceShell from "./finance_shell";
 import {
-  loadPayments,
   PAYMENT_METHOD_LABELS,
   type Payment,
   type PaymentMethod,
