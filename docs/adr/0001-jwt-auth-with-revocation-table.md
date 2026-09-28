@@ -18,7 +18,18 @@ Option 3. `AuthController.Logout` is now `[Authorize]`-protected, reads the call
 
 ## Consequences
 
-- Every authenticated request now does one extra indexed lookup (`RevokedTokens` has a unique index on `Jti`) — negligible for this app's traffic, but it does mean auth is no longer fully stateless/cache-friendly.
-- Suspending an officer or resetting a password still doesn't revoke their *existing* tokens automatically — only an explicit logout does. A more complete fix would revoke all of a user's outstanding tokens on suspend/password-reset too; that's not implemented yet.
+- Every authenticated request now does one extra indexed lookup (`RevokedTokens` has a unique index on `Jti`) - negligible for this app's traffic, but it does mean auth is no longer fully stateless/cache-friendly.
+- Suspending an officer or resetting a password still doesn't revoke their *existing* tokens automatically - only an explicit logout does. A more complete fix would revoke all of a user's outstanding tokens on suspend/password-reset too; that's not implemented yet.
 - The frontend must actually send `Authorization: Bearer <token>` on the logout call for this to do anything. Historically, only 2 of ~16 logout call-sites did; all of them now do (see the `handleLogout` implementations across `web/src/Admin/**` and `web/src/Officer/**`).
-- This does not replace proper short-lived-token/refresh-token hygiene if the project grows past coursework scope — it's a targeted fix for "logout should actually mean something," not a general session-management redesign.
+- This does not replace proper short-lived-token/refresh-token hygiene if the project grows past coursework scope - it's a targeted fix for "logout should actually mean something," not a general session-management redesign.
+
+## Amended: the check no longer hits the database on every request
+
+At 1000+ daily users the extra lookup was no longer negligible: it was one Neon round trip (30-150 ms) added to every authenticated request. The check now goes through `Services/TokenRevocationStore.cs` (ADR-0013):
+
+- **With `REDIS_URL`:** logout writes `gsn:revoked:{jti}` to Redis with a TTL equal to the token's remaining lifetime, so Redis never needs pruning. Every request checks that key. If Redis is unreachable, the check falls back to the `RevokedTokens` table. On startup, unexpired rows from the table are copied into Redis so tokens revoked before Redis was enabled stay revoked.
+- **Without Redis:** "not revoked" answers are cached in memory for 30 s and "revoked" answers for 24 h. A logout on the same instance takes effect immediately; with several instances and no Redis, another instance can accept the token for up to 30 s.
+
+The `RevokedTokens` table is still written first on every logout and remains the durable record. An `ExpiresAt` index was added for the pruning query.
+
+The gap above still stands: suspending an officer or resetting a password does not revoke existing tokens.

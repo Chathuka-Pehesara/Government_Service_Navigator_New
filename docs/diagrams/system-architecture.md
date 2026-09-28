@@ -1,6 +1,6 @@
 # System Architecture
 
-Reflects what's actually running as of 2026-09-27. Every component in `docs/Government_Service_Navigator_Project_Plan.md` now exists in some form, including:
+Reflects what's actually running as of 2026-09-29. Every component in `docs/Government_Service_Navigator_Project_Plan.md` now exists in some form, including:
 - the four-agent workflow
 - citizen application submission (Component B)
 - payments, notifications and analytics
@@ -15,7 +15,10 @@ graph TB
     end
 
     subgraph Backend["ASP.NET Core API (.NET 10) - http://0.0.0.0:5119"]
-        JwtMw["JWT Bearer middleware<br/>+ RevokedTokens check"]
+        JwtMw["JWT Bearer middleware<br/>+ revocation check (Redis or memory)<br/>+ rate limiter, compression"]
+        Hub["SignalR hub /hubs/applications<br/>citizens by NIC, staff group"]
+        Interceptor["Change interceptor<br/>after commit: clear cache, then push"]
+        Cache["HybridCache<br/>catalog, citizen application lists"]
 
         subgraph Open["No [Authorize]"]
             Auth["Auth /api/auth"]
@@ -41,15 +44,19 @@ graph TB
 
         Embed["LocalEmbeddingService<br/>768-d hashed keywords, no external API"]
         Monitor["InstallmentMonitorService<br/>hourly hosted service"]
+        Repair["DataRepairService<br/>every 10 min"]
     end
 
     DB[("PostgreSQL - app DB<br/>Neon via DATABASE_URL, or local DB_*<br/>schema: migrations + idempotent SQL on startup<br/>uploaded files stored as bytea")]
     VDB[("PostgreSQL + pgvector - VectorDb<br/>KnowledgeChunks, HNSW cosine index")]
+    Redis[("Redis - optional (REDIS_URL)<br/>cache L2, revoked tokens,<br/>SignalR backplane")]
     Stripe["Stripe Checkout<br/>(polled, no webhook)"]
     SMTP["SMTP email"]
 
     Flutter -- "HTTP + JWT" --> Backend
     React -- "HTTP + JWT" --> Backend
+    Hub -. "WebSocket push:<br/>applicationsChanged / queueUpdated" .-> Flutter
+    Hub -. "queueUpdated" .-> React
 
     Apps -- "every submit" --> A4
     Verification -- "officer requests draft" --> A2
@@ -69,6 +76,13 @@ graph TB
     Payments --> Stripe
     Monitor --> DB
     Monitor --> SMTP
+    Repair --> DB
+    DB -- "SaveChanges" --> Interceptor
+    Interceptor --> Cache
+    Interceptor --> Hub
+    Cache --> Redis
+    JwtMw --> Redis
+    Hub -. "backplane" .-> Redis
     Verification -- "stage approved" --> SMTP
     Payments -- "status changed" --> SMTP
 ```
@@ -85,6 +99,20 @@ graph TB
 5. `approve-stage` moves the task to the next stage's department and emails the citizen, who submits the next form with `submit-stage`. After the last stage, the application is `Completed`.
 
 See `docs/adr/0009-multi-stage-department-workflow.md` for how stages are modelled.
+
+## Performance layer
+
+Added for 1000+ daily users (`docs/performance-and-redis.md`):
+
+- **Push, not polling.** Any `SaveChanges` that changes what a citizen or officer sees is picked up by an EF Core interceptor. After the commit it clears the affected cache entries and sends a SignalR message. Clients then refetch over REST. The mobile app keeps only a 30 s fallback poll, and only while it is in the foreground. See ADR-0012.
+- **Cache.** `HybridCache` holds the service catalog and each citizen's application list in process memory, and in Redis when `REDIS_URL` is set. See ADR-0013.
+- **Revocation check.** Redis, or a short in-memory cache, instead of a database lookup on every request.
+- **Bounded lists.** Growing lists are paged on the server; unpaged calls return at most 200 rows. See ADR-0014.
+- **Read-only GETs.** Data repairs that used to run inside GET endpoints run in `DataRepairService`.
+- **Protection.** A per-caller rate limit (default 120 requests/min) and Brotli/gzip compression.
+- **Web bundle.** Each page is lazy-loaded, so the first load is about 286 KB instead of 1.46 MB.
+
+With Redis configured, the API can run as several instances: cache, revocation and SignalR are shared. Without it, run a single instance.
 
 Detailed diagrams:
 - `docs/diagrams/end-to-end-workflow.md` - the full cross-platform path, with sequence diagrams
@@ -112,15 +140,17 @@ See `docs/api.md` for the per-endpoint breakdown and `docs/adr/0004-client-side-
 | Email | `SMTP_HOST`, `SMTP_PORT`, `SMTP_USER`, `SMTP_PASSWORD`, `SMTP_FROM_EMAIL`, `SMTP_FROM_NAME`, `SMTP_USE_SSL` | Best effort - failures don't fail the request |
 | Bank transfer details | `BANK_ACCOUNT_NAME`, `BANK_NAME`, `BANK_BRANCH`, `BANK_ACCOUNT_NUMBER` | Missing from `.env.example` |
 | Agent 4 | `ValidationSafetyConfig` singleton in `Program.cs` | Hardcoded: block duplicates, minimum age 16, adversarial filter on |
+| Redis | `REDIS_URL` | Optional. Empty = in-process cache, single instance. Keep it in the same region as the API; a distant Redis adds its round trip to every request |
+| DB pool | `DB_MAX_POOL_SIZE` | Default 50 per instance. Use Neon's pooled (`-pooler`) connection string |
+| Rate limit | `RATE_LIMIT_PER_MINUTE` | Default 120 per caller. Raise it for k6 load tests, where all virtual users share one token |
+| Web API base | `VITE_API_URL` (web build) | Used by `web/src/utils/api.ts` and the realtime bridge; older pages still hardcode `http://localhost:5119` |
 
 CORS allows any origin, header and method. HTTPS redirection is commented out.
 
 ## Client → API base URLs
 
-Neither client reads an environment variable for the API base URL:
-
-- **React:** `http://localhost:5119` is hardcoded - in `web/src/utils/api.ts` (`BASE_URL`), and as a literal in many page components.
-- **Flutter:** `mobile/lib/config/app_config.dart` picks one per platform: `http://10.0.2.2:5119/api` on the Android emulator, `http://localhost:5119/api` everywhere else. A physical device needs this file edited to the host's LAN IP.
+- **React:** `web/src/utils/api.ts` reads `VITE_API_URL` (falling back to `http://localhost:5119`), and so do the pages converted to TanStack Query and the realtime bridge. Many older page components still hardcode `http://localhost:5119` as a literal, so changing the variable alone does not move the whole dashboard yet.
+- **Flutter:** no environment variable. `mobile/lib/config/app_config.dart` picks one per platform: `http://10.0.2.2:5119/api` on the Android emulator, `http://localhost:5119/api` everywhere else. A physical device needs this file edited to the host's LAN IP. The realtime hub URL is derived from the same value.
 
 ## Build & delivery
 

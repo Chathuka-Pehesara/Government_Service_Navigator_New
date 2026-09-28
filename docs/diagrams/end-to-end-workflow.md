@@ -2,7 +2,7 @@
 
 This is the minimum acceptance workflow from `docs/Government_Service_Navigator_Project_Plan.md` §3: the citizen applies in the **Flutter** app, the **ASP.NET Core** API validates and stores the application in **PostgreSQL**, the **agents** plan, check, draft and validate, an **officer in the React dashboard** decides, and the citizen's app shows the new status.
 
-The steps below are the path the code actually takes as of 2026-09-27, with each hop mapped to its screen and endpoint. Related docs:
+The steps below are the path the code actually takes as of 2026-09-29, with each hop mapped to its screen and endpoint. Related docs:
 - `docs/api.md` for the request and response shapes
 - `docs/diagrams/agentic-ai-architecture.md` for the agent internals
 - `docs/diagrams/human-in-the-loop-workflow.md` for the review gate
@@ -194,12 +194,13 @@ The two fields are updated by different code paths:
 
 | Channel | Used for | Mechanism |
 |---|---|---|
-| Refetch on screen load / pull-to-refresh | Application status, payments, notifications | Riverpod providers (`myApplicationsProvider`, `notificationsProvider`) re-query the API |
-| Polling | Refund status | `refund_providers.dart` refreshes every 15 s |
+| SignalR push (`/hubs/applications`) | Application status, payments, installments, notifications, refunds (citizen); queue and audit lists (staff) | An EF Core interceptor sees the commit, clears the cache, and sends `applicationsChanged` / `refundUpdated` to the citizen or `queueUpdated` to staff. Clients refetch over REST (ADR-0012) |
+| Refetch on screen load / pull-to-refresh | Everything | Riverpod providers (`myApplicationsProvider`, `notificationsProvider`) and TanStack Query on the web re-query the API |
+| Fallback polling | Application list (30 s), open refund (60 s) | Only while the app is in the foreground; catches anything a dropped connection missed |
 | Email (SMTP) | Stage approved, payment status changed, installment reminder/cancellation | `NotificationService`, best effort |
 | In-app notifications | Installment reminders and cancellations only | `InstallmentMonitorService` writes `CitizenNotification` rows |
 
-There is no WebSocket, SignalR or push notification. "Real time" in the project plan means the next refetch shows the officer's decision, typically within seconds when the citizen reopens or refreshes the tab.
+An officer's decision normally reaches the citizen's open screen in about a second. The mobile app closes its socket in the background; on resume it refetches and reconnects. There are still no OS-level push notifications (FCM/APNs), so a citizen with the app closed only sees the change when they open it, or by email for the events above.
 
 ## Failure paths on the workflow
 
