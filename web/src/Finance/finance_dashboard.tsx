@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useState, useRef } from "react";
 import {
   Grid,
   Column,
@@ -251,6 +251,9 @@ export default function FinanceDashboard() {
   const [searchTerm, setSearchTerm] = useState("");
   const [selectedPayment, setSelectedPayment] = useState<Payment | null>(null);
   const [notes, setNotes] = useState("");
+  const notesRef = useRef("");
+  notesRef.current = notes;
+
   const [banner, setBanner] = useState<{
     kind: "success" | "error" | "info";
     message: string;
@@ -477,6 +480,7 @@ export default function FinanceDashboard() {
 
   async function handleSaveEditedStatus() {
     if (!selectedPayment) return;
+    const currentNotes = notesRef.current;
     const officerName = getDisplayName(getStoredUser());
     const backendStatus =
       editStatusValue === "Verified"
@@ -486,7 +490,7 @@ export default function FinanceDashboard() {
           : "PendingVerification";
 
     try {
-      await updatePaymentStatusApi(selectedPayment.id, backendStatus, notes);
+      await updatePaymentStatusApi(selectedPayment.id, backendStatus, currentNotes);
     } catch (err) {
       console.warn("Backend updatePaymentStatus API notice:", err);
     }
@@ -502,7 +506,7 @@ export default function FinanceDashboard() {
                 : undefined,
             verifiedByOfficerName:
               editStatusValue !== "Pending" ? officerName : undefined,
-            verificationNotes: notes,
+            verificationNotes: currentNotes,
           }
         : p,
     );
@@ -520,12 +524,13 @@ export default function FinanceDashboard() {
 
   async function handleDecision(decision: "Verified" | "Rejected") {
     if (!selectedPayment) return;
+    const currentNotes = notesRef.current;
     const officerName = getDisplayName(getStoredUser());
     const isApproved = decision === "Verified";
 
     // Call live backend endpoint
     try {
-      await verifyPaymentApi(selectedPayment.id, isApproved, notes);
+      await verifyPaymentApi(selectedPayment.id, isApproved, currentNotes);
     } catch (err) {
       console.warn("Backend verify API returned notice:", err);
     }
@@ -537,7 +542,7 @@ export default function FinanceDashboard() {
             status: decision,
             verifiedAt: new Date().toISOString(),
             verifiedByOfficerName: officerName,
-            verificationNotes: notes,
+            verificationNotes: currentNotes,
           }
         : p,
     );
@@ -1745,10 +1750,11 @@ export default function FinanceDashboard() {
               )}
             </div>
 
-            {isEditingStatus ? (
+            {isEditingStatus && (
               <div
                 style={{
                   marginTop: "1.25rem",
+                  marginBottom: "1rem",
                   padding: "1.25rem",
                   border: "1px solid #0f62fe",
                   borderRadius: "4px",
@@ -1787,15 +1793,6 @@ export default function FinanceDashboard() {
                     text="Rejected — Invalid deposit slip / payment declined"
                   />
                 </Select>
-                <TextArea
-                  id="edit-verification-notes"
-                  labelText="Audit Reason / Verification Notes"
-                  placeholder="Specify reason for changing status (e.g., slip verified with bank statement, mismatch, etc.)..."
-                  value={notes}
-                  onChange={(e) => setNotes(e.target.value)}
-                  rows={3}
-                  style={{ marginBottom: "1rem" }}
-                />
                 <div style={{ display: "flex", gap: "0.75rem" }}>
                   <Button kind="primary" onClick={handleSaveEditedStatus}>
                     Save Status Changes
@@ -1808,18 +1805,21 @@ export default function FinanceDashboard() {
                   </Button>
                 </div>
               </div>
-            ) : (
-              <>
-                <TextArea
-                  id="verification-notes"
-                  labelText="Verification Notes / Audit Reason"
-                  placeholder="Add verification notes (e.g., matched with bank statement dated 2026-09-26)..."
-                  value={notes}
-                  onChange={(e) => setNotes(e.target.value)}
-                  disabled={selectedPayment.status !== "Pending"}
-                  rows={3}
-                />
+            )}
 
+            <TextArea
+              id="verification-notes"
+              labelText="Verification Notes / Audit Reason"
+              placeholder="Add verification notes (e.g., matched with bank statement dated 2026-09-26)..."
+              defaultValue={notes}
+              onChange={(e) => {
+                notesRef.current = e.target.value;
+              }}
+              rows={3}
+            />
+
+            {!isEditingStatus && (
+              <>
                 {selectedPayment.status === "Pending" ? (
                   <div
                     style={{
