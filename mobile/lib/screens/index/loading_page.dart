@@ -76,40 +76,49 @@ class _LoadingPageState extends ConsumerState<LoadingPage> with TickerProviderSt
       backgroundColor: AppColors.background,
       body: AuroraBackdrop(
         child: SafeArea(
-          child: Column(
-            children: [
-              const Spacer(flex: 3),
-              FadeTransition(
-                opacity: cardIn,
-                child: ScaleTransition(scale: Tween(begin: 0.7, end: 1.0).animate(cardIn), child: _buildEmblem()),
-              ),
-              const SizedBox(height: 44),
-              FadeTransition(
-                opacity: textIn,
-                child: SlideTransition(
-                  position: Tween(begin: const Offset(0, 0.5), end: Offset.zero).animate(textIn),
-                  child: Column(
-                    children: [
-                      NeonGradient(
-                        colors: _accent,
-                        child: const Text(
-                          'GovServiceNav',
-                          style: TextStyle(fontSize: 34, fontWeight: FontWeight.w800, letterSpacing: -0.8),
+          child: Center(
+            child: SingleChildScrollView(
+              physics: const ClampingScrollPhysics(),
+              child: Padding(
+                padding: const EdgeInsets.symmetric(vertical: 24, horizontal: 20),
+                child: Column(
+                  mainAxisSize: MainAxisSize.min,
+                  mainAxisAlignment: MainAxisAlignment.center,
+                  children: [
+                    FadeTransition(
+                      opacity: cardIn,
+                      child: ScaleTransition(scale: Tween(begin: 0.7, end: 1.0).animate(cardIn), child: _buildEmblem()),
+                    ),
+                    const SizedBox(height: 36),
+                    FadeTransition(
+                      opacity: textIn,
+                      child: SlideTransition(
+                        position: Tween(begin: const Offset(0, 0.5), end: Offset.zero).animate(textIn),
+                        child: Column(
+                          children: [
+                            NeonGradient(
+                              colors: _accent,
+                              child: const Text(
+                                'GovServiceNav',
+                                style: TextStyle(fontSize: 34, fontWeight: FontWeight.w800, letterSpacing: -0.8),
+                              ),
+                            ),
+                            const SizedBox(height: 10),
+                            const Text(
+                              'GOVERNMENT SERVICES, SIMPLIFIED',
+                              style: TextStyle(fontSize: 12, letterSpacing: 3, color: GlassTheme.textMuted, fontWeight: FontWeight.w600),
+                            ),
+                          ],
                         ),
                       ),
-                      const SizedBox(height: 10),
-                      const Text(
-                        'GOVERNMENT SERVICES, SIMPLIFIED',
-                        style: TextStyle(fontSize: 12, letterSpacing: 3, color: GlassTheme.textMuted, fontWeight: FontWeight.w600),
-                      ),
-                    ],
-                  ),
+                    ),
+                    const SizedBox(height: 48),
+                    FadeTransition(opacity: textIn, child: _buildProgress()),
+                    const SizedBox(height: 24),
+                  ],
                 ),
               ),
-              const Spacer(flex: 3),
-              FadeTransition(opacity: textIn, child: _buildProgress()),
-              const SizedBox(height: 56),
-            ],
+            ),
           ),
         ),
       ),
