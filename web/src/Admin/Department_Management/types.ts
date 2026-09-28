@@ -13,4 +13,7 @@ export interface Department {
   createdAt: string;
   updatedAt?: string;
   officerCount?: number;
+  verifyingOfficerCount?: number;
+  financeOfficerCount?: number;
+  hasRequiredOfficers?: boolean;
 }

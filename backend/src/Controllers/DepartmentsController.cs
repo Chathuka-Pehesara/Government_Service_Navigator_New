@@ -45,28 +45,55 @@ namespace Government_Service_Navigator.Backend.Controllers
 
             var departments = await query.OrderBy(d => d.Id).ToListAsync();
 
-            // Enrich with active officer count and linked services
-            var officerCounts = await _context.Officers
-                .GroupBy(o => o.Department)
-                .Select(g => new { Department = g.Key, Count = g.Count() })
-                .ToDictionaryAsync(x => x.Department, x => x.Count);
+            // Enrich with active officer count and officer breakdown by role
+            var activeOfficers = await _context.Officers
+                .Where(o => o.Status.ToLower() != "suspended" && o.Status.ToLower() != "inactive")
+                .ToListAsync();
 
-            var result = departments.Select(d => new
+            var officerStats = activeOfficers
+                .GroupBy(o => o.Department.Trim().ToLower())
+                .ToDictionary(
+                    g => g.Key,
+                    g => new
+                    {
+                        TotalCount = g.Count(),
+                        VerifyingCount = g.Count(o => 
+                            string.Equals(o.Role, "Verifying Officer", StringComparison.OrdinalIgnoreCase) ||
+                            string.Equals(o.Role, "Verification Officer", StringComparison.OrdinalIgnoreCase) ||
+                            string.Equals(o.Role, "Officer", StringComparison.OrdinalIgnoreCase)),
+                        FinanceCount = g.Count(o => 
+                            string.Equals(o.Role, "Finance Officer", StringComparison.OrdinalIgnoreCase) ||
+                            string.Equals(o.Role, "Financial Officer", StringComparison.OrdinalIgnoreCase))
+                    }
+                );
+
+            var result = departments.Select(d =>
             {
-                d.Id,
-                d.DepartmentCode,
-                d.Name,
-                d.Category,
-                d.LogoUrl,
-                d.ContactNumber,
-                d.Email,
-                d.Website,
-                d.Address,
-                d.Description,
-                d.Status,
-                d.CreatedAt,
-                d.UpdatedAt,
-                OfficerCount = officerCounts.ContainsKey(d.Name) ? officerCounts[d.Name] : 0
+                officerStats.TryGetValue(d.Name.Trim().ToLower(), out var stat);
+                int verifyingCount = stat?.VerifyingCount ?? 0;
+                int financeCount = stat?.FinanceCount ?? 0;
+                bool hasRequired = verifyingCount > 0 && financeCount > 0;
+
+                return new
+                {
+                    d.Id,
+                    d.DepartmentCode,
+                    d.Name,
+                    d.Category,
+                    d.LogoUrl,
+                    d.ContactNumber,
+                    d.Email,
+                    d.Website,
+                    d.Address,
+                    d.Description,
+                    d.Status,
+                    d.CreatedAt,
+                    d.UpdatedAt,
+                    OfficerCount = stat?.TotalCount ?? 0,
+                    VerifyingOfficerCount = verifyingCount,
+                    FinanceOfficerCount = financeCount,
+                    HasRequiredOfficers = hasRequired
+                };
             });
 
             return Ok(result);
@@ -109,6 +136,21 @@ namespace Government_Service_Navigator.Backend.Controllers
                 return BadRequest(new { message = $"A department with the name '{trimmedName}' already exists." });
             }
 
+            // Check officer assignment requirement before activating
+            var (hasVerifying, hasFinance, _, _) = await CheckRequiredOfficersAsync(trimmedName);
+            string requestedStatus = string.IsNullOrWhiteSpace(dto.Status) ? "Inactive" : dto.Status.Trim();
+
+            if (string.Equals(requestedStatus, "Active", StringComparison.OrdinalIgnoreCase) && (!hasVerifying || !hasFinance))
+            {
+                var missing = new List<string>();
+                if (!hasVerifying) missing.Add("Verifying Officer");
+                if (!hasFinance) missing.Add("Finance Officer");
+                return BadRequest(new 
+                { 
+                    message = $"Cannot create department '{trimmedName}' with Active status. A department requires at least one Verifying Officer and at least one Finance Officer assigned before it can be activated (Missing: {string.Join(" and ", missing)}). Please save as Inactive (Deactivated) and assign officers first." 
+                });
+            }
+
             // Auto-generate code if empty or invalid
             string code = string.IsNullOrWhiteSpace(dto.DepartmentCode)
                 ? await GenerateNextCodeAsync()
@@ -133,7 +175,7 @@ namespace Government_Service_Navigator.Backend.Controllers
                 Website = dto.Website?.Trim(),
                 Address = dto.Address?.Trim(),
                 Description = dto.Description?.Trim(),
-                Status = string.IsNullOrWhiteSpace(dto.Status) ? "Active" : dto.Status.Trim(),
+                Status = requestedStatus,
                 CreatedAt = DateTime.UtcNow
             };
 
@@ -153,6 +195,7 @@ namespace Government_Service_Navigator.Backend.Controllers
                 return NotFound(new { message = $"Department with ID {id} not found." });
             }
 
+            string targetDeptName = department.Name;
             if (!string.IsNullOrWhiteSpace(dto.Name))
             {
                 var trimmedName = dto.Name.Trim();
@@ -162,6 +205,7 @@ namespace Government_Service_Navigator.Backend.Controllers
                     return BadRequest(new { message = $"A department with the name '{trimmedName}' already exists." });
                 }
                 department.Name = trimmedName;
+                targetDeptName = trimmedName;
             }
 
             if (!string.IsNullOrWhiteSpace(dto.DepartmentCode))
@@ -182,7 +226,27 @@ namespace Government_Service_Navigator.Backend.Controllers
             if (dto.Website != null) department.Website = dto.Website.Trim();
             if (dto.Address != null) department.Address = dto.Address.Trim();
             if (dto.Description != null) department.Description = dto.Description.Trim();
-            if (!string.IsNullOrWhiteSpace(dto.Status)) department.Status = dto.Status.Trim();
+
+            if (!string.IsNullOrWhiteSpace(dto.Status))
+            {
+                var targetStatus = dto.Status.Trim();
+                if (string.Equals(targetStatus, "Active", StringComparison.OrdinalIgnoreCase))
+                {
+                    var (hasVerifying, hasFinance, _, _) = await CheckRequiredOfficersAsync(targetDeptName);
+                    if (!hasVerifying || !hasFinance)
+                    {
+                        var missing = new List<string>();
+                        if (!hasVerifying) missing.Add("Verifying Officer");
+                        if (!hasFinance) missing.Add("Finance Officer");
+                        return BadRequest(new 
+                        { 
+                            message = $"Cannot activate department '{targetDeptName}'. A department requires at least one Verifying Officer and at least one Finance Officer assigned before its status can be Active (Missing: {string.Join(" and ", missing)})." 
+                        });
+                    }
+                }
+                department.Status = targetStatus;
+            }
+
             department.UpdatedAt = DateTime.UtcNow;
 
             await _context.SaveChangesAsync();
@@ -199,9 +263,26 @@ namespace Government_Service_Navigator.Backend.Controllers
                 return NotFound(new { message = $"Department with ID {id} not found." });
             }
 
-            department.Status = string.IsNullOrWhiteSpace(dto.Status)
+            string targetStatus = string.IsNullOrWhiteSpace(dto.Status)
                 ? (department.Status == "Active" ? "Inactive" : "Active")
                 : dto.Status.Trim();
+
+            if (string.Equals(targetStatus, "Active", StringComparison.OrdinalIgnoreCase))
+            {
+                var (hasVerifying, hasFinance, _, _) = await CheckRequiredOfficersAsync(department.Name);
+                if (!hasVerifying || !hasFinance)
+                {
+                    var missing = new List<string>();
+                    if (!hasVerifying) missing.Add("Verifying Officer");
+                    if (!hasFinance) missing.Add("Finance Officer");
+                    return BadRequest(new 
+                    { 
+                        message = $"Cannot activate department '{department.Name}'. A department requires at least one Verifying Officer and at least one Finance Officer assigned before its status can be Active (Missing: {string.Join(" and ", missing)})." 
+                    });
+                }
+            }
+
+            department.Status = targetStatus;
             department.UpdatedAt = DateTime.UtcNow;
 
             await _context.SaveChangesAsync();
@@ -228,6 +309,31 @@ namespace Government_Service_Navigator.Backend.Controllers
             _context.Departments.Remove(department);
             await _context.SaveChangesAsync();
             return Ok(new { message = "Department deleted successfully." });
+        }
+
+        // Helper to check verifying and finance officer requirements for activating a department
+        private async Task<(bool HasVerifying, bool HasFinance, int VerifyingCount, int FinanceCount)> CheckRequiredOfficersAsync(string departmentName)
+        {
+            if (string.IsNullOrWhiteSpace(departmentName))
+                return (false, false, 0, 0);
+
+            var deptLower = departmentName.Trim().ToLower();
+            var officers = await _context.Officers
+                .Where(o => o.Department.ToLower() == deptLower &&
+                            o.Status.ToLower() != "suspended" &&
+                            o.Status.ToLower() != "inactive")
+                .ToListAsync();
+
+            int verifyingCount = officers.Count(o =>
+                string.Equals(o.Role, "Verifying Officer", StringComparison.OrdinalIgnoreCase) ||
+                string.Equals(o.Role, "Verification Officer", StringComparison.OrdinalIgnoreCase) ||
+                string.Equals(o.Role, "Officer", StringComparison.OrdinalIgnoreCase));
+
+            int financeCount = officers.Count(o =>
+                string.Equals(o.Role, "Finance Officer", StringComparison.OrdinalIgnoreCase) ||
+                string.Equals(o.Role, "Financial Officer", StringComparison.OrdinalIgnoreCase));
+
+            return (verifyingCount > 0, financeCount > 0, verifyingCount, financeCount);
         }
 
         // Helper to generate next sequential DepartmentCode (DEP-001, DEP-002, ...)
@@ -265,7 +371,7 @@ namespace Government_Service_Navigator.Backend.Controllers
         public string? Website { get; set; }
         public string? Address { get; set; }
         public string? Description { get; set; }
-        public string? Status { get; set; } = "Active";
+        public string? Status { get; set; } = "Inactive";
     }
 
     public class DepartmentUpdateDto

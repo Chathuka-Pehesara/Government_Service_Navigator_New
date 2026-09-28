@@ -392,12 +392,14 @@ export default function ServiceCatalogManager() {
               </>
             )}
 
-            <SideNavLink
-              renderIcon={Categories}
-              href="/admin/departments"
-            >
-              Department Management
-            </SideNavLink>
+            {canWrite && (
+              <SideNavLink
+                renderIcon={Categories}
+                href="/admin/departments"
+              >
+                Department Management
+              </SideNavLink>
+            )}
 
             <SideNavLink
               renderIcon={UserMultiple}

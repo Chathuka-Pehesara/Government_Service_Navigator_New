@@ -48,7 +48,7 @@ export default function RegisterDepartmentModal({
   const [website, setWebsite] = useState<string>("");
   const [address, setAddress] = useState<string>("");
   const [description, setDescription] = useState<string>("");
-  const [status, setStatus] = useState<string>("Active");
+  const [status, setStatus] = useState<string>("Inactive");
 
   const fileInputRef = useRef<HTMLInputElement>(null);
 
@@ -75,7 +75,7 @@ export default function RegisterDepartmentModal({
       setWebsite("");
       setAddress("");
       setDescription("");
-      setStatus("Active");
+      setStatus("Inactive");
       setFormError(null);
       fetchNextCode();
     }
@@ -388,9 +388,10 @@ export default function RegisterDepartmentModal({
           value={status}
           onChange={(e) => setStatus(e.target.value)}
           disabled={isSubmitting}
+          helperText="New departments default to Inactive (Deactivated). To activate, you must first register the department and assign at least 1 Verifying Officer and 1 Finance Officer."
         >
-          <SelectItem value="Active" text="Active (Receiving Applications)" />
-          <SelectItem value="Inactive" text="Inactive (Suspended / Draft)" />
+          <SelectItem value="Inactive" text="Inactive (Deactivated - Recommended until officers assigned)" />
+          <SelectItem value="Active" text="Active (Requires assigned Verifying & Finance Officers)" disabled />
         </Select>
       </Stack>
     </Modal>
