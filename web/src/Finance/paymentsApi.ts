@@ -54,7 +54,13 @@ export interface BackendPayment {
   currency?: string;
   method: string;
   status: string;
+  paymentCategory?: 'DirectMobile' | 'ApplicationStage';
+  isDirectPayment?: boolean;
+  stageStatus?: string;
+  maxStages?: number;
   manualSlipUrl: string | null;
+  slipFileName?: string;
+  slipUploadedAt?: string;
   referenceNumberOrId?: string;
   submittedAt?: string;
   createdDate: string;

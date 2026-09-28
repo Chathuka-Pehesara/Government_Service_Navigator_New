@@ -14,6 +14,10 @@ export interface Payment {
   amount: number;
   status: PaymentStatus;
   submittedAt: string; // ISO timestamp
+  paymentCategory?: 'DirectMobile' | 'ApplicationStage';
+  isDirectPayment?: boolean;
+  stageStatus?: string;
+  maxStages?: number;
 
   // Online Bank Transfer / Bank Deposit details
   bankName?: string;
@@ -84,10 +88,17 @@ function buildSeedPayments(): Payment[] {
     const applicationId = `APP-${submitted.getFullYear()}-${pad(1000 + id * 7)}`;
     const userId = `USR-${pad(4000 + id * 3)}`;
 
+    const isDirect = id % 3 === 0;
     const payment: Payment = {
       id,
-      applicationId,
+      applicationId: isDirect ? `PAY-${submitted.getFullYear()}${pad(1000 + id * 7, 6)}` : applicationId,
       userId,
+      citizenNic: `200${pad(id * 13, 9)}`,
+      citizenName: `Citizen ${id}`,
+      serviceName: isDirect ? "Department Statutory Fee" : "Public Service Procedure",
+      stageNumber: isDirect ? 1 : (id % 3) + 1,
+      paymentCategory: isDirect ? "DirectMobile" : "ApplicationStage",
+      isDirectPayment: isDirect,
       method,
       amount,
       status,

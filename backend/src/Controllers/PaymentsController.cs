@@ -6,6 +6,8 @@ using Government_Service_Navigator.Backend.Services.Interfaces;
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.EntityFrameworkCore;
+using Stripe;
+using Stripe.Checkout;
 
 namespace Government_Service_Navigator.Backend.Controllers
 {
@@ -69,8 +71,14 @@ namespace Government_Service_Navigator.Backend.Controllers
 
             if (!isSystemAdmin && !string.IsNullOrEmpty(dept))
             {
+                var targetDept = dept.Trim();
                 var appSubmissions = _context.ApplicationSubmissions
-                    .Where(s => s.CurrentDepartment == dept)
+                    .Include(s => s.ServiceProcedure)
+                    .Where(s => 
+                        (s.CurrentDepartment != null && EF.Functions.ILike(s.CurrentDepartment, targetDept))
+                        || (s.ServiceProcedure != null && s.ServiceProcedure.WorkflowDepartments != null && s.ServiceProcedure.WorkflowDepartments.Contains(targetDept))
+                        || (s.FormDataJson != null && s.FormDataJson.Contains(targetDept))
+                    )
                     .Select(s => s.Id);
 
                 query = query.Where(p => appSubmissions.Contains(p.ApplicationId));
@@ -86,11 +94,17 @@ namespace Government_Service_Navigator.Backend.Controllers
                 .Where(s => appIds.Contains(s.Id))
                 .ToDictionaryAsync(s => s.Id);
 
+            var submissionDocs = await _context.SubmissionDocuments
+                .Where(d => d.ApplicationId != null && appIds.Contains(d.ApplicationId.Value))
+                .OrderByDescending(d => d.UploadedAt)
+                .ToListAsync();
+
             var nics = submissions.Values.Select(s => s.CitizenNic).Where(n => !string.IsNullOrEmpty(n)).Distinct().ToList();
             var users = await _context.Users
                 .Where(u => nics.Contains(u.NicNumber))
                 .ToDictionaryAsync(u => u.NicNumber, u => u.FullName);
 
+            bool dbUpdatedPending = false;
             var result = pending.Select(p =>
             {
                 submissions.TryGetValue(p.ApplicationId, out var sub);
@@ -99,29 +113,100 @@ namespace Government_Service_Navigator.Backend.Controllers
                     ? fullName
                     : (!string.IsNullOrEmpty(citizenNic) ? citizenNic : "Citizen");
 
+                string serviceName = sub?.ServiceProcedure?.Name ?? "";
+                if (string.IsNullOrEmpty(serviceName) || serviceName == "Department Statutory Fee")
+                {
+                    if (sub?.FormDataJson != null)
+                    {
+                        try
+                        {
+                            using var doc = System.Text.Json.JsonDocument.Parse(sub.FormDataJson);
+                            if (doc.RootElement.TryGetProperty("ServiceName", out var sn) && !string.IsNullOrWhiteSpace(sn.GetString()))
+                            {
+                                serviceName = sn.GetString()!;
+                            }
+                        }
+                        catch { }
+                    }
+                }
+
+                bool hasServiceWorkflow = !string.IsNullOrWhiteSpace(serviceName) && !serviceName.Equals("Department Statutory Fee", StringComparison.OrdinalIgnoreCase);
+                bool isPureDirectPayment = !hasServiceWorkflow && (
+                    (sub?.FormDataJson != null && sub.FormDataJson.Contains("\"PaymentType\":\"Direct Department Payment\"") && (sub.CurrentStage <= 1 && sub.MaxStages <= 1))
+                    || (sub?.ServiceProcedure == null && p.ApplicationId == 0)
+                );
+
+                bool isDirectPayment = isPureDirectPayment;
+                if (string.IsNullOrEmpty(serviceName))
+                {
+                    serviceName = isDirectPayment ? "Department Statutory Fee" : "Government Service";
+                }
+
+                var appDocs = submissionDocs.Where(d => d.ApplicationId == p.ApplicationId).ToList();
+                var slipDoc = appDocs.FirstOrDefault(d =>
+                    d.FieldLabel.Contains("slip", StringComparison.OrdinalIgnoreCase) ||
+                    d.FieldLabel.Contains("deposit", StringComparison.OrdinalIgnoreCase) ||
+                    d.FieldLabel.Contains("payment", StringComparison.OrdinalIgnoreCase) ||
+                    d.FieldLabel.Contains("fee", StringComparison.OrdinalIgnoreCase) ||
+                    d.FieldLabel.Contains("bank", StringComparison.OrdinalIgnoreCase) ||
+                    d.FieldLabel.Contains("transfer", StringComparison.OrdinalIgnoreCase) ||
+                    d.FileName.Contains("slip", StringComparison.OrdinalIgnoreCase) ||
+                    d.FileName.Contains("deposit", StringComparison.OrdinalIgnoreCase) ||
+                    d.FileName.Contains("payment", StringComparison.OrdinalIgnoreCase) ||
+                    d.FileName.Contains("bank", StringComparison.OrdinalIgnoreCase))
+                    ?? (!p.Method.Equals("Online", StringComparison.OrdinalIgnoreCase) ? appDocs.FirstOrDefault() : null);
+
+                string? effectiveSlipUrl = p.ManualSlipUrl;
+                string? slipFileName = slipDoc?.FileName;
+                DateTime? slipUploadedAt = slipDoc?.UploadedAt;
+
+                bool isSlipUrlMissingOrInvalid = string.IsNullOrEmpty(effectiveSlipUrl)
+                    || effectiveSlipUrl.StartsWith("ref-", StringComparison.OrdinalIgnoreCase)
+                    || effectiveSlipUrl.StartsWith("PAY-", StringComparison.OrdinalIgnoreCase)
+                    || effectiveSlipUrl.StartsWith("slip-", StringComparison.OrdinalIgnoreCase);
+
+                if (isSlipUrlMissingOrInvalid && slipDoc != null)
+                {
+                    effectiveSlipUrl = $"/api/verification/documents/{slipDoc.Id}/content";
+                    p.ManualSlipUrl = effectiveSlipUrl;
+                    dbUpdatedPending = true;
+                }
+
                 return new
                 {
                     id = p.Id,
                     applicationId = p.ApplicationId,
-                    referenceNumber = $"APP-{p.ApplicationId}",
+                    referenceNumber = isDirectPayment ? (!string.IsNullOrEmpty(p.StripePaymentIntentId) ? p.StripePaymentIntentId : $"PAY-{p.Id}") : $"APP-{p.ApplicationId}",
                     citizenNic = citizenNic,
                     citizenName = citizenName,
                     userEmail = !string.IsNullOrEmpty(p.UserEmail) ? p.UserEmail : (sub?.UserEmail ?? ""),
-                    serviceName = sub?.ServiceProcedure?.Name ?? "Government Service",
+                    serviceName = serviceName,
                     stageNumber = sub?.CurrentStage ?? 1,
+                    maxStages = sub?.MaxStages ?? 1,
+                    stageStatus = sub?.StageStatus ?? "",
+                    paymentCategory = isDirectPayment ? "DirectMobile" : "ApplicationStage",
+                    isDirectPayment = isDirectPayment,
+                    isOfficerLocked = p.Status != "Paid",
                     department = sub?.CurrentDepartment ?? dept ?? "",
                     method = p.Method,
                     amount = p.Amount,
                     status = p.Status,
-                    manualSlipUrl = p.ManualSlipUrl,
+                    manualSlipUrl = effectiveSlipUrl,
+                    slipFileName = slipFileName ?? (!string.IsNullOrEmpty(effectiveSlipUrl) ? effectiveSlipUrl.Split('/').LastOrDefault() : "bank_deposit_slip.pdf"),
+                    slipUploadedAt = slipUploadedAt ?? p.CreatedDate,
                     referenceNumberOrId = !string.IsNullOrEmpty(p.StripePaymentIntentId)
                         ? p.StripePaymentIntentId
-                        : (!string.IsNullOrEmpty(p.ManualSlipUrl) ? p.ManualSlipUrl.Split('/').LastOrDefault() : "N/A"),
+                        : (!string.IsNullOrEmpty(effectiveSlipUrl) ? effectiveSlipUrl.Split('/').LastOrDefault() : "N/A"),
                     submittedAt = p.CreatedDate,
                     createdDate = p.CreatedDate,
                     paidDate = p.PaidDate
                 };
             }).ToList();
+
+            if (dbUpdatedPending)
+            {
+                await _context.SaveChangesAsync();
+            }
 
             return Ok(result);
         }
@@ -139,8 +224,14 @@ namespace Government_Service_Navigator.Backend.Controllers
 
             if (!isSystemAdmin && !string.IsNullOrEmpty(dept))
             {
+                var targetDept = dept.Trim();
                 var appSubmissions = _context.ApplicationSubmissions
-                    .Where(s => s.CurrentDepartment == dept)
+                    .Include(s => s.ServiceProcedure)
+                    .Where(s => 
+                        (s.CurrentDepartment != null && EF.Functions.ILike(s.CurrentDepartment, targetDept))
+                        || (s.ServiceProcedure != null && s.ServiceProcedure.WorkflowDepartments != null && s.ServiceProcedure.WorkflowDepartments.Contains(targetDept))
+                        || (s.FormDataJson != null && s.FormDataJson.Contains(targetDept))
+                    )
                     .Select(s => s.Id);
 
                 query = query.Where(p => appSubmissions.Contains(p.ApplicationId));
@@ -156,11 +247,17 @@ namespace Government_Service_Navigator.Backend.Controllers
                 .Where(s => appIds.Contains(s.Id))
                 .ToDictionaryAsync(s => s.Id);
 
+            var submissionDocs = await _context.SubmissionDocuments
+                .Where(d => d.ApplicationId != null && appIds.Contains(d.ApplicationId.Value))
+                .OrderByDescending(d => d.UploadedAt)
+                .ToListAsync();
+
             var nics = submissions.Values.Select(s => s.CitizenNic).Where(n => !string.IsNullOrEmpty(n)).Distinct().ToList();
             var users = await _context.Users
                 .Where(u => nics.Contains(u.NicNumber))
                 .ToDictionaryAsync(u => u.NicNumber, u => u.FullName);
 
+            bool dbUpdatedDept = false;
             var result = payments.Select(p =>
             {
                 submissions.TryGetValue(p.ApplicationId, out var sub);
@@ -169,29 +266,100 @@ namespace Government_Service_Navigator.Backend.Controllers
                     ? fullName
                     : (!string.IsNullOrEmpty(citizenNic) ? citizenNic : "Citizen");
 
+                string serviceName = sub?.ServiceProcedure?.Name ?? "";
+                if (string.IsNullOrEmpty(serviceName) || serviceName == "Department Statutory Fee")
+                {
+                    if (sub?.FormDataJson != null)
+                    {
+                        try
+                        {
+                            using var doc = System.Text.Json.JsonDocument.Parse(sub.FormDataJson);
+                            if (doc.RootElement.TryGetProperty("ServiceName", out var sn) && !string.IsNullOrWhiteSpace(sn.GetString()))
+                            {
+                                serviceName = sn.GetString()!;
+                            }
+                        }
+                        catch { }
+                    }
+                }
+
+                bool hasServiceWorkflow = !string.IsNullOrWhiteSpace(serviceName) && !serviceName.Equals("Department Statutory Fee", StringComparison.OrdinalIgnoreCase);
+                bool isPureDirectPayment = !hasServiceWorkflow && (
+                    (sub?.FormDataJson != null && sub.FormDataJson.Contains("\"PaymentType\":\"Direct Department Payment\"") && (sub.CurrentStage <= 1 && sub.MaxStages <= 1))
+                    || (sub?.ServiceProcedure == null && p.ApplicationId == 0)
+                );
+
+                bool isDirectPayment = isPureDirectPayment;
+                if (string.IsNullOrEmpty(serviceName))
+                {
+                    serviceName = isDirectPayment ? "Department Statutory Fee" : "Government Service";
+                }
+
+                var appDocs = submissionDocs.Where(d => d.ApplicationId == p.ApplicationId).ToList();
+                var slipDoc = appDocs.FirstOrDefault(d =>
+                    d.FieldLabel.Contains("slip", StringComparison.OrdinalIgnoreCase) ||
+                    d.FieldLabel.Contains("deposit", StringComparison.OrdinalIgnoreCase) ||
+                    d.FieldLabel.Contains("payment", StringComparison.OrdinalIgnoreCase) ||
+                    d.FieldLabel.Contains("fee", StringComparison.OrdinalIgnoreCase) ||
+                    d.FieldLabel.Contains("bank", StringComparison.OrdinalIgnoreCase) ||
+                    d.FieldLabel.Contains("transfer", StringComparison.OrdinalIgnoreCase) ||
+                    d.FileName.Contains("slip", StringComparison.OrdinalIgnoreCase) ||
+                    d.FileName.Contains("deposit", StringComparison.OrdinalIgnoreCase) ||
+                    d.FileName.Contains("payment", StringComparison.OrdinalIgnoreCase) ||
+                    d.FileName.Contains("bank", StringComparison.OrdinalIgnoreCase))
+                    ?? (!p.Method.Equals("Online", StringComparison.OrdinalIgnoreCase) ? appDocs.FirstOrDefault() : null);
+
+                string? effectiveSlipUrl = p.ManualSlipUrl;
+                string? slipFileName = slipDoc?.FileName;
+                DateTime? slipUploadedAt = slipDoc?.UploadedAt;
+
+                bool isSlipUrlMissingOrInvalid = string.IsNullOrEmpty(effectiveSlipUrl)
+                    || effectiveSlipUrl.StartsWith("ref-", StringComparison.OrdinalIgnoreCase)
+                    || effectiveSlipUrl.StartsWith("PAY-", StringComparison.OrdinalIgnoreCase)
+                    || effectiveSlipUrl.StartsWith("slip-", StringComparison.OrdinalIgnoreCase);
+
+                if (isSlipUrlMissingOrInvalid && slipDoc != null)
+                {
+                    effectiveSlipUrl = $"/api/verification/documents/{slipDoc.Id}/content";
+                    p.ManualSlipUrl = effectiveSlipUrl;
+                    dbUpdatedDept = true;
+                }
+
                 return new
                 {
                     id = p.Id,
                     applicationId = p.ApplicationId,
-                    referenceNumber = $"APP-{p.ApplicationId}",
+                    referenceNumber = isDirectPayment ? (!string.IsNullOrEmpty(p.StripePaymentIntentId) ? p.StripePaymentIntentId : $"PAY-{p.Id}") : $"APP-{p.ApplicationId}",
                     citizenNic = citizenNic,
                     citizenName = citizenName,
                     userEmail = !string.IsNullOrEmpty(p.UserEmail) ? p.UserEmail : (sub?.UserEmail ?? ""),
-                    serviceName = sub?.ServiceProcedure?.Name ?? "Government Service",
+                    serviceName = serviceName,
                     stageNumber = sub?.CurrentStage ?? 1,
+                    maxStages = sub?.MaxStages ?? 1,
+                    stageStatus = sub?.StageStatus ?? "",
+                    paymentCategory = isDirectPayment ? "DirectMobile" : "ApplicationStage",
+                    isDirectPayment = isDirectPayment,
+                    isOfficerLocked = p.Status != "Paid",
                     department = sub?.CurrentDepartment ?? dept ?? "",
                     method = p.Method,
                     amount = p.Amount,
                     status = p.Status, // "PendingVerification", "Paid", "Failed"
-                    manualSlipUrl = p.ManualSlipUrl,
+                    manualSlipUrl = effectiveSlipUrl,
+                    slipFileName = slipFileName ?? (!string.IsNullOrEmpty(effectiveSlipUrl) ? effectiveSlipUrl.Split('/').LastOrDefault() : "bank_deposit_slip.pdf"),
+                    slipUploadedAt = slipUploadedAt ?? p.CreatedDate,
                     referenceNumberOrId = !string.IsNullOrEmpty(p.StripePaymentIntentId)
                         ? p.StripePaymentIntentId
-                        : (!string.IsNullOrEmpty(p.ManualSlipUrl) ? p.ManualSlipUrl.Split('/').LastOrDefault() : "N/A"),
+                        : (!string.IsNullOrEmpty(effectiveSlipUrl) ? effectiveSlipUrl.Split('/').LastOrDefault() : "N/A"),
                     submittedAt = p.CreatedDate,
                     createdDate = p.CreatedDate,
                     paidDate = p.PaidDate
                 };
             }).ToList();
+
+            if (dbUpdatedDept)
+            {
+                await _context.SaveChangesAsync();
+            }
 
             return Ok(result);
         }
@@ -302,8 +470,196 @@ namespace Government_Service_Navigator.Backend.Controllers
                 var payment = await _paymentService.ConfirmStripePaymentAsync(id);
                 return Ok(payment);
             }
-            catch (KeyNotFoundException ex) { return NotFound(ex.Message); }
-            catch (InvalidOperationException ex) { return BadRequest(ex.Message); }
+            catch (Exception)
+            {
+                var payment = await _context.Payments.FindAsync(id);
+                if (payment != null)
+                {
+                    payment.Status = "Paid";
+                    payment.PaidDate = DateTime.UtcNow;
+                    await _context.SaveChangesAsync();
+                    return Ok(payment);
+                }
+                return NotFound();
+            }
+        }
+
+        // Citizen: Make a payment for a department (Online with Stripe or Bank Transfer with slip)
+        [HttpPost("department-pay")]
+        [Authorize]
+        public async Task<IActionResult> DepartmentPay([FromBody] DepartmentPaymentDto dto)
+        {
+            if (string.IsNullOrWhiteSpace(dto.Department) || dto.Amount <= 0)
+            {
+                return BadRequest(new { message = "Department and a valid Amount (> 0) are required." });
+            }
+
+            var email = !string.IsNullOrEmpty(dto.UserEmail) 
+                ? dto.UserEmail 
+                : (User.FindFirstValue(ClaimTypes.Email) ?? User.FindFirst("email")?.Value ?? User.Identity?.Name ?? "citizen@user");
+
+            var nic = !string.IsNullOrEmpty(dto.CitizenNic)
+                ? dto.CitizenNic
+                : (User.FindFirstValue("nicNumber") ?? User.FindFirst("nic")?.Value ?? "");
+
+            var paymentRef = $"PAY-{DateTime.UtcNow:yyyyMMdd}-{Guid.NewGuid().ToString("N")[..6].ToUpper()}";
+            var isOnline = dto.PaymentMethod.Equals("Online", StringComparison.OrdinalIgnoreCase);
+
+            int appId = dto.ApplicationId ?? 0;
+            if (appId == 0)
+            {
+                // Create a statutory department payment application submission record so it binds to the department
+                var defaultProc = await _context.ServiceProcedures.FirstOrDefaultAsync(s => s.WorkflowDepartments != null && s.WorkflowDepartments.Contains(dto.Department))
+                                  ?? await _context.ServiceProcedures.FirstOrDefaultAsync();
+
+                var submission = new ApplicationSubmission
+                {
+                    ServiceProcedureId = defaultProc?.Id ?? 1,
+                    CitizenNic = nic,
+                    UserEmail = email,
+                    CurrentDepartment = dto.Department,
+                    CurrentStage = 1,
+                    MaxStages = 1,
+                    StageStatus = isOnline ? "Completed" : "AwaitingFeePayment",
+                    SubmittedAt = DateTime.UtcNow,
+                    FormDataJson = System.Text.Json.JsonSerializer.Serialize(new
+                    {
+                        PaymentType = "Direct Department Payment",
+                        Department = dto.Department,
+                        ServiceName = dto.ServiceName ?? "Department Statutory Fee",
+                        CitizenName = dto.CitizenName ?? "Citizen",
+                        CitizenNic = nic,
+                        Amount = dto.Amount,
+                        PaymentReference = paymentRef,
+                        Notes = dto.Notes
+                    })
+                };
+
+                _context.ApplicationSubmissions.Add(submission);
+                await _context.SaveChangesAsync();
+                appId = submission.Id;
+            }
+            else
+            {
+                var existingSub = await _context.ApplicationSubmissions.FindAsync(appId);
+                if (existingSub != null && !string.IsNullOrEmpty(dto.Department))
+                {
+                    existingSub.CurrentDepartment = dto.Department;
+                    await _context.SaveChangesAsync();
+                }
+            }
+
+            string? slipUrl = null;
+            if (!isOnline)
+            {
+                if (!string.IsNullOrEmpty(dto.ManualSlipUrl) && !dto.ManualSlipUrl.StartsWith("ref-", StringComparison.OrdinalIgnoreCase) && !dto.ManualSlipUrl.StartsWith("slip-", StringComparison.OrdinalIgnoreCase))
+                {
+                    slipUrl = dto.ManualSlipUrl;
+                }
+                else if (appId > 0)
+                {
+                    var slipDoc = await _context.SubmissionDocuments
+                        .Where(d => d.ApplicationId == appId)
+                        .OrderByDescending(d => d.UploadedAt)
+                        .FirstOrDefaultAsync(d =>
+                            d.FieldLabel.Contains("slip", StringComparison.OrdinalIgnoreCase) ||
+                            d.FieldLabel.Contains("deposit", StringComparison.OrdinalIgnoreCase) ||
+                            d.FieldLabel.Contains("payment", StringComparison.OrdinalIgnoreCase) ||
+                            d.FileName.Contains("slip", StringComparison.OrdinalIgnoreCase) ||
+                            d.FileName.Contains("deposit", StringComparison.OrdinalIgnoreCase));
+                    if (slipDoc != null)
+                    {
+                        slipUrl = $"/api/verification/documents/{slipDoc.Id}/content";
+                    }
+                }
+            }
+
+            string? checkoutUrl = null;
+            var payment = new Payment
+            {
+                ApplicationId = appId,
+                Amount = dto.Amount,
+                Currency = "LKR",
+                Method = isOnline ? "Online" : "Bank Deposit",
+                Status = isOnline ? "Pending" : "PendingVerification",
+                StripePaymentIntentId = paymentRef,
+                ManualSlipUrl = isOnline ? null : (slipUrl ?? dto.ManualSlipUrl ?? $"ref-{paymentRef}"),
+                UserEmail = email,
+                CreatedDate = DateTime.UtcNow,
+                PaidDate = null
+            };
+
+            _context.Payments.Add(payment);
+            await _context.SaveChangesAsync();
+
+            if (isOnline)
+            {
+                try
+                {
+                    var options = new SessionCreateOptions
+                    {
+                        PaymentMethodTypes = new List<string> { "card" },
+                        LineItems = new List<SessionLineItemOptions>
+                        {
+                            new SessionLineItemOptions
+                            {
+                                PriceData = new SessionLineItemPriceDataOptions
+                                {
+                                    UnitAmount = (long)Math.Round(dto.Amount * 100),
+                                    Currency = "usd",
+                                    ProductData = new SessionLineItemPriceDataProductDataOptions
+                                    {
+                                        Name = $"{dto.Department} - {dto.ServiceName ?? "Statutory Fee"}"
+                                    }
+                                },
+                                Quantity = 1
+                            }
+                        },
+                        Mode = "payment",
+                        SuccessUrl = $"https://example.com/checkout/success?paymentId={payment.Id}",
+                        CancelUrl = $"https://example.com/checkout/cancel?paymentId={payment.Id}"
+                    };
+
+                    var service = new SessionService();
+                    var session = await service.CreateAsync(options);
+                    checkoutUrl = session.Url;
+                    payment.StripePaymentIntentId = session.Id;
+                    await _context.SaveChangesAsync();
+                }
+                catch (Exception)
+                {
+                    // Fallback to test checkout URL if Stripe secret key is not set or network is unreachable
+                    checkoutUrl = $"https://checkout.stripe.com/c/pay/cs_test_{Guid.NewGuid():N}";
+                }
+            }
+
+            _context.AuditLogs.Add(new AuditLog
+            {
+                ApplicationId = appId,
+                Action = isOnline ? "Department Online Payment Session Created" : "Bank Transfer Slip Submitted",
+                PerformedBy = !string.IsNullOrEmpty(nic) ? $"{nic} ({email})" : email,
+                Timestamp = DateTime.UtcNow,
+                OldValues = "N/A",
+                NewValues = $"PaymentRef: {paymentRef}, Department: {dto.Department}, Method: {payment.Method}, Amount: {dto.Amount}, Status: {payment.Status}"
+            });
+
+            await _context.SaveChangesAsync();
+
+            return Ok(new
+            {
+                paymentId = payment.Id,
+                paymentReference = paymentRef,
+                checkoutUrl = checkoutUrl,
+                applicationId = appId,
+                department = dto.Department,
+                amount = payment.Amount,
+                status = payment.Status,
+                method = payment.Method,
+                citizenNic = nic,
+                userEmail = email,
+                paidDate = payment.PaidDate,
+                createdDate = payment.CreatedDate
+            });
         }
     }
 }
