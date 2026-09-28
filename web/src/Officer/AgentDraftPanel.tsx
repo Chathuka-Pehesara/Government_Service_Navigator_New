@@ -172,16 +172,38 @@ export default function AgentDraftPanel({ draft, loading, error, answers, onRege
           <AccordionItem title="Phase 4: Safety & Compliance Audit (Agent 4)" open>
             {draft?.validation ? (
               <>
-                <div style={{ display: "flex", gap: "0.5rem", marginBottom: "0.75rem", alignItems: "center" }}>
+                <div style={{ display: "flex", gap: "0.5rem", marginBottom: "0.75rem", alignItems: "center", flexWrap: "wrap" }}>
                   <Tag type={draft.validation.isValid ? "green" : "red"}>
                     {draft.validation.isValid ? "Safety Checks Passed" : "Safety Check Failed"}
                   </Tag>
-                  <Tag type={draft.validation.isValid ? "cool-gray" : "magenta"}>
-                    {draft.validation.isValid ? "Low Risk" : "High Risk / Attention"}
+                  <Tag type={
+                    draft.validation.riskLevel?.toLowerCase() === "low" ? "green" :
+                    draft.validation.riskLevel?.toLowerCase() === "medium" ? "warm-gray" :
+                    draft.validation.riskLevel?.toLowerCase() === "high" ? "red" : "magenta"
+                  }>
+                    {draft.validation.riskLevel ? `${draft.validation.riskLevel} Risk` : (draft.validation.isValid ? "Low Risk" : "High Risk / Attention")}
                   </Tag>
+                  <Tag type="blue" size="sm">Groq LLM Cognitive Guardrails Active</Tag>
                 </div>
 
                 <p style={{ ...muted, marginBottom: "0.75rem" }}>{draft.validation.summary}</p>
+
+                {draft.validation.officerBriefing && (
+                  <div style={{
+                    backgroundColor: "#edf5ff",
+                    borderLeft: "3px solid #0f62fe",
+                    padding: "0.75rem 1rem",
+                    borderRadius: "4px",
+                    marginBottom: "1rem"
+                  }}>
+                    <div style={{ fontSize: "0.8125rem", fontWeight: 600, color: "#0043ce", marginBottom: "0.375rem" }}>
+                      Agent 4 Officer Safety Briefing:
+                    </div>
+                    <p style={{ fontSize: "0.875rem", color: "#161616", lineHeight: 1.4, whiteSpace: "pre-line", margin: 0 }}>
+                      {draft.validation.officerBriefing}
+                    </p>
+                  </div>
+                )}
 
                 {draft.validation.complianceChecks.length > 0 && (
                   <ul style={{ fontSize: "0.875rem", display: "grid", gap: "0.5rem" }}>
@@ -249,23 +271,34 @@ export default function AgentDraftPanel({ draft, loading, error, answers, onRege
             )}
           </AccordionItem>
 
-          <AccordionItem title={`Tool Calls (${action.toolCalls.length})`}>
-            {action.toolCalls.length === 0 ? (
-              <p style={muted}>No tools were called.</p>
-            ) : (
-              action.toolCalls.map((t, i) => (
-                <details key={i} style={{ marginBottom: "0.5rem", fontSize: "0.8125rem" }}>
-                  <summary style={{ cursor: "pointer" }}>
-                    <code>{t.toolName}</code> <span style={{ color: "#6f6f6f" }}>· {new Date(t.calledAt).toLocaleTimeString()}</span>
-                  </summary>
-                  <pre style={{ background: "#f4f4f4", padding: "0.5rem", overflowX: "auto", whiteSpace: "pre-wrap" }}>
-                    Input: {prettyJson(t.input)}
-                    {"\n"}Output: {prettyJson(t.output)}
-                  </pre>
-                </details>
-              ))
-            )}
-          </AccordionItem>
+          {/* Agent Tool Calls */}
+          {(() => {
+            const allToolCalls = [
+              ...action.toolCalls.map(t => ({ ...t, agent: "Agent 3: Action & Tool Agent" })),
+              ...(draft?.validation?.toolCalls ?? []).map(t => ({ ...t, agent: "Agent 4: Validation & Safety Agent" }))
+            ];
+            return (
+              <AccordionItem title={`Tool Execution Traces (${allToolCalls.length})`}>
+                {allToolCalls.length === 0 ? (
+                  <p style={muted}>No tools were called.</p>
+                ) : (
+                  allToolCalls.map((t, i) => (
+                    <details key={i} style={{ marginBottom: "0.5rem", fontSize: "0.8125rem" }}>
+                      <summary style={{ cursor: "pointer", display: "flex", alignItems: "center", gap: "0.5rem" }}>
+                        <code>{t.toolName}</code>
+                        <Tag type={t.agent.includes("Agent 4") ? "purple" : "cyan"} size="sm">{t.agent.split(":")[0]}</Tag>
+                        <span style={{ color: "#6f6f6f", marginLeft: "auto" }}>· {new Date(t.calledAt).toLocaleTimeString()}</span>
+                      </summary>
+                      <pre style={{ background: "#f4f4f4", padding: "0.5rem", overflowX: "auto", whiteSpace: "pre-wrap", marginTop: "0.25rem" }}>
+                        Input: {prettyJson(t.input)}
+                        {"\n"}Output: {prettyJson(t.output)}
+                      </pre>
+                    </details>
+                  ))
+                )}
+              </AccordionItem>
+            );
+          })()}
         </Accordion>
       )}
     </div>

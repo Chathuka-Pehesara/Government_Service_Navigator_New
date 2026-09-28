@@ -71,8 +71,12 @@ export interface ValidationResult {
   isValid: boolean;
   decision: string;
   summary: string;
+  riskLevel?: string;
+  officerBriefing?: string;
   complianceChecks: ComplianceCheckItem[];
   rejectionReasons: string[];
+  toolCalls?: ToolCall[];
+  sanitizedFormFields?: Record<string, string>;
 }
 
 export interface AgentDraftView {
