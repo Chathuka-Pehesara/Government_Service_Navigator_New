@@ -10,12 +10,18 @@ part of 'application_providers.dart';
 // ignore_for_file: type=lint, type=warning
 /// The signed-in citizen's applications. Shared by the home and applications tabs,
 /// so refreshing one (`ref.invalidate(myApplicationsProvider)`) updates both.
+/// Officer decisions arrive instantly through the realtime hub (see realtime_provider.dart);
+/// this slow poll is only a fallback for missed messages, and it skips while the app is in
+/// the background. Screens must not add their own timers on top of this one.
 
 @ProviderFor(myApplications)
 final myApplicationsProvider = MyApplicationsProvider._();
 
 /// The signed-in citizen's applications. Shared by the home and applications tabs,
 /// so refreshing one (`ref.invalidate(myApplicationsProvider)`) updates both.
+/// Officer decisions arrive instantly through the realtime hub (see realtime_provider.dart);
+/// this slow poll is only a fallback for missed messages, and it skips while the app is in
+/// the background. Screens must not add their own timers on top of this one.
 
 final class MyApplicationsProvider
     extends
@@ -29,6 +35,9 @@ final class MyApplicationsProvider
         $FutureProvider<List<ApplicationItemModel>> {
   /// The signed-in citizen's applications. Shared by the home and applications tabs,
   /// so refreshing one (`ref.invalidate(myApplicationsProvider)`) updates both.
+  /// Officer decisions arrive instantly through the realtime hub (see realtime_provider.dart);
+  /// this slow poll is only a fallback for missed messages, and it skips while the app is in
+  /// the background. Screens must not add their own timers on top of this one.
   MyApplicationsProvider._()
     : super(
         from: null,
@@ -55,7 +64,7 @@ final class MyApplicationsProvider
   }
 }
 
-String _$myApplicationsHash() => r'e30b2c0affc36f18510fd23f37d2fd627a118d7a';
+String _$myApplicationsHash() => r'4868acfd5faa1ffd9937bc2336589c9ddfc8cc6c';
 
 @ProviderFor(auditLogs)
 final auditLogsProvider = AuditLogsFamily._();

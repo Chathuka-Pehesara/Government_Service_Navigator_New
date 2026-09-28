@@ -1,5 +1,9 @@
 import '@carbon/styles/css/styles.css';
-import { useState, useEffect, useMemo, useCallback } from "react";
+import { useState, useMemo } from "react";
+import { keepPreviousData, useQuery } from "@tanstack/react-query";
+import { apiFetch, toQuery, type Paged } from "../utils/api";
+import { queryKeys } from "../utils/queryClient";
+import { useDebouncedValue } from "../utils/useDebouncedValue";
 import {
   Header,
   HeaderContainer,
@@ -28,7 +32,8 @@ import {
   Column,
   Tile,
   Select,
-  SelectItem
+  SelectItem,
+  Pagination,
 } from "@carbon/react";
 import {
   Dashboard,
@@ -74,34 +79,27 @@ interface DisplayAuditRow {
 }
 
 export default function OfficerAuditLogs() {
-  const [logs, setLogs] = useState<RawAuditLog[]>([]);
-  const [isLoading, setIsLoading] = useState(true);
   const [searchQuery, setSearchQuery] = useState("");
   const [actionFilter, setActionFilter] = useState("ALL");
+  const [page, setPage] = useState(1);
+  const [pageSize, setPageSize] = useState(25);
+  const search = useDebouncedValue(searchQuery.trim());
 
-  const fetchLogs = useCallback(async () => {
-    setIsLoading(true);
-    try {
-      const token = localStorage.getItem("officerToken");
-      const response = await fetch("http://localhost:5119/api/Verification/audit-logs/all", {
-        headers: {
-          ...(token ? { Authorization: `Bearer ${token}` } : {})
-        }
-      });
-      if (response.ok) {
-        const data = await response.json();
-        setLogs(data);
-      }
-    } catch (e) {
-      console.error("Failed to load audit logs", e);
-    } finally {
-      setIsLoading(false);
-    }
-  }, []);
+  // Filtering, search and paging run on the server; the audit table grows with every action
+  const action = actionFilter === "ALL" ? undefined : actionFilter;
+  const { data: logsPage, isLoading } = useQuery({
+    queryKey: [...queryKeys.auditLogs, { page, pageSize, search, action }],
+    queryFn: () =>
+      apiFetch<Paged<RawAuditLog>>(`/api/verification/audit-logs/all${toQuery({ page, pageSize, search, action })}`),
+    placeholderData: keepPreviousData,
+  });
+  const logs = useMemo(() => logsPage?.items ?? [], [logsPage]);
 
-  useEffect(() => {
-    fetchLogs();
-  }, [fetchLogs]);
+  const { data: summary } = useQuery({
+    queryKey: [...queryKeys.auditLogs, "summary"],
+    queryFn: () =>
+      apiFetch<{ total: number; deleted: number; approved: number; rejected: number }>("/api/verification/audit-logs/summary"),
+  });
 
   const handleLogout = async () => {
     const token = localStorage.getItem("officerToken");
@@ -123,35 +121,16 @@ export default function OfficerAuditLogs() {
   };
 
   const rows: DisplayAuditRow[] = useMemo(() => {
-    return logs
-      .filter((log) => {
-        if (actionFilter === "DELETED" && !log.action.toLowerCase().includes("delete")) return false;
-        if (actionFilter === "APPROVED" && !log.action.toLowerCase().includes("approv")) return false;
-        if (actionFilter === "REJECTED" && !log.action.toLowerCase().includes("reject")) return false;
-
-        if (!searchQuery.trim()) return true;
-        const q = searchQuery.toLowerCase();
-        return (
-          `APP-${log.applicationId}`.toLowerCase().includes(q) ||
-          log.action.toLowerCase().includes(q) ||
-          (log.performedBy || "").toLowerCase().includes(q) ||
-          (log.newValues || "").toLowerCase().includes(q)
-        );
-      })
-      .map((log) => ({
-        id: log.id.toString(),
-        time: new Date(log.timestamp).toLocaleString(),
-        officer: log.performedBy || "System Officer",
-        action: log.action,
-        target: `APP-${log.applicationId}`,
-        details: log.newValues || "—",
-        priorState: log.oldValues || "—",
-        rawAction: log.action
-      }));
-  }, [logs, searchQuery, actionFilter]);
-
-  const totalDeletedCount = useMemo(() => {
-    return logs.filter(l => l.action.toLowerCase().includes("delete")).length;
+    return logs.map((log) => ({
+      id: log.id.toString(),
+      time: new Date(log.timestamp).toLocaleString(),
+      officer: log.performedBy || "System Officer",
+      action: log.action,
+      target: `APP-${log.applicationId}`,
+      details: log.newValues || "—",
+      priorState: log.oldValues || "—",
+      rawAction: log.action
+    }));
   }, [logs]);
 
   return (
@@ -231,7 +210,7 @@ export default function OfficerAuditLogs() {
                     <p style={{ color: '#525252', fontSize: '0.875rem' }}>Total Audit Events</p>
                     <Security size={20} />
                   </div>
-                  <h3 style={{ fontSize: '2.5rem', fontWeight: 300, margin: '0.5rem 0' }}>{logs.length}</h3>
+                  <h3 style={{ fontSize: '2.5rem', fontWeight: 300, margin: '0.5rem 0' }}>{summary?.total ?? 0}</h3>
                   <p style={{ color: '#525252', fontSize: '0.875rem', marginTop: '1rem' }}>Recorded in ledger</p>
                 </Tile>
               </Column>
@@ -241,7 +220,7 @@ export default function OfficerAuditLogs() {
                     <p style={{ color: '#525252', fontSize: '0.875rem' }}>Applications Deleted</p>
                     <TrashCan size={20} color="#da1e28" />
                   </div>
-                  <h3 style={{ fontSize: '2.5rem', fontWeight: 300, margin: '0.5rem 0' }}>{totalDeletedCount}</h3>
+                  <h3 style={{ fontSize: '2.5rem', fontWeight: 300, margin: '0.5rem 0' }}>{summary?.deleted ?? 0}</h3>
                   <p style={{ color: '#da1e28', fontSize: '0.875rem', marginTop: '1rem' }}>Dismissed / No review needed</p>
                 </Tile>
               </Column>
@@ -252,7 +231,7 @@ export default function OfficerAuditLogs() {
                     <CheckmarkOutline size={20} color="#24a148" />
                   </div>
                   <h3 style={{ fontSize: '2.5rem', fontWeight: 300, margin: '0.5rem 0' }}>
-                    {logs.filter(l => l.action.toLowerCase().includes("approv")).length}
+                    {summary?.approved ?? 0}
                   </h3>
                   <p style={{ color: '#24a148', fontSize: '0.875rem', marginTop: '1rem' }}>Verified milestone actions</p>
                 </Tile>
@@ -271,7 +250,10 @@ export default function OfficerAuditLogs() {
                     <TableToolbar>
                       <TableToolbarContent>
                         <TableToolbarSearch
-                          onChange={(e) => setSearchQuery(typeof e === "string" ? e : e?.target?.value ?? "")}
+                          onChange={(e) => {
+                            setSearchQuery(typeof e === "string" ? e : e?.target?.value ?? "");
+                            setPage(1);
+                          }}
                           persistent
                           placeholder="Search App ID, Officer Email, or Reason..."
                         />
@@ -281,7 +263,10 @@ export default function OfficerAuditLogs() {
                             labelText=""
                             hideLabel
                             value={actionFilter}
-                            onChange={(e) => setActionFilter(e.target.value)}
+                            onChange={(e) => {
+                              setActionFilter(e.target.value);
+                              setPage(1);
+                            }}
                             size="md"
                           >
                             <SelectItem value="ALL" text="All Event Types" />
@@ -365,6 +350,16 @@ export default function OfficerAuditLogs() {
                       </TableBody>
                     </Table>
                     </div>
+                    <Pagination
+                      page={page}
+                      pageSize={pageSize}
+                      pageSizes={[10, 25, 50, 100]}
+                      totalItems={logsPage?.total ?? 0}
+                      onChange={({ page: nextPage, pageSize: nextSize }: { page: number; pageSize: number }) => {
+                        setPage(nextPage);
+                        setPageSize(nextSize);
+                      }}
+                    />
                   </TableContainer>
                 )}
               </DataTable>

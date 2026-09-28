@@ -1,5 +1,6 @@
 import '@carbon/styles/css/styles.css';
 import { useState, useEffect, useCallback } from 'react';
+import { QUEUE_UPDATED_EVENT } from '../utils/realtime';
 import {
   Header,
   HeaderName,
@@ -220,7 +221,12 @@ export default function PendingReviews() {
     const timer = setTimeout(() => {
       fetchPendingTasks();
     }, 0);
-    return () => clearTimeout(timer);
+    // Live queue: the realtime bridge fires this when tasks change (no polling)
+    window.addEventListener(QUEUE_UPDATED_EVENT, fetchPendingTasks);
+    return () => {
+      clearTimeout(timer);
+      window.removeEventListener(QUEUE_UPDATED_EVENT, fetchPendingTasks);
+    };
   }, [fetchPendingTasks]);
 
   const handleLogout = async () => {

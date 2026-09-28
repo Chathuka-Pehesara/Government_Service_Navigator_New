@@ -5,6 +5,7 @@ using Microsoft.EntityFrameworkCore;
 using System.Text.Json;
 using Government_Service_Navigator.Backend.Data.Context;
 using Government_Service_Navigator.Backend.DTOs.Requests;
+using Government_Service_Navigator.Backend.DTOs.Responses;
 using Government_Service_Navigator.Backend.Models.Entities;
 using Government_Service_Navigator.Backend.Services;
 using Government_Service_Navigator.Backend.Services.Interfaces;
@@ -23,15 +24,18 @@ namespace Government_Service_Navigator.Backend.Controllers
         private readonly IVerificationService _verificationService;
         private readonly AppDbContext _context;
         private readonly IApplicationDraftingService _draftingService;
+        private readonly ICitizenApplicationsService _citizenApplications;
 
         public VerificationController(
             IVerificationService verificationService,
             AppDbContext context,
-            IApplicationDraftingService draftingService)
+            IApplicationDraftingService draftingService,
+            ICitizenApplicationsService citizenApplications)
         {
             _verificationService = verificationService;
             _context = context;
             _draftingService = draftingService;
+            _citizenApplications = citizenApplications;
         }
 
         // Officer queue rows: each task joined to its submitted application, service and citizen.
@@ -62,6 +66,7 @@ namespace Government_Service_Navigator.Backend.Controllers
 
             var taskIds = tasks.Select(t => t.Id).ToList();
             var reviews = await _context.OfficerReviews
+                .AsNoTracking()
                 .Where(r => taskIds.Contains(r.TaskId))
                 .OrderByDescending(r => r.ReviewDate)
                 .ToListAsync();
@@ -113,259 +118,54 @@ namespace Government_Service_Navigator.Backend.Controllers
 
         // Citizen view: only the applications submitted under the caller's own NIC.
         [HttpGet("my-applications")]
-        public async Task<IActionResult> GetMyApplications()
+        public async Task<IActionResult> GetMyApplications(CancellationToken cancellationToken)
         {
             var nic = User.FindFirstValue("nicNumber");
             if (string.IsNullOrWhiteSpace(nic)) return Ok(Array.Empty<object>());
 
-            var tasks = await _verificationService.GetTasksForCitizenAsync(nic);
-
-            // Attach the service name/department and stage metadata from the citizen's submissions so the app can label each entry.
-            var appIds = tasks.Select(t => t.ApplicationId).ToList();
-            var submissions = await _context.ApplicationSubmissions
-                .Where(s => appIds.Contains(s.Id) && s.CitizenNic == nic)
-                .Include(s => s.ServiceProcedure)
-                    .ThenInclude(sp => sp!.FeeSchedules)
-                .ToListAsync();
-
-            var services = submissions.ToDictionary(s => s.Id);
-
-            var spIds = submissions.Select(s => s.ServiceProcedureId).Distinct().ToList();
-            var templates = await _context.Templates
-                .Include(t => t.Fields)
-                .Where(t => spIds.Contains(t.ServiceProcedureId ?? 0) && t.Status == "Active")
-                .ToListAsync();
-
-            // Latest installment plan per application, so the app can open its schedule from the application card
-            var plans = await _context.InstallmentPlans
-                .Where(p => appIds.Contains(p.Payment!.ApplicationId))
-                .Select(p => new
-                {
-                    p.Id,
-                    p.Payment!.ApplicationId,
-                    p.Status,
-                    p.NumberOfInstallments,
-                    PaidCount = p.Installments!.Count(i => i.Status == "Paid"),
-                    Next = p.Installments!
-                        .Where(i => i.Status != "Paid")
-                        .OrderBy(i => i.InstallmentNumber)
-                        .Select(i => new { i.Amount, i.DueDate, i.Status })
-                        .FirstOrDefault()
-                })
-                .ToListAsync();
-            var planByApp = plans
-                .GroupBy(p => p.ApplicationId)
-                .ToDictionary(g => g.Key, g => g.OrderByDescending(p => p.Id).First());
-
-            // Payments for applications (to return real-time paymentStatus and isPaymentVerified)
-            var appPayments = await _context.Payments
-                .Where(p => appIds.Contains(p.ApplicationId))
-                .OrderByDescending(p => p.Id)
-                .ToListAsync();
-            var paymentByApp = appPayments
-                .GroupBy(p => p.ApplicationId)
-                .ToDictionary(g => g.Key, g => g.First());
-
-            var activeTasks = tasks
-                .GroupBy(t => t.ApplicationId)
-                .Select(g =>
-                {
-                    services.TryGetValue(g.Key, out var sub);
-                    var activeStage = sub?.CurrentStage ?? 1;
-                    return g.FirstOrDefault(t => t.StageNumber == activeStage || t.CurrentStage == activeStage)
-                           ?? g.OrderByDescending(t => t.Id).First();
-                })
-                .ToList();
-
-            bool needSave = false;
-            foreach (var t in activeTasks)
-            {
-                services.TryGetValue(t.ApplicationId, out var s);
-                if (s != null && s.CurrentStage > t.StageNumber && (s.StageStatus == "UnderVerification" || s.StageStatus == "PendingReview"))
-                {
-                    s.StageStatus = "Draft";
-                    needSave = true;
-                }
-            }
-            if (needSave)
-            {
-                await _context.SaveChangesAsync();
-            }
-
-            return Ok(activeTasks.Select(t =>
-            {
-                services.TryGetValue(t.ApplicationId, out var s);
-                var currentStageNum = s?.CurrentStage ?? (t.CurrentStage > 0 ? t.CurrentStage : 1);
-                var stageTemplate = templates.FirstOrDefault(tmpl =>
-                    tmpl.ServiceProcedureId == s?.ServiceProcedureId &&
-                    tmpl.StageOrder == currentStageNum);
-
-                var paymentField = stageTemplate?.Fields.FirstOrDefault(f => f.Type == "payment");
-                bool isStagePaymentRequired = false;
-                double stageFeeAmount = 0.0;
-
-                if (stageTemplate != null)
-                {
-                    if (paymentField != null)
-                    {
-                        isStagePaymentRequired = true;
-                        if (!string.IsNullOrWhiteSpace(paymentField.Options))
-                        {
-                            try
-                            {
-                                using var pDoc = JsonDocument.Parse(paymentField.Options);
-                                if (pDoc.RootElement.TryGetProperty("amount", out var a))
-                                {
-                                    stageFeeAmount = (double)a.GetDecimal();
-                                }
-                            }
-                            catch { }
-                        }
-                        if (stageFeeAmount <= 0.0)
-                        {
-                            var procFee = s?.ServiceProcedure?.FeeSchedules
-                                .OrderByDescending(f => f.EffectiveDate)
-                                .Select(f => (double?)f.Amount)
-                                .FirstOrDefault() ?? 0.0;
-                            stageFeeAmount = procFee;
-                        }
-                    }
-                    else
-                    {
-                        // Explicit stage template exists, but has NO payment field!
-                        // This stage does NOT have payment.
-                        isStagePaymentRequired = false;
-                        stageFeeAmount = 0.0;
-                    }
-                }
-                else
-                {
-                    // No stage template found. Fall back only if single stage procedure with fee schedule
-                    var procFee = s?.ServiceProcedure?.FeeSchedules
-                        .OrderByDescending(f => f.EffectiveDate)
-                        .Select(f => (double?)f.Amount)
-                        .FirstOrDefault() ?? 0.0;
-                    if ((s?.MaxStages ?? 1) <= 1 && procFee > 0)
-                    {
-                        isStagePaymentRequired = true;
-                        stageFeeAmount = procFee;
-                    }
-                }
-
-                var pay = paymentByApp.TryGetValue(t.ApplicationId, out var pObj) ? pObj : null;
-                bool isPayVerified;
-                string paymentStatus;
-
-                if (isStagePaymentRequired)
-                {
-                    if (pay != null)
-                    {
-                        paymentStatus = pay.Status;
-                        isPayVerified = (pay.Status == "Paid" || pay.Status == "Verified");
-                    }
-                    else
-                    {
-                        paymentStatus = stageFeeAmount > 0 ? "AwaitingFeePayment" : "None";
-                        isPayVerified = false;
-                    }
-                }
-                else
-                {
-                    // Payment NOT required for this stage
-                    paymentStatus = "None";
-                    isPayVerified = true;
-                }
-
-                var effectiveStatus = t.Status;
-                var isUnsubmittedStage = (s != null && s.CurrentStage > t.StageNumber);
-
-                if (isUnsubmittedStage)
-                {
-                    effectiveStatus = (s?.StageStatus == "StageApproved") ? "StageApproved" : "Draft";
-                    if (s != null && (s.StageStatus == "UnderVerification" || s.StageStatus == "PendingReview"))
-                    {
-                        s.StageStatus = "Draft";
-                    }
-                }
-                else if ((s?.StageStatus == "UnderVerification" || s?.StageStatus == "PendingReview") && effectiveStatus == "Approved")
-                {
-                    effectiveStatus = "Pending";
-                }
-
-                var resolvedStageStatus = s?.StageStatus;
-                if (isUnsubmittedStage)
-                {
-                    if (string.IsNullOrEmpty(resolvedStageStatus) || resolvedStageStatus == "UnderVerification" || resolvedStageStatus == "PendingReview")
-                    {
-                        resolvedStageStatus = "Draft";
-                    }
-                }
-                else if (string.IsNullOrEmpty(resolvedStageStatus))
-                {
-                    resolvedStageStatus = (effectiveStatus == "Approved" ? "Completed" : "PendingReview");
-                }
-
-                return new
-                {
-                    t.Id,
-                    t.ApplicationId,
-                    Status = effectiveStatus,
-                    t.CreatedDate,
-                    ReferenceNumber = $"APP-{t.ApplicationId}",
-                    ServiceName = s?.ServiceProcedure?.Name,
-                    Category = s?.ServiceProcedure?.Category,
-                    Department = t.Department ?? s?.CurrentDepartment,
-                    CurrentDepartment = s?.CurrentDepartment,
-                    WorkflowDepartments = s?.ServiceProcedure?.WorkflowDepartments,
-                    ServiceProcedureId = s?.ServiceProcedureId ?? 0,
-                    CurrentStage = currentStageNum,
-                    MaxStages = t.MaxStages > 0 ? t.MaxStages : (s?.MaxStages ?? 1),
-                    StageStatus = resolvedStageStatus,
-                    Amount = stageFeeAmount,
-                    UserEmail = s?.UserEmail ?? string.Empty,
-                    PaymentStatus = paymentStatus,
-                    IsPaymentVerified = isPayVerified,
-                    IsStagePaymentRequired = isStagePaymentRequired,
-                    PaymentMethod = pay?.Method,
-                    PaymentAmount = pay != null ? (double)pay.Amount : stageFeeAmount,
-                    InstallmentPlan = planByApp.TryGetValue(t.ApplicationId, out var plan)
-                        ? new
-                        {
-                            PlanId = plan.Id,
-                            plan.Status,
-                            plan.NumberOfInstallments,
-                            plan.PaidCount,
-                            NextAmount = plan.Next?.Amount,
-                            NextDueDate = plan.Next?.DueDate,
-                            NextStatus = plan.Next?.Status
-                        }
-                        : null
-                };
-            }));
+            return Ok(await _citizenApplications.GetMyApplicationsAsync(nic, cancellationToken));
         }
 
-        [Authorize(Roles = OfficerRoles)]
-        [HttpGet("tasks/pending")]
-        public async Task<IActionResult> GetPendingTasks()
+        // Department the caller's queue is limited to; null for system admins and unscoped staff
+        private string? GetDepartmentScope()
         {
             var role = User.FindFirstValue(ClaimTypes.Role) ?? string.Empty;
             var dept = User.FindFirstValue("department") ?? User.FindFirst("department")?.Value;
             var isSystemAdmin = role.Contains("System Admin", StringComparison.OrdinalIgnoreCase) || role == "Admin";
-            var deptScope = isSystemAdmin || string.IsNullOrEmpty(dept) ? null : dept;
-            var tasks = await _verificationService.GetPendingTasksAsync(deptScope);
-            return Ok(await WithApplicationDetailsAsync(tasks));
+            return isSystemAdmin || string.IsNullOrEmpty(dept) ? null : dept;
+        }
+
+        // With ?page= the response is a PagedResult; without it, a plain array of the newest
+        // Paging.UnpagedLimit rows (the shape older clients expect).
+        [Authorize(Roles = OfficerRoles)]
+        [HttpGet("tasks/pending")]
+        public async Task<IActionResult> GetPendingTasks([FromQuery] int? page, [FromQuery] int pageSize = 25, [FromQuery] string? search = null)
+        {
+            var result = await _verificationService.GetPendingTasksAsync(GetDepartmentScope(), page, pageSize, search);
+            return await TaskListResponseAsync(result, page);
         }
 
         [Authorize(Roles = OfficerRoles)]
         [HttpGet("tasks/verified")]
-        public async Task<IActionResult> GetVerifiedTasks()
+        public async Task<IActionResult> GetVerifiedTasks([FromQuery] int? page, [FromQuery] int pageSize = 25, [FromQuery] string? search = null, [FromQuery] string? status = null)
         {
-            var role = User.FindFirstValue(ClaimTypes.Role) ?? string.Empty;
-            var dept = User.FindFirstValue("department") ?? User.FindFirst("department")?.Value;
-            var isSystemAdmin = role.Contains("System Admin", StringComparison.OrdinalIgnoreCase) || role == "Admin";
-            var deptScope = isSystemAdmin || string.IsNullOrEmpty(dept) ? null : dept;
-            var tasks = await _verificationService.GetVerifiedTasksAsync(deptScope);
-            return Ok(await WithApplicationDetailsAsync(tasks));
+            var result = await _verificationService.GetVerifiedTasksAsync(GetDepartmentScope(), page, pageSize, search, status);
+            return await TaskListResponseAsync(result, page);
+        }
+
+        // Counts for the dashboard cards (pending, approved, rejected, suspended)
+        [Authorize(Roles = OfficerRoles)]
+        [HttpGet("tasks/summary")]
+        public async Task<IActionResult> GetTaskSummary()
+        {
+            return Ok(await _verificationService.GetTaskSummaryAsync(GetDepartmentScope()));
+        }
+
+        private async Task<IActionResult> TaskListResponseAsync(PagedResult<VerificationTask> result, int? page)
+        {
+            var rows = await WithApplicationDetailsAsync(result.Items);
+            if (page == null) return Ok(rows);
+            return Ok(new PagedResult<object> { Items = rows, Total = result.Total, Page = result.Page, PageSize = result.PageSize });
         }
 
         // Review workspace: the task plus the citizen's submitted form answers.
@@ -563,12 +363,37 @@ namespace Government_Service_Navigator.Backend.Controllers
             return Ok(logs);
         }
 
+        // Newest first. ?page= returns a PagedResult; without it, the newest Paging.UnpagedLimit rows.
+        // applicationIds (comma separated) limits the logs to those applications.
         [Authorize(Roles = OfficerRoles)]
         [HttpGet("audit-logs/all")]
-        public async Task<IActionResult> GetAllAuditLogs()
+        public async Task<IActionResult> GetAllAuditLogs(
+            [FromQuery] int? page,
+            [FromQuery] int pageSize = 25,
+            [FromQuery] string? search = null,
+            [FromQuery] string? action = null,
+            [FromQuery] string? applicationIds = null)
         {
-            var logs = await _verificationService.GetAllAuditLogsAsync();
-            return Ok(logs);
+            var filter = new AuditLogQuery
+            {
+                Search = search,
+                Action = action,
+                ApplicationIds = applicationIds?
+                    .Split(',', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries)
+                    .Select(id => int.TryParse(id, out var n) ? n : 0)
+                    .Where(n => n > 0)
+                    .Take(Paging.MaxPageSize)
+                    .ToList()
+            };
+            var result = await _verificationService.GetAllAuditLogsAsync(filter, page, pageSize);
+            return page == null ? Ok(result.Items) : Ok(result);
+        }
+
+        [Authorize(Roles = OfficerRoles)]
+        [HttpGet("audit-logs/summary")]
+        public async Task<IActionResult> GetAuditLogSummary()
+        {
+            return Ok(await _verificationService.GetAuditLogSummaryAsync());
         }
 
         [Authorize(Roles = OfficerRoles)]

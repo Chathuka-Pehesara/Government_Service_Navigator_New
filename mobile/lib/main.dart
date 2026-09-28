@@ -8,6 +8,7 @@ import 'package:mobile/screens/payments/installment_plan_view.dart';
 import 'package:mobile/screens/refunds/refund_request_screen.dart';
 import 'package:mobile/screens/payments/transaction_history_screen.dart';
 import 'package:mobile/screens/bookings_list_screen.dart';
+import 'providers/realtime_provider.dart';
 import 'theme/app_theme.dart';
 
 void main() {
@@ -28,11 +29,14 @@ void main() {
   );
 }
 
-class MyApp extends StatelessWidget {
+class MyApp extends ConsumerWidget {
   const MyApp({super.key});
 
   @override
-  Widget build(BuildContext context) {
+  Widget build(BuildContext context, WidgetRef ref) {
+    // Starts the realtime connection; it follows sign-in/out on its own without rebuilding the app
+    ref.listen(realtimeProvider, (_, _) {});
+
     return MaterialApp(
       title: 'Government Service Navigator',
       debugShowCheckedModeBanner: false,

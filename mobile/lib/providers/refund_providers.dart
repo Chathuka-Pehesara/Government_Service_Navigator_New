@@ -1,4 +1,5 @@
 import 'dart:async';
+import 'package:flutter/widgets.dart';
 import 'package:riverpod_annotation/riverpod_annotation.dart';
 import '../models/refund.dart';
 import 'service_providers.dart';
@@ -8,17 +9,19 @@ part 'refund_providers.g.dart';
 @riverpod
 Future<List<RefundRequest>> myRefunds(Ref ref) => ref.watch(refundServiceProvider).myRefunds();
 
-/// One refund request, polled every 15 seconds while a screen is watching it so the
-/// tracker moves on its own as staff approve and process the refund.
+/// One refund request. Staff decisions arrive through the realtime hub; this slow poll only
+/// covers missed messages and skips while the app is in the background.
 @riverpod
 class RefundDetail extends _$RefundDetail {
-  static const _pollInterval = Duration(seconds: 15);
+  static const _pollInterval = Duration(seconds: 60);
 
   @override
   Future<RefundRequest> build(String refundId) async {
     if (refundId.isEmpty) throw Exception('No refund ID specified.');
 
-    final timer = Timer.periodic(_pollInterval, (_) => _silentRefresh());
+    final timer = Timer.periodic(_pollInterval, (_) {
+      if (WidgetsBinding.instance.lifecycleState == AppLifecycleState.resumed) _silentRefresh();
+    });
     ref.onDispose(timer.cancel);
 
     final service = ref.watch(refundServiceProvider);

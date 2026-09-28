@@ -1,0 +1,12 @@
+# Local Redis for the API cache, token revocation and SignalR backplane.
+# Start: docker compose -f docker-compose.redis.yml up -d
+# Then set REDIS_URL=localhost:6379 in backend/src/.env
+services:
+  redis:
+    image: redis:7-alpine
+    container_name: gsn-redis
+    ports:
+      - "6379:6379"
+    # Cache only: no persistence needed, evict least-recently-used keys when full
+    command: ["redis-server", "--save", "", "--appendonly", "no", "--maxmemory", "256mb", "--maxmemory-policy", "allkeys-lru"]
+    restart: unless-stopped

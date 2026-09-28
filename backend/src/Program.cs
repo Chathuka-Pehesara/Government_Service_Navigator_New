@@ -14,6 +14,13 @@ using Government_Service_Navigator.Backend.Services.Interfaces;
 using Microsoft.OpenApi.Models;
 using Npgsql;
 using Stripe;
+using System.Threading.RateLimiting;
+using Government_Service_Navigator.Backend.Data.Interceptors;
+using Government_Service_Navigator.Backend.Hubs;
+using Microsoft.AspNetCore.ResponseCompression;
+using Microsoft.AspNetCore.SignalR;
+using Microsoft.Extensions.Caching.Hybrid;
+using StackExchange.Redis;
 using Government_Service_Navigator.AgenticAi.Tools.CheckDuplicateApplication;
 using Government_Service_Navigator.AgenticAi.Agents.ValidationSafety;
 using Government_Service_Navigator.AgenticAi.Config;
@@ -61,7 +68,13 @@ if (!string.IsNullOrEmpty(databaseUrl))
         Database = uri.AbsolutePath.TrimStart('/'),
         Username = Uri.UnescapeDataString(userInfo[0]),
         Password = userInfo.Length > 1 ? Uri.UnescapeDataString(userInfo[1]) : string.Empty,
-        SslMode = SslMode.Require
+        SslMode = SslMode.Require,
+        // Use Neon's pooled connection string (host contains "-pooler"). Its PgBouncer runs in
+        // transaction mode, so keep Npgsql multiplexing off and cap the local pool.
+        MaxPoolSize = int.TryParse(Environment.GetEnvironmentVariable("DB_MAX_POOL_SIZE"), out var maxPool) ? maxPool : 50,
+        Multiplexing = false,
+        // Keeps idle pooled connections alive through NAT/load balancers between requests
+        KeepAlive = 30
     };
 
     connectionString = npgsqlBuilder.ConnectionString;
@@ -87,9 +100,65 @@ var vectorConnectionString = builder.Configuration.GetConnectionString("VectorDb
 builder.Services.AddDbContext<VectorDbContext>(options =>
     options.UseNpgsql(vectorConnectionString, o => o.UseVector()));
 
-// Register the Main Application Database
-builder.Services.AddDbContext<AppDbContext>(options =>
-    options.UseNpgsql(connectionString));
+// Register the Main Application Database. The interceptors refresh caches and push realtime
+// updates after any commit that changes what citizens or officers see (Data/Interceptors).
+builder.Services.AddSingleton<CitizenChangeDispatcher>();
+builder.Services.AddSingleton<CitizenChangeInterceptor>();
+builder.Services.AddSingleton<CitizenChangeTransactionInterceptor>();
+builder.Services.AddDbContext<AppDbContext>((sp, options) => options
+    .UseNpgsql(connectionString)
+    .AddInterceptors(
+        sp.GetRequiredService<CitizenChangeInterceptor>(),
+        sp.GetRequiredService<CitizenChangeTransactionInterceptor>()));
+
+// 1.6 Caching and realtime (docs/performance-and-redis.md, phases 3-4).
+// REDIS_URL is optional: without it the cache is in-process only and SignalR runs on this instance.
+var redisUrl = Environment.GetEnvironmentVariable("REDIS_URL");
+var signalR = builder.Services.AddSignalR();
+if (!string.IsNullOrEmpty(redisUrl))
+{
+    var redisOptions = ConfigurationOptions.Parse(redisUrl);
+    redisOptions.AbortOnConnectFail = false; // start even if Redis is down, reconnect in the background
+    var redis = ConnectionMultiplexer.Connect(redisOptions);
+    builder.Services.AddSingleton<IConnectionMultiplexer>(redis);
+
+    // Shared (L2) cache behind HybridCache
+    builder.Services.AddStackExchangeRedisCache(o =>
+    {
+        o.ConnectionMultiplexerFactory = () => Task.FromResult<IConnectionMultiplexer>(redis);
+        o.InstanceName = "gsn:";
+    });
+
+    // Lets Clients.User(...) reach connections on any API instance
+    signalR.AddStackExchangeRedis(o =>
+    {
+        o.ConnectionFactory = _ => Task.FromResult<IConnectionMultiplexer>(redis);
+        o.Configuration.ChannelPrefix = RedisChannel.Literal("gsn-signalr");
+    });
+    Console.WriteLine("Redis configured for cache, token revocation and the SignalR backplane.");
+}
+builder.Services.AddSingleton<IUserIdProvider, NicUserIdProvider>();
+builder.Services.AddMemoryCache();
+builder.Services.AddHybridCache(o =>
+{
+    o.DefaultEntryOptions = new HybridCacheEntryOptions
+    {
+        Expiration = TimeSpan.FromMinutes(10),          // Redis
+        LocalCacheExpiration = TimeSpan.FromSeconds(30) // in-process memory
+    };
+});
+builder.Services.AddSingleton<TokenRevocationStore>();
+builder.Services.AddSingleton<ICitizenChangeNotifier, CitizenChangeNotifier>();
+
+// 1.7 Compress JSON responses (lists shrink 70-90%, which matters most on mobile data)
+builder.Services.AddResponseCompression(o =>
+{
+    o.EnableForHttps = true;
+    o.Providers.Add<BrotliCompressionProvider>();
+    o.Providers.Add<GzipCompressionProvider>();
+});
+builder.Services.Configure<BrotliCompressionProviderOptions>(o => o.Level = System.IO.Compression.CompressionLevel.Fastest);
+builder.Services.Configure<GzipCompressionProviderOptions>(o => o.Level = System.IO.Compression.CompressionLevel.Fastest);
 
 // 2. Setup Dependency Injection
 
@@ -101,6 +170,7 @@ builder.Services.AddControllers().AddJsonOptions(options =>
 });
 builder.Services.AddScoped<IAdminService, AdminService>();
 builder.Services.AddScoped<IVerificationService, VerificationService>();
+builder.Services.AddScoped<ICitizenApplicationsService, CitizenApplicationsService>();
 builder.Services.AddScoped<ITemplateService, TemplateService>();
 builder.Services.AddScoped<IServiceCatalogService, ServiceCatalogService>();
 builder.Services.AddScoped<IDuplicateApplicationRepository, DuplicateApplicationRepository>();
@@ -150,6 +220,7 @@ builder.Services.AddSingleton(new ValidationSafetyConfig
 builder.Services.AddScoped<IApplicationDraftingService, ApplicationDraftingService>();
 builder.Services.AddSingleton<IEmbeddingService, LocalEmbeddingService>();
 builder.Services.AddHostedService<InstallmentMonitorService>();
+builder.Services.AddHostedService<DataRepairService>();
 
 
 
@@ -162,6 +233,32 @@ builder.Services.AddCors(options =>
             .AllowAnyOrigin()
             .AllowAnyHeader()
             .AllowAnyMethod());
+});
+
+// 3.5 Rate limiting: one client (an old app build still polling every 2 s, a stuck script) must not
+// be able to use the capacity of hundreds of normal users. Keyed by citizen NIC, officer email, or IP.
+builder.Services.AddRateLimiter(options =>
+{
+    options.RejectionStatusCode = StatusCodes.Status429TooManyRequests;
+    options.GlobalLimiter = PartitionedRateLimiter.Create<HttpContext, string>(ctx =>
+    {
+        // Realtime hub connections are long-lived and not counted
+        if (ctx.Request.Path.StartsWithSegments("/hubs"))
+        {
+            return RateLimitPartition.GetNoLimiter("hubs");
+        }
+
+        var key = ctx.User.FindFirst("nicNumber")?.Value
+                  ?? ctx.User.FindFirst(System.Security.Claims.ClaimTypes.Email)?.Value
+                  ?? ctx.Connection.RemoteIpAddress?.ToString()
+                  ?? "anonymous";
+        return RateLimitPartition.GetFixedWindowLimiter(key, _ => new FixedWindowRateLimiterOptions
+        {
+            PermitLimit = int.TryParse(Environment.GetEnvironmentVariable("RATE_LIMIT_PER_MINUTE"), out var limit) ? limit : 120,
+            Window = TimeSpan.FromMinutes(1),
+            QueueLimit = 0
+        });
+    });
 });
 
 // 4. Setup JWT Authentication
@@ -199,6 +296,13 @@ if (!string.IsNullOrEmpty(jwtKey))
                 {
                     context.Token = accessToken;
                 }
+
+                // WebSockets cannot send an Authorization header, so SignalR sends ?access_token=
+                var hubToken = context.Request.Query["access_token"];
+                if (!string.IsNullOrEmpty(hubToken) && path.StartsWithSegments("/hubs"))
+                {
+                    context.Token = hubToken;
+                }
                 return Task.CompletedTask;
             },
             OnTokenValidated = async context =>
@@ -209,8 +313,10 @@ if (!string.IsNullOrEmpty(jwtKey))
                     return;
                 }
 
+                // Redis (or a short in-process cache) instead of a database round trip on every request
+                var revocation = context.HttpContext.RequestServices.GetRequiredService<TokenRevocationStore>();
                 var dbContext = context.HttpContext.RequestServices.GetRequiredService<AppDbContext>();
-                var isRevoked = await dbContext.RevokedTokens.AnyAsync(t => t.Jti == jti);
+                var isRevoked = await revocation.IsRevokedAsync(jti, dbContext);
                 if (isRevoked)
                 {
                     context.Fail("Token has been revoked.");
@@ -267,6 +373,39 @@ using (var scope = app.Services.CreateScope())
         catch (Exception mEx)
         {
             Console.WriteLine($"Database migration note (proceeding with schema ensure): {mEx.Message}");
+        }
+
+        // Indexes for the hot read paths (citizen app, officer queues, payments). Run on their own
+        // so a failure in the larger schema block below cannot skip them. Mirrored in AppDbContext.
+        try
+        {
+            context.Database.ExecuteSqlRaw(@"
+CREATE INDEX IF NOT EXISTS ""IX_VerificationTasks_CitizenNic_CreatedDate"" ON ""VerificationTasks"" (""CitizenNic"", ""CreatedDate"" DESC);
+CREATE INDEX IF NOT EXISTS ""IX_VerificationTasks_ApplicationId"" ON ""VerificationTasks"" (""ApplicationId"");
+CREATE INDEX IF NOT EXISTS ""IX_VerificationTasks_Status_CreatedDate"" ON ""VerificationTasks"" (""Status"", ""CreatedDate"" DESC);
+CREATE INDEX IF NOT EXISTS ""IX_ApplicationSubmissions_CitizenNic"" ON ""ApplicationSubmissions"" (""CitizenNic"");
+CREATE INDEX IF NOT EXISTS ""IX_Payments_ApplicationId"" ON ""Payments"" (""ApplicationId"");
+CREATE INDEX IF NOT EXISTS ""IX_AuditLogs_ApplicationId"" ON ""AuditLogs"" (""ApplicationId"");
+CREATE INDEX IF NOT EXISTS ""IX_AuditLogs_Timestamp"" ON ""AuditLogs"" (""Timestamp"" DESC);
+CREATE INDEX IF NOT EXISTS ""IX_OfficerReviews_TaskId"" ON ""OfficerReviews"" (""TaskId"");
+CREATE INDEX IF NOT EXISTS ""IX_Users_NicNumber"" ON ""Users"" (""NicNumber"");
+CREATE INDEX IF NOT EXISTS ""IX_Templates_ServiceProcedureId"" ON ""Templates"" (""ServiceProcedureId"");
+CREATE INDEX IF NOT EXISTS ""IX_RevokedTokens_ExpiresAt"" ON ""RevokedTokens"" (""ExpiresAt"");
+");
+        }
+        catch (Exception iEx)
+        {
+            Console.WriteLine($"Index creation note: {iEx.Message}");
+        }
+
+        // Tokens revoked before Redis was enabled must stay revoked
+        try
+        {
+            services.GetRequiredService<TokenRevocationStore>().CopyDatabaseToRedisAsync(context).GetAwaiter().GetResult();
+        }
+        catch (Exception rEx)
+        {
+            Console.WriteLine($"Revoked token copy to Redis failed: {rEx.Message}");
         }
 
         // Migrations are gitignored, so tables and new columns are ensured with idempotent SQL
@@ -358,7 +497,7 @@ ALTER TABLE ""Templates"" ADD COLUMN IF NOT EXISTS ""StageDescription"" text NUL
 
 ALTER TABLE ""ServiceProcedures"" ADD COLUMN IF NOT EXISTS ""TotalStages"" integer NOT NULL DEFAULT 1;
 ALTER TABLE ""ServiceProcedures"" ADD COLUMN IF NOT EXISTS ""WorkflowDepartments"" text NULL;
-// ---> NEW BOOKING TIME SLOTS TABLE <---
+-- NEW BOOKING TIME SLOTS TABLE
 CREATE TABLE IF NOT EXISTS ""CollectionTimeSlots"" (
     ""Id"" integer GENERATED BY DEFAULT AS IDENTITY PRIMARY KEY,
     ""DayOfWeek"" integer NOT NULL CHECK (""DayOfWeek"" >= 1 AND ""DayOfWeek"" <= 6), -- 1=Monday to 6=Saturday (Sunday excluded)
@@ -512,12 +651,16 @@ if (app.Environment.IsDevelopment())
 
 // app.UseHttpsRedirection();
 
+app.UseResponseCompression();
+
 // 7. Enable CORS globally
 app.UseCors("AllowAllOrigins");
 
 app.UseAuthentication();
+app.UseRateLimiter(); // after authentication so the limit is per user, not per shared IP
 app.UseAuthorization();
 
 app.MapControllers();
+app.MapHub<ApplicationHub>(ApplicationHub.Path);
 
 app.Run("http://0.0.0.0:5119");

@@ -1,4 +1,3 @@
-import 'dart:async';
 import 'package:flutter/material.dart';
 import 'package:flutter/cupertino.dart';
 import '../../models/verification_models.dart';
@@ -24,7 +23,6 @@ class _ApplicationsTabState extends ConsumerState<ApplicationsTab> {
   String _selectedFilter = 'All'; // 'All', 'In Review', 'Approved', 'Needs Action'
   String _searchQuery = '';
   final TextEditingController _searchController = TextEditingController();
-  Timer? _pollTimer;
 
   @override
   void initState() {
@@ -32,17 +30,10 @@ class _ApplicationsTabState extends ConsumerState<ApplicationsTab> {
     WidgetsBinding.instance.addPostFrameCallback((_) {
       if (mounted) _loadApplications();
     });
-    // Live status polling every 3 seconds so approval/rejection updates immediately
-    _pollTimer = Timer.periodic(const Duration(seconds: 3), (_) {
-      if (mounted) {
-        ref.invalidate(myApplicationsProvider);
-      }
-    });
   }
 
   @override
   void dispose() {
-    _pollTimer?.cancel();
     _searchController.dispose();
     super.dispose();
   }

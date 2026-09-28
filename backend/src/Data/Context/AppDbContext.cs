@@ -83,6 +83,27 @@ namespace Government_Service_Navigator.Backend.Data.Context
                       .HasForeignKey(c => c.TaskId);
             });
 
+            // Hot read-path indexes; also created idempotently on startup in Program.cs
+            modelBuilder.Entity<VerificationTask>(entity =>
+            {
+                entity.HasIndex(t => new { t.CitizenNic, t.CreatedDate })
+                      .IsDescending(false, true)
+                      .HasDatabaseName("IX_VerificationTasks_CitizenNic_CreatedDate");
+                entity.HasIndex(t => t.ApplicationId);
+                entity.HasIndex(t => new { t.Status, t.CreatedDate })
+                      .IsDescending(false, true)
+                      .HasDatabaseName("IX_VerificationTasks_Status_CreatedDate");
+            });
+            modelBuilder.Entity<ApplicationSubmission>().HasIndex(s => s.CitizenNic);
+            modelBuilder.Entity<Payment>().HasIndex(p => p.ApplicationId);
+            modelBuilder.Entity<AuditLog>(entity =>
+            {
+                entity.HasIndex(a => a.ApplicationId);
+                entity.HasIndex(a => a.Timestamp).IsDescending();
+            });
+            modelBuilder.Entity<User>().HasIndex(u => u.NicNumber);
+            modelBuilder.Entity<RevokedToken>().HasIndex(t => t.ExpiresAt);
+
             modelBuilder.Entity<AgentDraft>()
                 .HasIndex(d => d.ApplicationId)
                 .IsUnique();

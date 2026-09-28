@@ -20,11 +20,13 @@ namespace Government_Service_Navigator.Backend.Services
     {
         private readonly AppDbContext _context;
         private readonly IConfiguration _configuration;
+        private readonly TokenRevocationStore _revocation;
 
-        public AuthService(AppDbContext context, IConfiguration configuration)
+        public AuthService(AppDbContext context, IConfiguration configuration, TokenRevocationStore revocation)
         {
             _context = context;
             _configuration = configuration;
+            _revocation = revocation;
         }
 
         public async Task<AuthResponse> RegisterAsync(RegisterRequest request)
@@ -156,6 +158,9 @@ namespace Government_Service_Navigator.Backend.Services
             _context.RevokedTokens.RemoveRange(expiredTokens);
 
             await _context.SaveChangesAsync();
+
+            // Write-through to the fast revocation check used on every request
+            await _revocation.RevokeAsync(jti, expiresAt);
         }
 
         private string GenerateJwtToken(User user)
