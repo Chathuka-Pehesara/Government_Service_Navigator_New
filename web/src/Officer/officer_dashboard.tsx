@@ -2,7 +2,6 @@ import '@carbon/styles/css/styles.css';
 import { useState, useEffect } from "react";
 import {
   Header,
-  HeaderContainer,
   HeaderName,
   HeaderGlobalBar,
   HeaderGlobalAction,
@@ -221,17 +220,18 @@ export default function OfficerDashboard() {
     }
   };
 
+  const [isSideNavExpanded, setIsSideNavExpanded] = useState(false);
+  const onClickSideNavExpand = () => setIsSideNavExpanded(prev => !prev);
+
   return (
-    <HeaderContainer
-      render={({ isSideNavExpanded, onClickSideNavExpand }) => (
-        <>
-          <Header aria-label="Registry Portal System">
-            <HeaderMenuButton
-              aria-label={isSideNavExpanded ? "Close menu" : "Open menu"}
-              onClick={onClickSideNavExpand}
-              isActive={isSideNavExpanded}
-              isCollapsible
-            />
+    <>
+      <Header aria-label="Registry Portal System">
+        <HeaderMenuButton
+          aria-label={isSideNavExpanded ? "Close menu" : "Open menu"}
+          onClick={onClickSideNavExpand}
+          isActive={isSideNavExpanded}
+          isCollapsible
+        />
             <HeaderName href="#" prefix="GSN">
               Registry Portal
             </HeaderName>
@@ -481,9 +481,7 @@ export default function OfficerDashboard() {
             </Modal>
 
           </main>
-        </>
-      )}
-    />
+    </>
   );
 }
 
