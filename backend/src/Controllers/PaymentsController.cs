@@ -69,20 +69,29 @@ namespace Government_Service_Navigator.Backend.Controllers
             var query = _context.Payments
                 .Where(p => p.Status == "PendingVerification");
 
-            if (!isSystemAdmin && !string.IsNullOrEmpty(dept))
+                       if (!isSystemAdmin)
             {
-                var targetDept = dept.Trim();
-                var appSubmissions = _context.ApplicationSubmissions
-                    .Include(s => s.ServiceProcedure)
-                    .Where(s => 
-                        (s.CurrentDepartment != null && EF.Functions.ILike(s.CurrentDepartment, targetDept))
-                        || (s.ServiceProcedure != null && s.ServiceProcedure.WorkflowDepartments != null && s.ServiceProcedure.WorkflowDepartments.Contains(targetDept))
-                        || (s.FormDataJson != null && s.FormDataJson.Contains(targetDept))
-                    )
-                    .Select(s => s.Id);
+                if (string.IsNullOrEmpty(dept))
+                {
+                    // If a non-admin lacks a department claim, completely deny visibility
+                    query = query.Where(p => false);
+                }
+                else
+                {
+                    var targetDept = dept.Trim();
+                    var appSubmissions = _context.ApplicationSubmissions
+                        .Where(s => 
+                            // Match exact current department
+                            (s.CurrentDepartment != null && EF.Functions.ILike(s.CurrentDepartment, targetDept))
+                            // OR match strict JSON property for direct department payments
+                            || (s.FormDataJson != null && s.FormDataJson.Contains($"\"Department\":\"{targetDept}\""))
+                        )
+                        .Select(s => s.Id);
 
-                query = query.Where(p => appSubmissions.Contains(p.ApplicationId));
+                    query = query.Where(p => appSubmissions.Contains(p.ApplicationId));
+                }
             }
+
 
             var pending = await query
                 .OrderByDescending(p => p.CreatedDate)
@@ -222,20 +231,29 @@ namespace Government_Service_Navigator.Backend.Controllers
 
             var query = _context.Payments.AsQueryable();
 
-            if (!isSystemAdmin && !string.IsNullOrEmpty(dept))
+                        if (!isSystemAdmin)
             {
-                var targetDept = dept.Trim();
-                var appSubmissions = _context.ApplicationSubmissions
-                    .Include(s => s.ServiceProcedure)
-                    .Where(s => 
-                        (s.CurrentDepartment != null && EF.Functions.ILike(s.CurrentDepartment, targetDept))
-                        || (s.ServiceProcedure != null && s.ServiceProcedure.WorkflowDepartments != null && s.ServiceProcedure.WorkflowDepartments.Contains(targetDept))
-                        || (s.FormDataJson != null && s.FormDataJson.Contains(targetDept))
-                    )
-                    .Select(s => s.Id);
+                if (string.IsNullOrEmpty(dept))
+                {
+                    // If a non-admin lacks a department claim, completely deny visibility
+                    query = query.Where(p => false);
+                }
+                else
+                {
+                    var targetDept = dept.Trim();
+                    var appSubmissions = _context.ApplicationSubmissions
+                        .Where(s => 
+                            // Match exact current department
+                            (s.CurrentDepartment != null && EF.Functions.ILike(s.CurrentDepartment, targetDept))
+                            // OR match strict JSON property for direct department payments
+                            || (s.FormDataJson != null && s.FormDataJson.Contains($"\"Department\":\"{targetDept}\""))
+                        )
+                        .Select(s => s.Id);
 
-                query = query.Where(p => appSubmissions.Contains(p.ApplicationId));
+                    query = query.Where(p => appSubmissions.Contains(p.ApplicationId));
+                }
             }
+
 
             var payments = await query
                 .OrderByDescending(p => p.CreatedDate)
@@ -373,18 +391,29 @@ namespace Government_Service_Navigator.Backend.Controllers
             var dept = User.FindFirstValue("department") ?? User.FindFirst("department")?.Value;
             var isSystemAdmin = role.Contains("System Admin", StringComparison.OrdinalIgnoreCase) || role == "Admin";
 
-            if (!isSystemAdmin && !string.IsNullOrEmpty(dept))
+                        if (!isSystemAdmin)
             {
+                // Reject outright if non-admin has no department claim
+                if (string.IsNullOrEmpty(dept)) return Forbid();
+
                 var paymentItem = await _context.Payments.FindAsync(id);
                 if (paymentItem != null)
                 {
                     var submission = await _context.ApplicationSubmissions.FindAsync(paymentItem.ApplicationId);
-                    if (submission != null && !string.IsNullOrEmpty(submission.CurrentDepartment) && !string.Equals(submission.CurrentDepartment, dept, StringComparison.OrdinalIgnoreCase))
+                    if (submission != null)
                     {
-                        return Forbid();
+                        var targetDept = dept.Trim();
+                        bool isMatch = (!string.IsNullOrEmpty(submission.CurrentDepartment) && string.Equals(submission.CurrentDepartment, targetDept, StringComparison.OrdinalIgnoreCase))
+                                       || (submission.FormDataJson != null && submission.FormDataJson.Contains($"\"Department\":\"{targetDept}\""));
+
+                        if (!isMatch)
+                        {
+                            return Forbid(); // Prevent verifying/updating another department's payment
+                        }
                     }
                 }
             }
+
 
             try
             {
@@ -417,18 +446,29 @@ namespace Government_Service_Navigator.Backend.Controllers
             var dept = User.FindFirstValue("department") ?? User.FindFirst("department")?.Value;
             var isSystemAdmin = role.Contains("System Admin", StringComparison.OrdinalIgnoreCase) || role == "Admin";
 
-            if (!isSystemAdmin && !string.IsNullOrEmpty(dept))
+                        if (!isSystemAdmin)
             {
+                // Reject outright if non-admin has no department claim
+                if (string.IsNullOrEmpty(dept)) return Forbid();
+
                 var paymentItem = await _context.Payments.FindAsync(id);
                 if (paymentItem != null)
                 {
                     var submission = await _context.ApplicationSubmissions.FindAsync(paymentItem.ApplicationId);
-                    if (submission != null && !string.IsNullOrEmpty(submission.CurrentDepartment) && !string.Equals(submission.CurrentDepartment, dept, StringComparison.OrdinalIgnoreCase))
+                    if (submission != null)
                     {
-                        return Forbid();
+                        var targetDept = dept.Trim();
+                        bool isMatch = (!string.IsNullOrEmpty(submission.CurrentDepartment) && string.Equals(submission.CurrentDepartment, targetDept, StringComparison.OrdinalIgnoreCase))
+                                       || (submission.FormDataJson != null && submission.FormDataJson.Contains($"\"Department\":\"{targetDept}\""));
+
+                        if (!isMatch)
+                        {
+                            return Forbid(); // Prevent verifying/updating another department's payment
+                        }
                     }
                 }
             }
+
 
             try
             {
