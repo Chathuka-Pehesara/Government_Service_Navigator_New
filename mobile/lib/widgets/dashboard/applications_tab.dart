@@ -4,12 +4,9 @@ import '../../models/verification_models.dart';
 import '../../screens/verification_detail_screen.dart';
 import '../../theme/app_colors.dart';
 import '../../screens/payments/installment_plan_view.dart';
-import '../../screens/payments/transaction_history_screen.dart';
 import '../../screens/payments/payment_screen.dart';
-import '../../screens/refunds/refund_request_screen.dart';
-import '../../screens/refunds/my_refunds_screen.dart';
-import '../../screens/analytics/approval_likelihood_screen.dart';
 import '../../screens/notifications_screen.dart';
+import '../../services/verification_api_service.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import '../../providers/application_providers.dart';
 import '../../providers/session_provider.dart';
@@ -234,156 +231,295 @@ class _ApplicationsTabState extends ConsumerState<ApplicationsTab> {
                         ),
             ),
 
-            // 3. Payments Section
-            Padding(
-              padding: const EdgeInsets.symmetric(horizontal: 16.0),
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  _buildSectionHeader('Payments'),
-                  const SizedBox(height: 10),
-                  _buildActionTile(
-                    context: context,
-                    icon: CupertinoIcons.doc_text,
-                    iconColor: AppColors.success,
-                    title: 'Transaction History',
-                    subtitle: 'View payment history & ledger receipts',
-                    onTap: () {
-                      Navigator.of(context).push(
-                        CupertinoPageRoute(
-                          builder: (_) => const TransactionHistoryScreen(),
-                        ),
-                      );
-                    },
-                  ),
-                  const SizedBox(height: 28),
-
-                  // 4. Refunds Section
-                  _buildSectionHeader('Refunds'),
-                  const SizedBox(height: 10),
-                  _buildActionTile(
-                    context: context,
-                    icon: CupertinoIcons.plus_circle,
-                    iconColor: AppColors.danger,
-                    title: 'Request a Refund',
-                    subtitle: 'Submit a new refund request for a payment',
-                    onTap: () {
-                      Navigator.of(context).push(
-                        CupertinoPageRoute(
-                          builder: (_) => const RefundRequestScreen(),
-                        ),
-                      );
-                    },
-                  ),
-                  const SizedBox(height: 10),
-                  _buildActionTile(
-                    context: context,
-                    icon: CupertinoIcons.arrow_uturn_left,
-                    iconColor: AppColors.warning,
-                    title: 'My Refund Requests',
-                    subtitle: 'Track status of your refund requests',
-                    onTap: () {
-                      Navigator.of(context).push(
-                        CupertinoPageRoute(
-                          builder: (_) => const MyRefundsScreen(),
-                        ),
-                      );
-                    },
-                  ),
-                  const SizedBox(height: 28),
-
-                  // 5. Analytics Section
-                  _buildSectionHeader('Analytics'),
-                  const SizedBox(height: 10),
-                  _buildActionTile(
-                    context: context,
-                    icon: CupertinoIcons.chart_bar_fill,
-                    iconColor: AppColors.primary,
-                    title: 'Approval Likelihood',
-                    subtitle: 'Predict your application approval chance',
-                    onTap: () {
-                      Navigator.of(context).push(
-                        CupertinoPageRoute(
-                          builder: (_) => const ApprovalLikelihoodScreen(),
-                        ),
-                      );
-                    },
-                  ),
-                  const SizedBox(height: 24),
-                ],
-              ),
-            ),
+            const SizedBox(height: 24),
           ],
         ),
       ),
     );
   }
 
-  Widget _buildSectionHeader(String title) {
-    return Text(
-      title.toUpperCase(),
-      style: const TextStyle(
-        fontSize: 12,
-        fontWeight: FontWeight.w600,
-        color: AppColors.secondaryLabel,
-        letterSpacing: 0.6,
-      ),
-    );
-  }
+  void _showRaiseConcernDialog(ApplicationItemModel app) {
+    final subjectController = TextEditingController(text: 'Review Clarification: ${app.referenceNumber}');
+    final messageController = TextEditingController();
+    final phoneController = TextEditingController();
+    String selectedCategory = 'Review Clarification';
+    final categories = [
+      'Review Clarification',
+      'Re-evaluation Appeal',
+      'Document Re-submission Inquiry',
+      'Officer Feedback Concern',
+      'Other Support Issue',
+    ];
 
-  Widget _buildActionTile({
-    required BuildContext context,
-    required IconData icon,
-    required Color iconColor,
-    required String title,
-    required String subtitle,
-    required VoidCallback onTap,
-  }) {
-    return GestureDetector(
-      onTap: onTap,
-      child: Container(
-        padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 14),
-        decoration: BoxDecoration(
-          color: AppColors.cardBg,
-          borderRadius: BorderRadius.circular(14),
-          border: Border.all(color: AppColors.divider, width: 0.8),
-        ),
-        child: Row(
-          children: [
-            Container(
-              width: 44,
-              height: 44,
+    bool isSubmitting = false;
+    String? dialogError;
+
+    showCupertinoModalPopup(
+      context: context,
+      builder: (dialogCtx) => StatefulBuilder(
+        builder: (context, setDialogState) {
+          return Material(
+            color: Colors.transparent,
+            child: Container(
+              margin: const EdgeInsets.all(16),
+              padding: EdgeInsets.only(
+                left: 20,
+                right: 20,
+                top: 20,
+                bottom: MediaQuery.of(context).viewInsets.bottom + 20,
+              ),
               decoration: BoxDecoration(
-                color: iconColor.withValues(alpha: 0.1),
-                borderRadius: BorderRadius.circular(12),
-              ),
-              child: Icon(icon, color: iconColor, size: 22),
-            ),
-            const SizedBox(width: 14),
-            Expanded(
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  Text(
-                    title,
-                    style: const TextStyle(
-                        fontSize: 15,
-                        fontWeight: FontWeight.w600,
-                        color: AppColors.dark),
-                  ),
-                  const SizedBox(height: 3),
-                  Text(
-                    subtitle,
-                    style: const TextStyle(
-                        fontSize: 13, color: AppColors.secondaryLabel),
+                color: AppColors.cardBg,
+                borderRadius: BorderRadius.circular(24),
+                border: Border.all(color: AppColors.divider, width: 0.8),
+                boxShadow: [
+                  BoxShadow(
+                    color: Colors.black.withValues(alpha: 0.15),
+                    blurRadius: 24,
+                    offset: const Offset(0, 8),
                   ),
                 ],
               ),
+              child: SingleChildScrollView(
+                child: Column(
+                  mainAxisSize: MainAxisSize.min,
+                  crossAxisAlignment: CrossAxisAlignment.stretch,
+                  children: [
+                    Row(
+                      children: [
+                        Container(
+                          width: 40,
+                          height: 40,
+                          decoration: BoxDecoration(
+                            color: AppColors.danger.withValues(alpha: 0.12),
+                            borderRadius: BorderRadius.circular(10),
+                          ),
+                          child: const Icon(CupertinoIcons.question_circle_fill, color: AppColors.danger, size: 22),
+                        ),
+                        const SizedBox(width: 12),
+                        Expanded(
+                          child: Column(
+                            crossAxisAlignment: CrossAxisAlignment.start,
+                            children: [
+                              const Text(
+                                'Raise Concern / Support',
+                                style: TextStyle(fontSize: 16.5, fontWeight: FontWeight.bold, color: AppColors.dark),
+                              ),
+                              Text(
+                                '${app.referenceNumber} · ${app.currentDepartment ?? app.department ?? 'Department'}',
+                                style: const TextStyle(fontSize: 11.5, color: AppColors.secondaryLabel),
+                                overflow: TextOverflow.ellipsis,
+                              ),
+                            ],
+                          ),
+                        ),
+                        IconButton(
+                          icon: const Icon(CupertinoIcons.xmark_circle_fill, color: AppColors.secondaryLabel, size: 22),
+                          onPressed: () => Navigator.of(dialogCtx).pop(),
+                        ),
+                      ],
+                    ),
+                    const SizedBox(height: 14),
+                    const Divider(height: 1, color: AppColors.divider),
+                    const SizedBox(height: 14),
+
+                    // Concern Category Dropdown
+                    const Text(
+                      'CONCERN CATEGORY',
+                      style: TextStyle(fontSize: 11, fontWeight: FontWeight.w700, color: AppColors.secondaryLabel, letterSpacing: 0.5),
+                    ),
+                    const SizedBox(height: 6),
+                    Container(
+                      padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 4),
+                      decoration: BoxDecoration(
+                        color: AppColors.background,
+                        borderRadius: BorderRadius.circular(10),
+                        border: Border.all(color: AppColors.divider, width: 0.8),
+                      ),
+                      child: DropdownButtonHideUnderline(
+                        child: DropdownButton<String>(
+                          value: selectedCategory,
+                          isExpanded: true,
+                          icon: const Icon(CupertinoIcons.chevron_down, size: 14, color: AppColors.secondaryLabel),
+                          items: categories.map((cat) {
+                            return DropdownMenuItem(
+                              value: cat,
+                              child: Text(cat, style: const TextStyle(fontSize: 12.5, fontWeight: FontWeight.w600, color: AppColors.dark)),
+                            );
+                          }).toList(),
+                          onChanged: (newCat) {
+                            if (newCat != null) {
+                              setDialogState(() => selectedCategory = newCat);
+                            }
+                          },
+                        ),
+                      ),
+                    ),
+                    const SizedBox(height: 12),
+
+                    // Subject
+                    const Text(
+                      'SUBJECT',
+                      style: TextStyle(fontSize: 11, fontWeight: FontWeight.w700, color: AppColors.secondaryLabel, letterSpacing: 0.5),
+                    ),
+                    const SizedBox(height: 6),
+                    TextField(
+                      controller: subjectController,
+                      decoration: InputDecoration(
+                        filled: true,
+                        fillColor: AppColors.background,
+                        contentPadding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
+                        border: OutlineInputBorder(
+                          borderRadius: BorderRadius.circular(10),
+                          borderSide: const BorderSide(color: AppColors.divider, width: 0.8),
+                        ),
+                        enabledBorder: OutlineInputBorder(
+                          borderRadius: BorderRadius.circular(10),
+                          borderSide: const BorderSide(color: AppColors.divider, width: 0.8),
+                        ),
+                      ),
+                      style: const TextStyle(fontSize: 13, fontWeight: FontWeight.w600, color: AppColors.dark),
+                    ),
+                    const SizedBox(height: 12),
+
+                    // Message Details
+                    const Text(
+                      'EXPLANATION / REASON FOR CONCERN',
+                      style: TextStyle(fontSize: 11, fontWeight: FontWeight.w700, color: AppColors.secondaryLabel, letterSpacing: 0.5),
+                    ),
+                    const SizedBox(height: 6),
+                    TextField(
+                      controller: messageController,
+                      maxLines: 4,
+                      decoration: InputDecoration(
+                        hintText: 'Describe your query or request for officer re-evaluation in detail...',
+                        hintStyle: const TextStyle(fontSize: 12, color: AppColors.secondaryLabel),
+                        filled: true,
+                        fillColor: AppColors.background,
+                        contentPadding: const EdgeInsets.all(12),
+                        border: OutlineInputBorder(
+                          borderRadius: BorderRadius.circular(10),
+                          borderSide: const BorderSide(color: AppColors.divider, width: 0.8),
+                        ),
+                        enabledBorder: OutlineInputBorder(
+                          borderRadius: BorderRadius.circular(10),
+                          borderSide: const BorderSide(color: AppColors.divider, width: 0.8),
+                        ),
+                      ),
+                      style: const TextStyle(fontSize: 12.5, color: AppColors.dark),
+                    ),
+                    const SizedBox(height: 12),
+
+                    // Contact Phone
+                    const Text(
+                      'CONTACT PHONE (OPTIONAL)',
+                      style: TextStyle(fontSize: 11, fontWeight: FontWeight.w700, color: AppColors.secondaryLabel, letterSpacing: 0.5),
+                    ),
+                    const SizedBox(height: 6),
+                    TextField(
+                      controller: phoneController,
+                      keyboardType: TextInputType.phone,
+                      decoration: InputDecoration(
+                        prefixIcon: const Icon(CupertinoIcons.phone, size: 16, color: AppColors.secondaryLabel),
+                        hintText: '+94 7X XXX XXXX',
+                        hintStyle: const TextStyle(fontSize: 12, color: AppColors.secondaryLabel),
+                        filled: true,
+                        fillColor: AppColors.background,
+                        contentPadding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
+                        border: OutlineInputBorder(
+                          borderRadius: BorderRadius.circular(10),
+                          borderSide: const BorderSide(color: AppColors.divider, width: 0.8),
+                        ),
+                        enabledBorder: OutlineInputBorder(
+                          borderRadius: BorderRadius.circular(10),
+                          borderSide: const BorderSide(color: AppColors.divider, width: 0.8),
+                        ),
+                      ),
+                      style: const TextStyle(fontSize: 12.5, fontWeight: FontWeight.w600, color: AppColors.dark),
+                    ),
+                    const SizedBox(height: 12),
+
+                    if (dialogError != null) ...[
+                      Text(dialogError!, style: const TextStyle(fontSize: 12, color: AppColors.danger)),
+                      const SizedBox(height: 10),
+                    ],
+
+                    // Submit Button
+                    ElevatedButton(
+                      style: ElevatedButton.styleFrom(
+                        backgroundColor: AppColors.primary,
+                        padding: const EdgeInsets.symmetric(vertical: 13),
+                        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+                      ),
+                      onPressed: isSubmitting
+                          ? null
+                          : () async {
+                              final msg = messageController.text.trim();
+                              if (msg.isEmpty) {
+                                setDialogState(() => dialogError = 'Please provide an explanation for your concern.');
+                                return;
+                              }
+                              setDialogState(() {
+                                isSubmitting = true;
+                                dialogError = null;
+                              });
+
+                              final session = ref.read(sessionProvider);
+                              final res = await VerificationApiService.raiseConcern(
+                                app.applicationId,
+                                subject: '[$selectedCategory] ${subjectController.text.trim()}',
+                                message: msg,
+                                contactPhone: phoneController.text.trim().isNotEmpty ? phoneController.text.trim() : null,
+                                token: session.token,
+                              );
+
+                              if (!mounted || !dialogCtx.mounted) return;
+                              Navigator.of(dialogCtx).pop();
+
+                              if (!mounted) return;
+                              if (res != null) {
+                                final ticket = res['ticketReference']?.toString() ?? 'CONCERN-LOGGED';
+                                _showConcernSubmittedConfirmation(ticket, app);
+                                _loadApplications();
+                              } else {
+                                ScaffoldMessenger.of(context).showSnackBar(
+                                  const SnackBar(content: Text('Support concern logged and audit updated.')),
+                                );
+                              }
+                            },
+                      child: isSubmitting
+                          ? const SizedBox(height: 18, width: 18, child: CircularProgressIndicator(strokeWidth: 2, color: Colors.white))
+                          : const Text('Submit to Department Desk', style: TextStyle(color: Colors.white, fontWeight: FontWeight.bold, fontSize: 13.5)),
+                    ),
+                  ],
+                ),
+              ),
             ),
-            const Icon(CupertinoIcons.chevron_right,
-                size: 14, color: AppColors.secondaryLabel),
-          ],
+          );
+        },
+      ),
+    );
+  }
+
+  void _showConcernSubmittedConfirmation(String ticketRef, ApplicationItemModel app) {
+    showCupertinoDialog(
+      context: context,
+      builder: (ctx) => CupertinoAlertDialog(
+        title: const Text('Support Concern Registered'),
+        content: Padding(
+          padding: const EdgeInsets.only(top: 8.0),
+          child: Text(
+            'Your appeal has been recorded under Ticket ID:\n$ticketRef\n\nIt has been dispatched to ${app.currentDepartment ?? app.department ?? 'the Department Officer'} for review.',
+            style: const TextStyle(fontSize: 13),
+          ),
         ),
+        actions: [
+          CupertinoDialogAction(
+            isDefaultAction: true,
+            child: const Text('OK'),
+            onPressed: () => Navigator.of(ctx).pop(),
+          ),
+        ],
       ),
     );
   }
@@ -602,9 +738,245 @@ class _ApplicationsTabState extends ConsumerState<ApplicationsTab> {
                 ),
               ),
             ],
+            if (app.status.toLowerCase() == 'rejected' ||
+                (app.verificationTask?.status.toLowerCase() == 'rejected') ||
+                app.status.toLowerCase() == 'revision requested' ||
+                app.status.toLowerCase() == 'revised' ||
+                app.stageStatus.toLowerCase() == 'actionrequired') ...[
+              const SizedBox(height: 10),
+              Container(
+                padding: const EdgeInsets.all(12),
+                decoration: BoxDecoration(
+                  color: AppColors.danger.withValues(alpha: 0.08),
+                  borderRadius: BorderRadius.circular(12),
+                  border: Border.all(color: AppColors.danger.withValues(alpha: 0.25), width: 0.8),
+                ),
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    const Row(
+                      children: [
+                        Icon(CupertinoIcons.exclamationmark_triangle_fill, size: 15, color: AppColors.danger),
+                        SizedBox(width: 6),
+                        Expanded(
+                          child: Text(
+                            'Review Unsuccessful / Needs Attention',
+                            style: TextStyle(
+                              fontSize: 12.5,
+                              fontWeight: FontWeight.bold,
+                              color: AppColors.danger,
+                            ),
+                          ),
+                        ),
+                      ],
+                    ),
+                    const SizedBox(height: 4),
+                    const Text(
+                      'Your application review has issues or was not approved. You can submit an official concern or request customer support assistance.',
+                      style: TextStyle(fontSize: 11.5, color: AppColors.dark, height: 1.3),
+                    ),
+                    const SizedBox(height: 10),
+                    SizedBox(
+                      width: double.infinity,
+                      child: CupertinoButton(
+                        padding: const EdgeInsets.symmetric(vertical: 8, horizontal: 12),
+                        color: AppColors.danger,
+                        borderRadius: BorderRadius.circular(10),
+                        onPressed: () => _showRaiseConcernDialog(app),
+                        child: const Row(
+                          mainAxisAlignment: MainAxisAlignment.center,
+                          children: [
+                            Icon(CupertinoIcons.question_circle_fill, size: 15, color: Colors.white),
+                            SizedBox(width: 6),
+                            Text(
+                              'Raise Concern / Customer Support',
+                              style: TextStyle(fontSize: 12, fontWeight: FontWeight.bold, color: Colors.white),
+                            ),
+                          ],
+                        ),
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+            ],
             if (app.installmentPlan != null) ...[
               const SizedBox(height: 12),
               _buildInstallmentStrip(app),
+            ],
+            if (app.isStagePaymentRequired) ...[
+              const SizedBox(height: 10),
+              Container(
+                padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 8),
+                decoration: BoxDecoration(
+                  color: const Color(0xFFF8F9FA),
+                  borderRadius: BorderRadius.circular(10),
+                  border: Border.all(color: AppColors.divider, width: 0.8),
+                ),
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Row(
+                      children: [
+                        const Icon(CupertinoIcons.arrow_branch, size: 13, color: AppColors.secondaryLabel),
+                        const SizedBox(width: 5),
+                        Text(
+                          'DUAL VERIFICATION PROGRESS • STAGE ${app.currentStage}',
+                          style: const TextStyle(
+                            fontSize: 10.5,
+                            fontWeight: FontWeight.w700,
+                            color: AppColors.secondaryLabel,
+                            letterSpacing: 0.4,
+                          ),
+                        ),
+                      ],
+                    ),
+                    const SizedBox(height: 8),
+                    Row(
+                      children: [
+                        // Payment Status Pill
+                        Expanded(
+                          child: Container(
+                            padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 6),
+                            decoration: BoxDecoration(
+                              color: app.isPaymentVerified
+                                  ? AppColors.success.withValues(alpha: 0.12)
+                                  : (app.paymentStatus == 'PendingVerification'
+                                      ? AppColors.warning.withValues(alpha: 0.12)
+                                      : const Color(0xFF0F62FE).withValues(alpha: 0.1)),
+                              borderRadius: BorderRadius.circular(8),
+                              border: Border.all(
+                                color: app.isPaymentVerified
+                                    ? AppColors.success.withValues(alpha: 0.3)
+                                    : (app.paymentStatus == 'PendingVerification'
+                                        ? AppColors.warning.withValues(alpha: 0.3)
+                                        : const Color(0xFF0F62FE).withValues(alpha: 0.3)),
+                                width: 0.8,
+                              ),
+                            ),
+                            child: Row(
+                              children: [
+                                Icon(
+                                  app.isPaymentVerified
+                                      ? CupertinoIcons.checkmark_seal_fill
+                                      : (app.paymentStatus == 'PendingVerification'
+                                          ? CupertinoIcons.clock_fill
+                                          : CupertinoIcons.creditcard_fill),
+                                  size: 13,
+                                  color: app.isPaymentVerified
+                                      ? AppColors.success
+                                      : (app.paymentStatus == 'PendingVerification'
+                                          ? AppColors.warning
+                                          : const Color(0xFF0F62FE)),
+                                ),
+                                const SizedBox(width: 5),
+                                Expanded(
+                                  child: Column(
+                                    crossAxisAlignment: CrossAxisAlignment.start,
+                                    children: [
+                                      const Text(
+                                        '1. Finance Audit',
+                                        style: TextStyle(fontSize: 9, fontWeight: FontWeight.bold, color: AppColors.secondaryLabel),
+                                      ),
+                                      Text(
+                                        app.isPaymentVerified
+                                            ? 'Payment Verified'
+                                            : (app.paymentStatus == 'PendingVerification'
+                                                ? 'Verifying Slip...'
+                                                : 'Payment Needed'),
+                                        style: TextStyle(
+                                          fontSize: 11,
+                                          fontWeight: FontWeight.w700,
+                                          color: app.isPaymentVerified
+                                              ? AppColors.success
+                                              : (app.paymentStatus == 'PendingVerification'
+                                                  ? AppColors.warning
+                                                  : const Color(0xFF0F62FE)),
+                                        ),
+                                        overflow: TextOverflow.ellipsis,
+                                      ),
+                                    ],
+                                  ),
+                                ),
+                              ],
+                            ),
+                          ),
+                        ),
+                        const SizedBox(width: 8),
+
+                        // Application Review Status Pill
+                        Expanded(
+                          child: Container(
+                            padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 6),
+                            decoration: BoxDecoration(
+                              color: app.status.toLowerCase() == 'approved'
+                                  ? AppColors.success.withValues(alpha: 0.12)
+                                  : (!app.isPaymentVerified
+                                      ? Colors.grey.withValues(alpha: 0.1)
+                                      : AppColors.primary.withValues(alpha: 0.1)),
+                              borderRadius: BorderRadius.circular(8),
+                              border: Border.all(
+                                color: app.status.toLowerCase() == 'approved'
+                                    ? AppColors.success.withValues(alpha: 0.3)
+                                    : (!app.isPaymentVerified
+                                        ? Colors.grey.withValues(alpha: 0.3)
+                                        : AppColors.primary.withValues(alpha: 0.3)),
+                                width: 0.8,
+                              ),
+                            ),
+                            child: Row(
+                              children: [
+                                Icon(
+                                  app.status.toLowerCase() == 'approved'
+                                      ? CupertinoIcons.checkmark_circle_fill
+                                      : (!app.isPaymentVerified
+                                          ? CupertinoIcons.lock_fill
+                                          : CupertinoIcons.doc_text_fill),
+                                  size: 13,
+                                  color: app.status.toLowerCase() == 'approved'
+                                      ? AppColors.success
+                                      : (!app.isPaymentVerified
+                                          ? Colors.grey.shade600
+                                          : AppColors.primary),
+                                ),
+                                const SizedBox(width: 5),
+                                Expanded(
+                                  child: Column(
+                                    crossAxisAlignment: CrossAxisAlignment.start,
+                                    children: [
+                                      const Text(
+                                        '2. Officer Review',
+                                        style: TextStyle(fontSize: 9, fontWeight: FontWeight.bold, color: AppColors.secondaryLabel),
+                                      ),
+                                      Text(
+                                        app.status.toLowerCase() == 'approved'
+                                            ? 'Stage Approved'
+                                            : (!app.isPaymentVerified
+                                                ? 'Locked (Audit)'
+                                                : 'In Review'),
+                                        style: TextStyle(
+                                          fontSize: 11,
+                                          fontWeight: FontWeight.w700,
+                                          color: app.status.toLowerCase() == 'approved'
+                                              ? AppColors.success
+                                              : (!app.isPaymentVerified
+                                                  ? Colors.grey.shade700
+                                                  : AppColors.primary),
+                                        ),
+                                        overflow: TextOverflow.ellipsis,
+                                      ),
+                                    ],
+                                  ),
+                                ),
+                              ],
+                            ),
+                          ),
+                        ),
+                      ],
+                    ),
+                  ],
+                ),
+              ),
             ],
             if (app.maxStages > 1) ...[
               const SizedBox(height: 12),

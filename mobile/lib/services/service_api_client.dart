@@ -181,4 +181,33 @@ class ServiceApiClient {
     if (response.statusCode == 200 || response.statusCode == 402) return jsonDecode(response.body);
     throw Exception('Could not confirm your application (${response.statusCode})');
   }
+
+  /// Fetches official departments configured in the platform (with logos, contact, codes).
+  static Future<List<Map<String, dynamic>>> fetchDepartments() async {
+    try {
+      final response = await http.get(Uri.parse('${AppConfig.baseUrl}/departments'));
+      if (response.statusCode == 200) {
+        final List data = jsonDecode(response.body);
+        return data.whereType<Map<String, dynamic>>().toList();
+      }
+    } catch (_) {}
+    return [];
+  }
+
+  /// Finds department metadata (including logoUrl) by name, code, or partial category match.
+  static Future<Map<String, dynamic>?> fetchDepartmentByNameOrCode(String nameOrCode) async {
+    final query = nameOrCode.trim().toLowerCase();
+    if (query.isEmpty) return null;
+    final depts = await fetchDepartments();
+    for (final d in depts) {
+      final name = (d['name']?.toString() ?? '').toLowerCase();
+      final code = (d['departmentCode']?.toString() ?? '').toLowerCase();
+      final category = (d['category']?.toString() ?? '').toLowerCase();
+      if (name == query || code == query || name.contains(query) || query.contains(name) || (category.isNotEmpty && (category == query || query.contains(category)))) {
+        return d;
+      }
+    }
+    return null;
+  }
 }
+

@@ -147,5 +147,41 @@ class PaymentService {
     }
     throw Exception('Failed to load ledger (${response.statusCode})');
   }
+
+  /// POST /api/payments/department-pay
+  /// Direct payment to a department (Online or Bank Transfer) with citizen details and auto-generated reference
+  Future<Map<String, dynamic>> departmentPay({
+    required String department,
+    String? serviceName,
+    required double amount,
+    required String paymentMethod,
+    required String citizenNic,
+    required String userEmail,
+    String? citizenName,
+    String? manualSlipUrl,
+    String? notes,
+    int? applicationId,
+  }) async {
+    final response = await http.post(
+      Uri.parse('${AppConfig.baseUrl}/payments/department-pay'),
+      headers: _headers,
+      body: jsonEncode({
+        'department': department,
+        'serviceName': serviceName,
+        'amount': amount,
+        'paymentMethod': paymentMethod,
+        'citizenNic': citizenNic,
+        'userEmail': userEmail,
+        'citizenName': citizenName,
+        'manualSlipUrl': manualSlipUrl,
+        'notes': notes,
+        'applicationId': applicationId,
+      }),
+    );
+    if (response.statusCode == 200 || response.statusCode == 201) {
+      return jsonDecode(response.body) as Map<String, dynamic>;
+    }
+    throw Exception('Department payment failed (${response.statusCode}): ${response.body}');
+  }
 }
 
