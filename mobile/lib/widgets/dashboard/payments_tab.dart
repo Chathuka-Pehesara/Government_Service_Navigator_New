@@ -1271,14 +1271,31 @@ class _PaymentsDashboardTabState extends ConsumerState<PaymentsDashboardTab> {
                 final isPaid = statusStr.toLowerCase() == 'paid';
                 final isPending = statusStr.toLowerCase().contains('pending');
                 final statusColor = isPaid ? AppColors.success : (isPending ? AppColors.warning : AppColors.danger);
+                
                 final refIntent = payment.stripePaymentIntentId;
-                final refDisplay = (refIntent != null && refIntent.isNotEmpty) ? refIntent : 'Payment #${payment.id}';
                 final createdDateStr = payment.createdDate;
+                
+                // Format consistent visual ID (PAY-YYYYMMDD-XXXXXX)
+                String refDisplay;
+                if (refIntent != null && refIntent.startsWith('PAY-')) {
+                  refDisplay = refIntent;
+                } else {
+                  // Extract YYYYMMDD from the createdDate or fallback to today
+                  final datePart = (createdDateStr != null && createdDateStr.length >= 10)
+                      ? createdDateStr.substring(0, 10).replaceAll('-', '')
+                      : DateTime.now().toIso8601String().substring(0, 10).replaceAll('-', '');
+                  
+                  // Pad the payment ID to 6 digits to match the visual length
+                  final idPart = payment.id.toString().padLeft(6, '0');
+                  refDisplay = 'PAY-$datePart-$idPart';
+                }
+
                 final dateDisplay = (createdDateStr != null && createdDateStr.contains('T'))
                     ? createdDateStr.split('T')[0]
                     : (createdDateStr ?? 'Recent');
 
                 return Container(
+
                   margin: const EdgeInsets.only(bottom: 8),
                   padding: const EdgeInsets.all(14),
                   decoration: BoxDecoration(
