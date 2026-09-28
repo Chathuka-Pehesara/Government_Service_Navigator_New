@@ -451,7 +451,19 @@ export default function AgentDraftPanel({ draft, loading, error, answers, onRege
                 </div>
               </>
             ) : (
-              <p style={muted}>Safety and duplicate checks pending review generation.</p>
+              <div style={{ padding: "0.5rem 0" }}>
+                <p style={{ ...muted, marginBottom: "0.75rem" }}>
+                  Safety, duplicate detection, and Groq LLM cognitive audits are ready to execute for this case.
+                </p>
+                <Button
+                  size="sm"
+                  kind="primary"
+                  onClick={onRegenerate}
+                  disabled={loading}
+                >
+                  {loading ? "Running Agent 4 Audit..." : "Run Agent 4 Audit & Safety Scan Now"}
+                </Button>
+              </div>
             )}
           </AccordionItem>
 
