@@ -78,6 +78,7 @@ namespace Government_Service_Navigator.Backend.Controllers
                     t.ApplicationId,
                     t.Status,
                     t.CreatedDate,
+                    VerifiedDate = rev?.ReviewDate ?? t.CreatedDate,
                     t.CurrentStage,
                     t.MaxStages,
                     Department = t.Department ?? s?.CurrentDepartment,
