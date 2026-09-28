@@ -198,7 +198,10 @@ class _PaymentScreenState extends ConsumerState<PaymentScreen> {
         _isPaid = isPaid;
         _isSuccess = isPaid;
         if (isPaid) {
-          _resultMessage = 'Payment successful';
+          final email = payment.userEmail ?? _effectiveUserEmail;
+          _resultMessage = email.isNotEmpty
+              ? 'Payment successful. A receipt was emailed to $email.'
+              : 'Payment successful';
         } else {
           _resultMessage = 'Payment status: $statusStr';
         }

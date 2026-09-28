@@ -1,18 +1,24 @@
 using System.Net;
 using System.Net.Mail;
+using System.Text;
+using Government_Service_Navigator.Backend.DTOs.Responses;
+using Government_Service_Navigator.Backend.Services.EmailTemplates;
 using Government_Service_Navigator.Backend.Services.Interfaces;
 
 namespace Government_Service_Navigator.Backend.Services
 {
     public class NotificationService : INotificationService
     {
-        public async Task SendEmailAsync(string toEmail, string subject, string body)
+        public async Task SendEmailAsync(string toEmail, string subject, string body, string? htmlBody = null)
         {
             var host = Environment.GetEnvironmentVariable("SMTP_HOST");
             var portStr = Environment.GetEnvironmentVariable("SMTP_PORT");
             var user = Environment.GetEnvironmentVariable("SMTP_USER");
             var pass = Environment.GetEnvironmentVariable("SMTP_PASSWORD");
-            var fromEmail = Environment.GetEnvironmentVariable("SMTP_FROM_EMAIL") ?? user;
+            var fromEmail = Environment.GetEnvironmentVariable("SMTP_FROM_EMAIL");
+            if (string.IsNullOrWhiteSpace(fromEmail)) fromEmail = user;
+            var fromName = Environment.GetEnvironmentVariable("SMTP_FROM_NAME");
+            var useSsl = !bool.TryParse(Environment.GetEnvironmentVariable("SMTP_USE_SSL"), out var ssl) || ssl;
 
             if (string.IsNullOrEmpty(host) || string.IsNullOrEmpty(user) || string.IsNullOrEmpty(pass))
             {
@@ -26,10 +32,19 @@ namespace Government_Service_Navigator.Backend.Services
             using var client = new SmtpClient(host, port)
             {
                 Credentials = new NetworkCredential(user, pass),
-                EnableSsl = true
+                EnableSsl = useSsl
             };
 
-            using var message = new MailMessage(fromEmail!, toEmail, subject, body);
+            using var message = new MailMessage(new MailAddress(fromEmail!, fromName), new MailAddress(toEmail))
+            {
+                Subject = subject,
+                Body = body
+            };
+            if (!string.IsNullOrEmpty(htmlBody))
+            {
+                // Plain text stays as the main body; clients that render HTML pick this alternate view
+                message.AlternateViews.Add(AlternateView.CreateAlternateViewFromString(htmlBody, Encoding.UTF8, "text/html"));
+            }
 
             try
             {
@@ -72,6 +87,15 @@ namespace Government_Service_Navigator.Backend.Services
             };
 
             await SendEmailAsync(toEmail, subject, body);
+        }
+
+        public async Task NotifyOnlinePaymentSuccessAsync(string toEmail, OnlinePaymentReceiptDto receipt)
+        {
+            await SendEmailAsync(
+                toEmail,
+                PaymentReceiptEmailTemplate.Subject(receipt),
+                PaymentReceiptEmailTemplate.Text(receipt),
+                PaymentReceiptEmailTemplate.Html(receipt));
         }
     }
 }

@@ -81,31 +81,7 @@ namespace Government_Service_Navigator.Backend.Services
             {
                 payment.Status = "Paid";
                 payment.PaidDate = DateTime.UtcNow;
-
-                // Update application submission: unlock for Verification Officer review rather than bypassing it
-                var submission = await _context.ApplicationSubmissions.FindAsync(payment.ApplicationId);
-                if (submission != null)
-                {
-                    bool isPureDirectPayment = submission.FormDataJson != null &&
-                                               submission.FormDataJson.Contains("\"PaymentType\":\"Direct Department Payment\"") &&
-                                               submission.MaxStages <= 1;
-
-                    var hasActiveTask = await _context.VerificationTasks.AnyAsync(t => t.ApplicationId == submission.Id && t.Status != "Approved");
-
-                    if (isPureDirectPayment && !hasActiveTask)
-                    {
-                        submission.StageStatus = "Completed";
-                    }
-                    else
-                    {
-                        // Only set UnderVerification if citizen has actually submitted the form for CurrentStage
-                        var hasCurrentStageTask = await _context.VerificationTasks.AnyAsync(t => t.ApplicationId == submission.Id && t.StageNumber == submission.CurrentStage);
-                        if (hasCurrentStageTask)
-                        {
-                            submission.StageStatus = "UnderVerification";
-                        }
-                    }
-                }
+                await ApplyPaidToSubmissionAsync(payment);
             }
             else
             {
@@ -151,28 +127,7 @@ namespace Government_Service_Navigator.Backend.Services
             if (normalized == "Paid")
             {
                 payment.PaidDate ??= DateTime.UtcNow;
-                var submission = await _context.ApplicationSubmissions.FindAsync(payment.ApplicationId);
-                if (submission != null)
-                {
-                    bool isPureDirectPayment = submission.FormDataJson != null &&
-                                               submission.FormDataJson.Contains("\"PaymentType\":\"Direct Department Payment\"") &&
-                                               submission.MaxStages <= 1;
-
-                    var hasActiveTask = await _context.VerificationTasks.AnyAsync(t => t.ApplicationId == submission.Id && t.Status != "Approved");
-
-                    if (isPureDirectPayment && !hasActiveTask)
-                    {
-                        submission.StageStatus = "Completed";
-                    }
-                    else
-                    {
-                        var hasCurrentStageTask = await _context.VerificationTasks.AnyAsync(t => t.ApplicationId == submission.Id && t.StageNumber == submission.CurrentStage);
-                        if (hasCurrentStageTask)
-                        {
-                            submission.StageStatus = "UnderVerification";
-                        }
-                    }
-                }
+                await ApplyPaidToSubmissionAsync(payment);
             }
             else if (normalized == "PendingVerification")
             {
@@ -263,39 +218,61 @@ namespace Government_Service_Navigator.Backend.Services
             _context.Payments.Add(payment);
             await _context.SaveChangesAsync();
 
+            var submission = await _context.ApplicationSubmissions
+                .Include(s => s.ServiceProcedure)
+                .FirstOrDefaultAsync(s => s.Id == applicationId);
+            var productName = submission != null
+                ? $"{ResolveServiceName(submission)} - Stage {submission.CurrentStage} (APP-{applicationId})"
+                : $"Application #{applicationId} Fee";
+
+            var checkoutUrl = await OpenStripeCheckoutAsync(payment, productName);
+            return (payment, checkoutUrl);
+        }
+
+        public async Task<string> OpenStripeCheckoutAsync(Payment payment, string productName)
+        {
             var options = new SessionCreateOptions
             {
                 PaymentMethodTypes = new List<string> { "card" },
+                // Pre-fills (and locks) the email field on the Stripe page with the signed-in user's email
+                CustomerEmail = IsDeliverableEmail(payment.UserEmail) ? payment.UserEmail : null,
+                ClientReferenceId = payment.Id.ToString(),
                 LineItems = new List<SessionLineItemOptions>
                 {
                     new SessionLineItemOptions
                     {
                         PriceData = new SessionLineItemPriceDataOptions
                         {
-                            UnitAmount = (long)(amount * 100), // Stripe expects the smallest currency unit
-                            Currency = "usd", // sandbox testing currency; adjust once a supported currency is confirmed
+                            // LKR is a two-decimal currency in Stripe, so the amount is sent in cents
+                            UnitAmount = (long)Math.Round(payment.Amount * 100),
+                            Currency = "lkr",
                             ProductData = new SessionLineItemPriceDataProductDataOptions
                             {
-                                Name = $"Application #{applicationId} Fee"
+                                Name = productName
                             }
                         },
                         Quantity = 1
                     }
                 },
+                Metadata = new Dictionary<string, string>
+                {
+                    ["paymentId"] = payment.Id.ToString(),
+                    ["applicationId"] = payment.ApplicationId.ToString()
+                },
                 Mode = "payment",
-                SuccessUrl = "https://example.com/success?paymentId=" + payment.Id,
-                CancelUrl = "https://example.com/cancel?paymentId=" + payment.Id
+                // The mobile checkout webview closes on these /success and /cancel URLs
+                SuccessUrl = $"https://example.com/checkout/success?paymentId={payment.Id}",
+                CancelUrl = $"https://example.com/checkout/cancel?paymentId={payment.Id}"
             };
 
-            var service = new SessionService();
-            var session = await service.CreateAsync(options);
+            var session = await new SessionService().CreateAsync(options);
 
             payment.StripePaymentIntentId = session.Id;
             await _context.SaveChangesAsync();
 
-            return (payment, session.Url);
+            return session.Url;
         }
-        // for testing in swagger
+
         public async Task<Payment> ConfirmStripePaymentAsync(int paymentId)
         {
             var payment = await _context.Payments.FindAsync(paymentId);
@@ -305,22 +282,121 @@ namespace Government_Service_Navigator.Backend.Services
                 throw new KeyNotFoundException($"Payment {paymentId} not found.");
             }
 
-            if (string.IsNullOrEmpty(payment.StripePaymentIntentId))
+            // Already confirmed: don't hit Stripe again or send a second receipt
+            if (payment.Status == "Paid")
+            {
+                return payment;
+            }
+
+            if (string.IsNullOrEmpty(payment.StripePaymentIntentId) || !payment.StripePaymentIntentId.StartsWith("cs_"))
             {
                 throw new InvalidOperationException("This payment has no associated Stripe session.");
             }
 
-            var service = new SessionService();
-            var session = await service.GetAsync(payment.StripePaymentIntentId);
+            var session = await new SessionService().GetAsync(payment.StripePaymentIntentId);
 
-            if (session.PaymentStatus == "paid" && payment.Status != "Paid")
+            if (session.PaymentStatus == "paid")
             {
                 payment.Status = "Paid";
                 payment.PaidDate = DateTime.UtcNow;
+                await ApplyPaidToSubmissionAsync(payment);
+
+                _context.AuditLogs.Add(new AuditLog
+                {
+                    ApplicationId = payment.ApplicationId,
+                    Action = "Online Payment Confirmed",
+                    PerformedBy = payment.UserEmail,
+                    Timestamp = DateTime.UtcNow,
+                    OldValues = $"PaymentId={payment.Id}, Status=Pending",
+                    NewValues = $"Status=Paid, Amount={payment.Currency} {payment.Amount}, StripeSession={session.Id}, StripePaymentIntent={session.PaymentIntentId}"
+                });
+                await _context.SaveChangesAsync();
+
+                await SendOnlinePaymentReceiptAsync(payment);
+            }
+            else if (session.Status == "expired" && payment.Status == "Pending")
+            {
+                payment.Status = "Failed";
                 await _context.SaveChangesAsync();
             }
 
             return payment;
         }
+
+        private async Task SendOnlinePaymentReceiptAsync(Payment payment)
+        {
+            var submission = await _context.ApplicationSubmissions
+                .Include(s => s.ServiceProcedure)
+                .FirstOrDefaultAsync(s => s.Id == payment.ApplicationId);
+
+            // Prefer the email on the Stripe payment; fall back to the application's owner
+            var toEmail = IsDeliverableEmail(payment.UserEmail) ? payment.UserEmail : submission?.UserEmail;
+            if (!IsDeliverableEmail(toEmail)) return;
+
+            await _notificationService.NotifyOnlinePaymentSuccessAsync(toEmail!, new OnlinePaymentReceiptDto
+            {
+                PaymentId = payment.Id,
+                StripeReference = payment.StripePaymentIntentId,
+                ApplicationId = payment.ApplicationId,
+                ServiceName = ResolveServiceName(submission),
+                StageNumber = submission?.CurrentStage ?? 1,
+                MaxStages = submission?.MaxStages ?? 1,
+                Department = submission?.CurrentDepartment,
+                CitizenNic = submission?.CitizenNic ?? string.Empty,
+                Amount = payment.Amount,
+                Currency = payment.Currency,
+                PaidDate = payment.PaidDate ?? DateTime.UtcNow
+            });
+        }
+
+        // Once a fee is paid, a direct department payment is complete; an application stage goes back to its verification officer.
+        private async Task ApplyPaidToSubmissionAsync(Payment payment)
+        {
+            var submission = await _context.ApplicationSubmissions.FindAsync(payment.ApplicationId);
+            if (submission == null) return;
+
+            bool isPureDirectPayment = submission.FormDataJson != null &&
+                                       submission.FormDataJson.Contains("\"PaymentType\":\"Direct Department Payment\"") &&
+                                       submission.MaxStages <= 1;
+
+            var hasActiveTask = await _context.VerificationTasks.AnyAsync(t => t.ApplicationId == submission.Id && t.Status != "Approved");
+
+            if (isPureDirectPayment && !hasActiveTask)
+            {
+                submission.StageStatus = "Completed";
+            }
+            else
+            {
+                // Only set UnderVerification if citizen has actually submitted the form for CurrentStage
+                var hasCurrentStageTask = await _context.VerificationTasks.AnyAsync(t => t.ApplicationId == submission.Id && t.StageNumber == submission.CurrentStage);
+                if (hasCurrentStageTask)
+                {
+                    submission.StageStatus = "UnderVerification";
+                }
+            }
+        }
+
+        private static string ResolveServiceName(ApplicationSubmission? submission)
+        {
+            var name = submission?.ServiceProcedure?.Name ?? string.Empty;
+            if ((string.IsNullOrEmpty(name) || name == "Department Statutory Fee") && submission?.FormDataJson != null)
+            {
+                try
+                {
+                    using var doc = System.Text.Json.JsonDocument.Parse(submission.FormDataJson);
+                    if (doc.RootElement.TryGetProperty("ServiceName", out var sn) && !string.IsNullOrWhiteSpace(sn.GetString()))
+                    {
+                        name = sn.GetString()!;
+                    }
+                }
+                catch (System.Text.Json.JsonException) { }
+            }
+            return string.IsNullOrEmpty(name) ? "Government Service" : name;
+        }
+
+        private static bool IsDeliverableEmail(string? email) =>
+            !string.IsNullOrWhiteSpace(email) &&
+            System.Net.Mail.MailAddress.TryCreate(email, out var address) &&
+            address.Host.Contains('.');
     }
 }

@@ -14,7 +14,10 @@ Citizens pay service fees and installments either online or by bank deposit/tran
 
 Option 2 for card payments, alongside Option 3 for bank payments.
 
-- **Online payments:** `POST /api/payments/checkout` → `GET /api/payments/{id}/confirm`. For installments, it's `…/installments/{id}/checkout` → `…/confirm`.
+- **Online payments:** `POST /api/payments/checkout` (or `POST /api/payments/department-pay` with `Online`) → `GET /api/payments/{id}/confirm`. For installments, it's `…/installments/{id}/checkout` → `…/confirm`.
+  - Every Checkout session is charged in **LKR** (amount sent in cents) and pre-fills `CustomerEmail` with the signed-in user's login email.
+  - `confirm` only marks a payment `Paid` when Stripe reports the session as paid. When it does, the citizen is emailed a receipt (payment ID, Stripe reference, application ID, service and stage, NIC, amount). A repeat `confirm` on a paid payment is a no-op, so the receipt is sent once. Stripe errors return `502` and never mark a payment paid.
+  - Finance Officers see their department's card payments, with full details, on the web **Online Payments** page (`/finance/online-payments`).
 - **Deposit slips:** a slip uploaded with the application form becomes a `PendingVerification` payment. A Finance Officer approves or rejects it (`POST /api/payments/{id}/verify`) or edits its status (`PUT /api/payments/{id}/status`), scoped to their department.
 - **Installment transfers:** a transfer receipt is verified by staff (`…/pay` or `…/reject-transfer`).
 - An online reference typed into a form's payment field (`"Online Ref: …"`) is recorded directly as `Paid`.

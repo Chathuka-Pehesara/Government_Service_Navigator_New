@@ -109,9 +109,15 @@ namespace Government_Service_Navigator.Backend.Controllers
                 .ToListAsync();
 
             var nics = submissions.Values.Select(s => s.CitizenNic).Where(n => !string.IsNullOrEmpty(n)).Distinct().ToList();
-            var users = await _context.Users
+            // NicNumber is not unique in Users, so pick one name per NIC instead of failing on duplicates
+            var users = (await _context.Users
                 .Where(u => nics.Contains(u.NicNumber))
-                .ToDictionaryAsync(u => u.NicNumber, u => u.FullName);
+                .Select(u => new { u.NicNumber, u.FullName })
+                .ToListAsync())
+                .GroupBy(u => u.NicNumber)
+                .ToDictionary(
+                    g => g.Key,
+                    g => g.Select(u => u.FullName).FirstOrDefault(n => !string.IsNullOrWhiteSpace(n)) ?? g.First().FullName);
 
             bool dbUpdatedPending = false;
             var result = pending.Select(p =>
@@ -199,6 +205,8 @@ namespace Government_Service_Navigator.Backend.Controllers
                     department = sub?.CurrentDepartment ?? dept ?? "",
                     method = p.Method,
                     amount = p.Amount,
+                    currency = p.Currency,
+                    stripeSessionId = p.StripePaymentIntentId?.StartsWith("cs_") == true ? p.StripePaymentIntentId : null,
                     status = p.Status,
                     manualSlipUrl = effectiveSlipUrl,
                     slipFileName = slipFileName ?? (!string.IsNullOrEmpty(effectiveSlipUrl) ? effectiveSlipUrl.Split('/').LastOrDefault() : "bank_deposit_slip.pdf"),
@@ -271,9 +279,15 @@ namespace Government_Service_Navigator.Backend.Controllers
                 .ToListAsync();
 
             var nics = submissions.Values.Select(s => s.CitizenNic).Where(n => !string.IsNullOrEmpty(n)).Distinct().ToList();
-            var users = await _context.Users
+            // NicNumber is not unique in Users, so pick one name per NIC instead of failing on duplicates
+            var users = (await _context.Users
                 .Where(u => nics.Contains(u.NicNumber))
-                .ToDictionaryAsync(u => u.NicNumber, u => u.FullName);
+                .Select(u => new { u.NicNumber, u.FullName })
+                .ToListAsync())
+                .GroupBy(u => u.NicNumber)
+                .ToDictionary(
+                    g => g.Key,
+                    g => g.Select(u => u.FullName).FirstOrDefault(n => !string.IsNullOrWhiteSpace(n)) ?? g.First().FullName);
 
             bool dbUpdatedDept = false;
             var result = payments.Select(p =>
@@ -361,6 +375,8 @@ namespace Government_Service_Navigator.Backend.Controllers
                     department = sub?.CurrentDepartment ?? dept ?? "",
                     method = p.Method,
                     amount = p.Amount,
+                    currency = p.Currency,
+                    stripeSessionId = p.StripePaymentIntentId?.StartsWith("cs_") == true ? p.StripePaymentIntentId : null,
                     status = p.Status, // "PendingVerification", "Paid", "Failed"
                     manualSlipUrl = effectiveSlipUrl,
                     slipFileName = slipFileName ?? (!string.IsNullOrEmpty(effectiveSlipUrl) ? effectiveSlipUrl.Split('/').LastOrDefault() : "bank_deposit_slip.pdf"),
@@ -496,11 +512,26 @@ namespace Government_Service_Navigator.Backend.Controllers
         [Authorize]
         public async Task<IActionResult> CreateCheckout([FromBody] CreateCheckoutSessionDto dto)
         {
-            var (payment, checkoutUrl) = await _paymentService.CreateStripeCheckoutAsync(dto.ApplicationId, dto.Amount, dto.UserEmail);
-            return Ok(new { paymentId = payment.Id, checkoutUrl });
+            if (dto.Amount <= 0)
+            {
+                return BadRequest(new { message = "A valid Amount (> 0) is required." });
+            }
+
+            // The receipt goes to the signed-in account, not whatever email the client sent
+            var email = User.FindFirstValue(ClaimTypes.Email) ?? User.FindFirst("email")?.Value ?? dto.UserEmail;
+
+            try
+            {
+                var (payment, checkoutUrl) = await _paymentService.CreateStripeCheckoutAsync(dto.ApplicationId, dto.Amount, email);
+                return Ok(new { paymentId = payment.Id, checkoutUrl, amount = payment.Amount, currency = payment.Currency, userEmail = payment.UserEmail });
+            }
+            catch (StripeException ex)
+            {
+                return StatusCode(StatusCodes.Status502BadGateway, new { message = $"Could not start Stripe checkout: {ex.Message}" });
+            }
         }
 
-        // Testing-only helper: manually check Stripe session status without needing a webhook.
+        // Checks the Stripe session (no webhook, see ADR-0011); marks the payment Paid and emails the receipt once it is paid.
         [HttpGet("{id}/confirm")]
         [Authorize]
         public async Task<IActionResult> ConfirmPayment(int id)
@@ -510,17 +541,11 @@ namespace Government_Service_Navigator.Backend.Controllers
                 var payment = await _paymentService.ConfirmStripePaymentAsync(id);
                 return Ok(payment);
             }
-            catch (Exception)
+            catch (KeyNotFoundException ex) { return NotFound(new { message = ex.Message }); }
+            catch (InvalidOperationException ex) { return BadRequest(new { message = ex.Message }); }
+            catch (StripeException ex)
             {
-                var payment = await _context.Payments.FindAsync(id);
-                if (payment != null)
-                {
-                    payment.Status = "Paid";
-                    payment.PaidDate = DateTime.UtcNow;
-                    await _context.SaveChangesAsync();
-                    return Ok(payment);
-                }
-                return NotFound();
+                return StatusCode(StatusCodes.Status502BadGateway, new { message = $"Could not reach Stripe to confirm the payment: {ex.Message}" });
             }
         }
 
@@ -534,9 +559,9 @@ namespace Government_Service_Navigator.Backend.Controllers
                 return BadRequest(new { message = "Department and a valid Amount (> 0) are required." });
             }
 
-            var email = !string.IsNullOrEmpty(dto.UserEmail) 
-                ? dto.UserEmail 
-                : (User.FindFirstValue(ClaimTypes.Email) ?? User.FindFirst("email")?.Value ?? User.Identity?.Name ?? "citizen@user");
+            // Prefer the signed-in account's email so Stripe and the receipt use the login email
+            var email = User.FindFirstValue(ClaimTypes.Email) ?? User.FindFirst("email")?.Value
+                ?? (!string.IsNullOrEmpty(dto.UserEmail) ? dto.UserEmail : (User.Identity?.Name ?? "citizen@user"));
 
             var nic = !string.IsNullOrEmpty(dto.CitizenNic)
                 ? dto.CitizenNic
@@ -560,7 +585,8 @@ namespace Government_Service_Navigator.Backend.Controllers
                     CurrentDepartment = dto.Department,
                     CurrentStage = 1,
                     MaxStages = 1,
-                    StageStatus = isOnline ? "Completed" : "AwaitingFeePayment",
+                    // An online payment completes this when Stripe confirms it
+                    StageStatus = "AwaitingFeePayment",
                     SubmittedAt = DateTime.UtcNow,
                     FormDataJson = System.Text.Json.JsonSerializer.Serialize(new
                     {
@@ -645,40 +671,13 @@ namespace Government_Service_Navigator.Backend.Controllers
             {
                 try
                 {
-                    var options = new SessionCreateOptions
-                    {
-                        PaymentMethodTypes = new List<string> { "card" },
-                        LineItems = new List<SessionLineItemOptions>
-                        {
-                            new SessionLineItemOptions
-                            {
-                                PriceData = new SessionLineItemPriceDataOptions
-                                {
-                                    UnitAmount = (long)Math.Round(dto.Amount * 100),
-                                    Currency = "usd",
-                                    ProductData = new SessionLineItemPriceDataProductDataOptions
-                                    {
-                                        Name = $"{dto.Department} - {dto.ServiceName ?? "Statutory Fee"}"
-                                    }
-                                },
-                                Quantity = 1
-                            }
-                        },
-                        Mode = "payment",
-                        SuccessUrl = $"https://example.com/checkout/success?paymentId={payment.Id}",
-                        CancelUrl = $"https://example.com/checkout/cancel?paymentId={payment.Id}"
-                    };
-
-                    var service = new SessionService();
-                    var session = await service.CreateAsync(options);
-                    checkoutUrl = session.Url;
-                    payment.StripePaymentIntentId = session.Id;
-                    await _context.SaveChangesAsync();
+                    checkoutUrl = await _paymentService.OpenStripeCheckoutAsync(payment, $"{dto.Department} - {dto.ServiceName ?? "Statutory Fee"}");
                 }
-                catch (Exception)
+                catch (StripeException ex)
                 {
-                    // Fallback to test checkout URL if Stripe secret key is not set or network is unreachable
-                    checkoutUrl = $"https://checkout.stripe.com/c/pay/cs_test_{Guid.NewGuid():N}";
+                    payment.Status = "Failed";
+                    await _context.SaveChangesAsync();
+                    return StatusCode(StatusCodes.Status502BadGateway, new { message = $"Could not start Stripe checkout: {ex.Message}" });
                 }
             }
 

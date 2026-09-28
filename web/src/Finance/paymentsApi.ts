@@ -62,6 +62,7 @@ export interface BackendPayment {
   slipFileName?: string;
   slipUploadedAt?: string;
   referenceNumberOrId?: string;
+  stripeSessionId?: string | null; // Stripe Checkout session id (cs_...) for online card payments
   submittedAt?: string;
   createdDate: string;
   paidDate?: string | null;
