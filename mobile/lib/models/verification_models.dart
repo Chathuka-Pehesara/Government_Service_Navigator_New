@@ -196,6 +196,9 @@ class ApplicationItemModel {
   final String? currentDepartment;
   final List<String>? workflowDepartments;
   final int serviceProcedureId;
+  final String? paymentStatus;
+  final bool isPaymentVerified;
+  final bool isStagePaymentRequired;
 
   ApplicationItemModel({
     required this.applicationId,
@@ -217,6 +220,9 @@ class ApplicationItemModel {
     this.currentDepartment,
     this.workflowDepartments,
     this.serviceProcedureId = 0,
+    this.paymentStatus,
+    this.isPaymentVerified = false,
+    this.isStagePaymentRequired = false,
   });
 
   ApplicationItemModel copyWith({
@@ -232,6 +238,9 @@ class ApplicationItemModel {
     String? currentDepartment,
     List<String>? workflowDepartments,
     int? serviceProcedureId,
+    String? paymentStatus,
+    bool? isPaymentVerified,
+    bool? isStagePaymentRequired,
   }) {
     return ApplicationItemModel(
       applicationId: applicationId,
@@ -253,6 +262,9 @@ class ApplicationItemModel {
       currentDepartment: currentDepartment ?? this.currentDepartment,
       workflowDepartments: workflowDepartments ?? this.workflowDepartments,
       serviceProcedureId: serviceProcedureId ?? this.serviceProcedureId,
+      paymentStatus: paymentStatus ?? this.paymentStatus,
+      isPaymentVerified: isPaymentVerified ?? this.isPaymentVerified,
+      isStagePaymentRequired: isStagePaymentRequired ?? this.isStagePaymentRequired,
     );
   }
 }

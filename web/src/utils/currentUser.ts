@@ -80,3 +80,12 @@ export function canManageServices(user: StoredUser | null): boolean {
 export function canManageOfficers(user: StoredUser | null): boolean {
   return isSystemAdmin(user) || isDeptAdmin(user);
 }
+
+/**
+ * Returns true when the user can register, edit, and manage departments.
+ * Decision: SYSTEM ADMIN ONLY.
+ */
+export function canManageDepartments(user: StoredUser | null): boolean {
+  return isSystemAdmin(user);
+}
+

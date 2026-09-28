@@ -82,11 +82,29 @@ namespace Government_Service_Navigator.Backend.Services
                 payment.Status = "Paid";
                 payment.PaidDate = DateTime.UtcNow;
 
-                // Update application submission to Completed
+                // Update application submission: unlock for Verification Officer review rather than bypassing it
                 var submission = await _context.ApplicationSubmissions.FindAsync(payment.ApplicationId);
                 if (submission != null)
                 {
-                    submission.StageStatus = "Completed";
+                    bool isPureDirectPayment = submission.FormDataJson != null &&
+                                               submission.FormDataJson.Contains("\"PaymentType\":\"Direct Department Payment\"") &&
+                                               submission.MaxStages <= 1;
+
+                    var hasActiveTask = await _context.VerificationTasks.AnyAsync(t => t.ApplicationId == submission.Id && t.Status != "Approved");
+
+                    if (isPureDirectPayment && !hasActiveTask)
+                    {
+                        submission.StageStatus = "Completed";
+                    }
+                    else
+                    {
+                        // Only set UnderVerification if citizen has actually submitted the form for CurrentStage
+                        var hasCurrentStageTask = await _context.VerificationTasks.AnyAsync(t => t.ApplicationId == submission.Id && t.StageNumber == submission.CurrentStage);
+                        if (hasCurrentStageTask)
+                        {
+                            submission.StageStatus = "UnderVerification";
+                        }
+                    }
                 }
             }
             else
@@ -136,7 +154,24 @@ namespace Government_Service_Navigator.Backend.Services
                 var submission = await _context.ApplicationSubmissions.FindAsync(payment.ApplicationId);
                 if (submission != null)
                 {
-                    submission.StageStatus = "Completed";
+                    bool isPureDirectPayment = submission.FormDataJson != null &&
+                                               submission.FormDataJson.Contains("\"PaymentType\":\"Direct Department Payment\"") &&
+                                               submission.MaxStages <= 1;
+
+                    var hasActiveTask = await _context.VerificationTasks.AnyAsync(t => t.ApplicationId == submission.Id && t.Status != "Approved");
+
+                    if (isPureDirectPayment && !hasActiveTask)
+                    {
+                        submission.StageStatus = "Completed";
+                    }
+                    else
+                    {
+                        var hasCurrentStageTask = await _context.VerificationTasks.AnyAsync(t => t.ApplicationId == submission.Id && t.StageNumber == submission.CurrentStage);
+                        if (hasCurrentStageTask)
+                        {
+                            submission.StageStatus = "UnderVerification";
+                        }
+                    }
                 }
             }
             else if (normalized == "PendingVerification")

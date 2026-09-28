@@ -302,7 +302,7 @@ export default function PendingReviews() {
 
             {/* Data Table for Pending Reviews */}
             <DataTable rows={rows} headers={headers}>
-              {({ rows, headers, getTableProps, getHeaderProps, getRowProps, onInputChange }) => (
+              {({ rows: tableRows, headers: tableHeaders, getTableProps, getHeaderProps, getRowProps, onInputChange }) => (
                 <TableContainer 
                   title="Stalled Applications" 
                   description="Items that require manual intervention before they can be verified."
@@ -321,7 +321,7 @@ export default function PendingReviews() {
                   <Table {...getTableProps()}>
                     <TableHead>
                       <TableRow>
-                        {headers.map((header) => (
+                        {tableHeaders.map((header) => (
                           <TableHeader {...getHeaderProps({ header })} key={header.key}>
                             {header.header}
                           </TableHeader>
@@ -329,7 +329,7 @@ export default function PendingReviews() {
                       </TableRow>
                     </TableHead>
                     <TableBody>
-                      {rows.map((row) => (
+                      {tableRows.map((row) => (
                         <TableRow {...getRowProps({ row })} key={row.id}>
                           {row.cells.map((cell) => {
                             

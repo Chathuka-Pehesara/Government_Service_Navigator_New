@@ -5,6 +5,7 @@ import '../theme/glass_theme.dart';
 
 import '../widgets/dashboard/home_dashboard_tab.dart';
 import '../widgets/dashboard/services_tab.dart';
+import '../widgets/dashboard/payments_tab.dart';
 import '../widgets/dashboard/applications_tab.dart';
 import '../widgets/dashboard/profile_tab.dart';
 
@@ -22,6 +23,7 @@ class _DashboardScreenState extends State<DashboardScreen> {
   static const List<Widget> _tabs = [
     HomeDashboardTab(),
     ServicesTab(),
+    PaymentsDashboardTab(),
     ApplicationsTab(),
     ProfileTab(),
   ];
@@ -61,6 +63,11 @@ class _DashboardScreenState extends State<DashboardScreen> {
                 icon: Icon(CupertinoIcons.briefcase),
                 activeIcon: Icon(CupertinoIcons.briefcase_fill),
                 label: 'Services',
+              ),
+              BottomNavigationBarItem(
+                icon: Icon(CupertinoIcons.creditcard),
+                activeIcon: Icon(CupertinoIcons.creditcard_fill),
+                label: 'Payments',
               ),
               BottomNavigationBarItem(
                 icon: Icon(CupertinoIcons.doc_text),

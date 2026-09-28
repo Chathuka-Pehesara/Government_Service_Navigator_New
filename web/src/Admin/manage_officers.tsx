@@ -35,7 +35,8 @@ import {
   Select,
   SelectItem,
   Stack,
-  InlineNotification
+  InlineNotification,
+  Pagination,
 } from "@carbon/react";
 import {
   Dashboard,
@@ -98,6 +99,8 @@ function getStoredOfficerUser(): StoredOfficerUser {
 export default function ManageOfficers() {
   const [officerRows, setOfficerRows] = useState<Officer[]>([]);
   const [isLoading, setIsLoading] = useState(true);
+  const [page, setPage] = useState<number>(1);
+  const [pageSize, setPageSize] = useState<number>(10);
 
   // The signed-in officer/admin. Department Admins are scoped to their own department.
   const [currentUser] = useState(getStoredOfficerUser);
@@ -273,6 +276,12 @@ export default function ManageOfficers() {
                       Service Configuration
                     </SideNavLink>
                     <SideNavLink
+                      renderIcon={Document}
+                      href="/admin/services/builder"
+                    >
+                      Template Builder
+                    </SideNavLink>
+                    <SideNavLink
                       renderIcon={Rule}
                       href="/admin/services/simulator"
                     >
@@ -280,6 +289,13 @@ export default function ManageOfficers() {
                     </SideNavLink>
                   </>
                 )}
+
+                <SideNavLink
+                  renderIcon={Categories}
+                  href="/admin/departments"
+                >
+                  Department Management
+                </SideNavLink>
 
                 <SideNavLink
                   renderIcon={UserMultiple}
@@ -362,7 +378,7 @@ export default function ManageOfficers() {
                     </TableRow>
                   </TableHead>
                   <TableBody>
-                    {rows.map((row) => (
+                    {rows.slice((page - 1) * pageSize, page * pageSize).map((row) => (
                       <TableRow {...getRowProps({ row })} key={row.id}>
                         {row.cells.map((cell) => {
                           if (cell.info.header === 'status') {
@@ -416,6 +432,19 @@ export default function ManageOfficers() {
                     ))}
                   </TableBody>
                 </Table>
+                <Pagination
+                  backwardText="Previous page"
+                  forwardText="Next page"
+                  itemsPerPageText="Rows per page:"
+                  page={page}
+                  pageSize={pageSize}
+                  pageSizes={[10, 20, 50]}
+                  totalItems={rows.length}
+                  onChange={({ page, pageSize }) => {
+                    if (page) setPage(page);
+                    if (pageSize) setPageSize(pageSize);
+                  }}
+                />
               </TableContainer>
             )}
           </DataTable>

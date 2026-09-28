@@ -27,6 +27,7 @@ import {
   TextInput,
   Select,
   SelectItem,
+  Pagination,
 } from "@carbon/react";
 import {
   Dashboard,
@@ -278,6 +279,15 @@ export default function ServiceCatalogManager() {
         service.category?.toLowerCase().includes(searchQuery.toLowerCase()),
     );
 
+  const [page, setPage] = useState<number>(1);
+  const [pageSize, setPageSize] = useState<number>(10);
+
+  useEffect(() => {
+    setPage(1);
+  }, [searchQuery]);
+
+  const pagedServices = filteredServices.slice((page - 1) * pageSize, page * pageSize);
+
   const handleLogout = async () => {
     const token = localStorage.getItem("officerToken");
     try {
@@ -373,11 +383,21 @@ export default function ServiceCatalogManager() {
                 <SideNavLink renderIcon={Categories} href="/admin/services/config">
                   Service Configuration
                 </SideNavLink>
+                <SideNavLink renderIcon={Document} href="/admin/services/builder">
+                  Template Builder
+                </SideNavLink>
                 <SideNavLink renderIcon={Rule} href="/admin/services/simulator">
                   Eligibility Simulator
                 </SideNavLink>
               </>
             )}
+
+            <SideNavLink
+              renderIcon={Categories}
+              href="/admin/departments"
+            >
+              Department Management
+            </SideNavLink>
 
             <SideNavLink
               renderIcon={UserMultiple}
@@ -526,7 +546,7 @@ export default function ServiceCatalogManager() {
         {isLoading ? (
           <Loading description="Loading services" withOverlay={false} />
         ) : (
-          <DataTable rows={filteredServices} headers={headers}>
+          <DataTable rows={pagedServices} headers={headers}>
             {({
               rows,
               headers,
@@ -637,6 +657,19 @@ export default function ServiceCatalogManager() {
                     )}
                   </TableBody>
                 </Table>
+                <Pagination
+                  backwardText="Previous page"
+                  forwardText="Next page"
+                  itemsPerPageText="Rows per page:"
+                  page={page}
+                  pageSize={pageSize}
+                  pageSizes={[10, 20, 50]}
+                  totalItems={filteredServices.length}
+                  onChange={({ page, pageSize }) => {
+                    if (page) setPage(page);
+                    if (pageSize) setPageSize(pageSize);
+                  }}
+                />
               </TableContainer>
             )}
           </DataTable>

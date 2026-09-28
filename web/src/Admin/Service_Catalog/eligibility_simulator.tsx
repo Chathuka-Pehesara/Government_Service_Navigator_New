@@ -36,6 +36,7 @@ import {
   Categories,
   CheckmarkFilled,
   WarningFilled,
+  Document,
 } from "@carbon/icons-react";
 
 interface Service {
@@ -284,12 +285,21 @@ export default function EligibilitySimulator() {
             <SideNavLink renderIcon={Categories} href="/admin/services/config">
               Service Configuration
             </SideNavLink>
+            <SideNavLink renderIcon={Document} href="/admin/services/builder">
+              Template Builder
+            </SideNavLink>
             <SideNavLink
               renderIcon={Rule}
               href="/admin/services/simulator"
               isActive
             >
               Eligibility Simulator
+            </SideNavLink>
+            <SideNavLink
+              renderIcon={Categories}
+              href="/admin/departments"
+            >
+              Department Management
             </SideNavLink>
             <SideNavLink
               renderIcon={UserMultiple}

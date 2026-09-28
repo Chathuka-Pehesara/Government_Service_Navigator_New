@@ -258,6 +258,22 @@ namespace Government_Service_Navigator.Backend.Services
 
         public async Task<List<VerificationTask>> GetPendingTasksAsync(string? department = null)
         {
+            // Self-repair: Any task incorrectly marked "Approved" without any actual OfficerReview
+            // belongs back in "Pending" for the department officer to review manually.
+            var unreviewedTasks = await _context.VerificationTasks
+                .Include(t => t.Reviews)
+                .Where(t => t.Status == "Approved" && !t.Reviews.Any())
+                .ToListAsync();
+
+            if (unreviewedTasks.Any())
+            {
+                foreach (var ut in unreviewedTasks)
+                {
+                    ut.Status = "Pending";
+                }
+                await _context.SaveChangesAsync();
+            }
+
             var query = _context.VerificationTasks
                 .Where(t => t.ApplicationId > 0 && (t.Status == "Pending" || t.Status == "Revised" || t.Status == "Revision Requested"));
 
@@ -276,15 +292,24 @@ namespace Government_Service_Navigator.Backend.Services
         public async Task<List<VerificationTask>> GetVerifiedTasksAsync(string? department = null)
         {
             var query = _context.VerificationTasks
-                .Where(t => t.ApplicationId > 0 && (t.Status == "Approved" || t.Status == "Rejected"));
+                .Include(t => t.Reviews)
+                .Where(t => t.ApplicationId > 0 && 
+                           (t.Status == "Approved" || t.Status == "Rejected" || t.Status == "Suspended" || t.Status == "Revised" || t.Reviews.Any()));
 
             if (!string.IsNullOrEmpty(department))
             {
-                var deptAppIds = _context.ApplicationSubmissions
-                    .Where(s => s.CurrentDepartment == department)
-                    .Select(s => s.Id);
+                var deptLower = department.Trim().ToLower();
 
-                query = query.Where(t => t.Department == department || (t.Department == null && deptAppIds.Contains(t.ApplicationId)));
+                var deptAppIds = await _context.ApplicationSubmissions
+                    .Where(s => (s.CurrentDepartment != null && s.CurrentDepartment.ToLower().Contains(deptLower)) ||
+                                (s.DepartmentHistoryJson != null && s.DepartmentHistoryJson.ToLower().Contains(deptLower)))
+                    .Select(s => s.Id)
+                    .ToListAsync();
+
+                query = query.Where(t => 
+                    (t.Department != null && (t.Department.ToLower() == deptLower || t.Department.ToLower().Contains(deptLower) || deptLower.Contains(t.Department.ToLower()))) ||
+                    deptAppIds.Contains(t.ApplicationId) ||
+                    t.Reviews.Any(r => r.OfficerId.ToLower().Contains(deptLower)));
             }
 
             return await query.OrderByDescending(t => t.CreatedDate).ToListAsync();
@@ -292,6 +317,20 @@ namespace Government_Service_Navigator.Backend.Services
 
         public async Task<List<VerificationTask>> GetTasksForCitizenAsync(string citizenNic)
         {
+            var unreviewedTasks = await _context.VerificationTasks
+                .Include(t => t.Reviews)
+                .Where(t => t.CitizenNic == citizenNic && t.Status == "Approved" && !t.Reviews.Any())
+                .ToListAsync();
+
+            if (unreviewedTasks.Any())
+            {
+                foreach (var ut in unreviewedTasks)
+                {
+                    ut.Status = "Pending";
+                }
+                await _context.SaveChangesAsync();
+            }
+
             return await _context.VerificationTasks
                 .Where(t => t.CitizenNic == citizenNic)
                 .OrderByDescending(t => t.CreatedDate)

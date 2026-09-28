@@ -153,17 +153,29 @@ export default function ApplicationCreate() {
             <SideNavLink
               renderIcon={Categories}
               href="/admin/services/config"
-              isActive
             >
               Service Configuration
             </SideNavLink>
-            <SideNavLink renderIcon={UserMultiple} href="/admin/officers">
+            <SideNavLink
+              renderIcon={Document}
+              href="/admin/services/builder"
+              isActive
+            >
+              Template Builder
+            </SideNavLink>
+            <SideNavLink
+              renderIcon={Categories}
+              href="/admin/departments"
+            >
+              Department Management
+            </SideNavLink>
+            <SideNavLink renderIcon={UserMultiple} href="/admin/manage-officers">
               Manage Officers
             </SideNavLink>
             <SideNavLink renderIcon={Security} href="/admin/audit-logs">
               Audit Logs
             </SideNavLink>
-            <SideNavLink renderIcon={Settings} href="/admin/settings">
+            <SideNavLink renderIcon={Settings} href="/admin/system-settings">
               System Settings
             </SideNavLink>
             <div style={{ marginTop: "auto", borderTop: "1px solid #393939" }}>

@@ -69,6 +69,12 @@ namespace Government_Service_Navigator.Backend.Controllers
             var service = await _context.ServiceProcedures.FindAsync(serviceProcedureId);
             var deptName = !string.IsNullOrEmpty(template.Department) ? template.Department : null;
             var (resolvedDept, email) = await ResolveDepartmentAsync(deptName ?? service?.Category);
+            var targetDeptName = deptName ?? resolvedDept;
+
+            var deptEntity = await _context.Departments
+                .FirstOrDefaultAsync(d => EF.Functions.ILike(d.Name, targetDeptName)
+                                       || EF.Functions.ILike(d.DepartmentCode, targetDeptName)
+                                       || (d.Category != null && service != null && EF.Functions.ILike(d.Category, service.Category)));
 
             List<string> workflowDepts = new();
             if (!string.IsNullOrEmpty(service?.WorkflowDepartments))
@@ -83,7 +89,18 @@ namespace Government_Service_Navigator.Backend.Controllers
                 stage = template.StageOrder,
                 totalStages = service?.TotalStages ?? 1,
                 workflowDepartments = workflowDepts,
-                department = new { name = deptName ?? resolvedDept, email }
+                department = new
+                {
+                    id = deptEntity?.Id,
+                    name = deptEntity?.Name ?? targetDeptName,
+                    departmentCode = deptEntity?.DepartmentCode ?? "GSN",
+                    logoUrl = deptEntity?.LogoUrl,
+                    contactNumber = deptEntity?.ContactNumber,
+                    email = !string.IsNullOrEmpty(deptEntity?.Email) ? deptEntity.Email : email,
+                    address = deptEntity?.Address,
+                    website = deptEntity?.Website,
+                    category = deptEntity?.Category ?? service?.Category
+                }
             });
         }
 
@@ -368,7 +385,10 @@ namespace Government_Service_Navigator.Backend.Controllers
 
                             // 1. Check if citizen uploaded a bank deposit slip
                             var matchedDocKvp = request.Documents.FirstOrDefault(kvp =>
-                                string.Equals(kvp.Key.Trim().TrimEnd(':'), cleanFieldLabel, StringComparison.OrdinalIgnoreCase));
+                                string.Equals(kvp.Key.Trim().TrimEnd(':'), cleanFieldLabel, StringComparison.OrdinalIgnoreCase)
+                                || kvp.Key.Contains("slip", StringComparison.OrdinalIgnoreCase)
+                                || kvp.Key.Contains("deposit", StringComparison.OrdinalIgnoreCase)
+                                || kvp.Key.Contains("payment", StringComparison.OrdinalIgnoreCase));
                             if (matchedDocKvp.Value != Guid.Empty && documents.TryGetValue(matchedDocKvp.Value, out var slipDoc))
                             {
                                 var payment = new Payment
@@ -396,21 +416,44 @@ namespace Government_Service_Navigator.Backend.Controllers
                                 var cleanRef = refVal.Replace("Online Ref:", "", StringComparison.OrdinalIgnoreCase).Trim();
                                 if (!string.IsNullOrWhiteSpace(cleanRef) && !cleanRef.StartsWith("Bank Deposit Slip:", StringComparison.OrdinalIgnoreCase))
                                 {
-                                    var payment = new Payment
+                                    var fallbackSlipDoc = documents.Values.FirstOrDefault(d =>
+                                        d.FieldLabel.Contains("slip", StringComparison.OrdinalIgnoreCase) ||
+                                        d.FieldLabel.Contains("deposit", StringComparison.OrdinalIgnoreCase) ||
+                                        d.FieldLabel.Contains("payment", StringComparison.OrdinalIgnoreCase) ||
+                                        d.FileName.Contains("slip", StringComparison.OrdinalIgnoreCase) ||
+                                        d.FileName.Contains("deposit", StringComparison.OrdinalIgnoreCase))
+                                        ?? (!isOnline ? documents.Values.LastOrDefault() : null);
+
+                                    var existingPayment = await _context.Payments
+                                        .FirstOrDefaultAsync(p => p.ApplicationId == submission.Id && (p.StripePaymentIntentId == cleanRef || p.StripePaymentIntentId == refVal));
+                                    if (existingPayment != null)
                                     {
-                                        ApplicationId = submission.Id,
-                                        Amount = stageAmt,
-                                        Currency = "LKR",
-                                        Method = isOnline ? "Online" : "Bank Deposit",
-                                        Status = isOnline ? "Paid" : "PendingVerification",
-                                        StripePaymentIntentId = cleanRef,
-                                        UserEmail = submission.UserEmail,
-                                        CreatedDate = DateTime.UtcNow,
-                                        PaidDate = isOnline ? DateTime.UtcNow : null
-                                    };
-                                    _context.Payments.Add(payment);
-                                    await _context.SaveChangesAsync();
-                                    paymentProvided = true;
+                                        if (fallbackSlipDoc != null && (string.IsNullOrEmpty(existingPayment.ManualSlipUrl) || existingPayment.ManualSlipUrl.StartsWith("ref-") || existingPayment.ManualSlipUrl.StartsWith("slip-")))
+                                        {
+                                            existingPayment.ManualSlipUrl = $"/api/verification/documents/{fallbackSlipDoc.Id}/content";
+                                        }
+                                        await _context.SaveChangesAsync();
+                                        paymentProvided = true;
+                                    }
+                                    else
+                                    {
+                                        var payment = new Payment
+                                        {
+                                            ApplicationId = submission.Id,
+                                            Amount = stageAmt,
+                                            Currency = "LKR",
+                                            Method = isOnline ? "Online" : "Bank Deposit",
+                                            Status = isOnline ? "Paid" : "PendingVerification",
+                                            StripePaymentIntentId = cleanRef,
+                                            ManualSlipUrl = isOnline ? null : (fallbackSlipDoc != null ? $"/api/verification/documents/{fallbackSlipDoc.Id}/content" : null),
+                                            UserEmail = submission.UserEmail,
+                                            CreatedDate = DateTime.UtcNow,
+                                            PaidDate = isOnline ? DateTime.UtcNow : null
+                                        };
+                                        _context.Payments.Add(payment);
+                                        await _context.SaveChangesAsync();
+                                        paymentProvided = true;
+                                    }
                                 }
                             }
 
@@ -675,6 +718,7 @@ namespace Government_Service_Navigator.Backend.Controllers
             try { currentAnswers = JsonSerializer.Deserialize<Dictionary<string, string>>(submission.FormDataJson) ?? new(); }
             catch { }
 
+            currentAnswers.Remove($"[Draft Stage {template.StageOrder}]");
             foreach (var kvp in request.Answers)
             {
                 currentAnswers[$"[Stage {template.StageOrder}] {kvp.Key}"] = kvp.Value;
@@ -713,7 +757,10 @@ namespace Government_Service_Navigator.Backend.Controllers
 
                 // 1. Check if citizen uploaded a bank deposit slip
                 var matchedDocKvp = request.Documents.FirstOrDefault(kvp =>
-                    string.Equals(kvp.Key.Trim().TrimEnd(':'), cleanStageLabel, StringComparison.OrdinalIgnoreCase));
+                    string.Equals(kvp.Key.Trim().TrimEnd(':'), cleanStageLabel, StringComparison.OrdinalIgnoreCase)
+                    || kvp.Key.Contains("slip", StringComparison.OrdinalIgnoreCase)
+                    || kvp.Key.Contains("deposit", StringComparison.OrdinalIgnoreCase)
+                    || kvp.Key.Contains("payment", StringComparison.OrdinalIgnoreCase));
                 if (matchedDocKvp.Value != Guid.Empty && documents.TryGetValue(matchedDocKvp.Value, out var slipDoc))
                 {
                     var payment = new Payment
@@ -741,21 +788,44 @@ namespace Government_Service_Navigator.Backend.Controllers
                     var cleanRef = refVal.Replace("Online Ref:", "", StringComparison.OrdinalIgnoreCase).Trim();
                     if (!string.IsNullOrWhiteSpace(cleanRef) && !cleanRef.StartsWith("Bank Deposit Slip:", StringComparison.OrdinalIgnoreCase))
                     {
-                        var payment = new Payment
+                        var fallbackSlipDoc = documents.Values.FirstOrDefault(d =>
+                            d.FieldLabel.Contains("slip", StringComparison.OrdinalIgnoreCase) ||
+                            d.FieldLabel.Contains("deposit", StringComparison.OrdinalIgnoreCase) ||
+                            d.FieldLabel.Contains("payment", StringComparison.OrdinalIgnoreCase) ||
+                            d.FileName.Contains("slip", StringComparison.OrdinalIgnoreCase) ||
+                            d.FileName.Contains("deposit", StringComparison.OrdinalIgnoreCase))
+                            ?? (!isOnline ? documents.Values.LastOrDefault() : null);
+
+                        var existingPayment = await _context.Payments
+                            .FirstOrDefaultAsync(p => p.ApplicationId == submission.Id && (p.StripePaymentIntentId == cleanRef || p.StripePaymentIntentId == refVal));
+                        if (existingPayment != null)
                         {
-                            ApplicationId = submission.Id,
-                            Amount = stageAmt,
-                            Currency = "LKR",
-                            Method = isOnline ? "Online" : "Bank Deposit",
-                            Status = isOnline ? "Paid" : "PendingVerification",
-                            StripePaymentIntentId = cleanRef,
-                            UserEmail = submission.UserEmail,
-                            CreatedDate = DateTime.UtcNow,
-                            PaidDate = isOnline ? DateTime.UtcNow : null
-                        };
-                        _context.Payments.Add(payment);
-                        await _context.SaveChangesAsync();
-                        stagePaymentProvided = true;
+                            if (fallbackSlipDoc != null && (string.IsNullOrEmpty(existingPayment.ManualSlipUrl) || existingPayment.ManualSlipUrl.StartsWith("ref-") || existingPayment.ManualSlipUrl.StartsWith("slip-")))
+                            {
+                                existingPayment.ManualSlipUrl = $"/api/verification/documents/{fallbackSlipDoc.Id}/content";
+                            }
+                            await _context.SaveChangesAsync();
+                            stagePaymentProvided = true;
+                        }
+                        else
+                        {
+                            var payment = new Payment
+                            {
+                                ApplicationId = submission.Id,
+                                Amount = stageAmt,
+                                Currency = "LKR",
+                                Method = isOnline ? "Online" : "Bank Deposit",
+                                Status = isOnline ? "Paid" : "PendingVerification",
+                                StripePaymentIntentId = cleanRef,
+                                ManualSlipUrl = isOnline ? null : (fallbackSlipDoc != null ? $"/api/verification/documents/{fallbackSlipDoc.Id}/content" : null),
+                                UserEmail = submission.UserEmail,
+                                CreatedDate = DateTime.UtcNow,
+                                PaidDate = isOnline ? DateTime.UtcNow : null
+                            };
+                            _context.Payments.Add(payment);
+                            await _context.SaveChangesAsync();
+                            stagePaymentProvided = true;
+                        }
                     }
                 }
 
@@ -781,6 +851,118 @@ namespace Government_Service_Navigator.Backend.Controllers
                 message = $"Stage {template.StageOrder} application submitted for verification by {template.Department}."
             });
         }
+
+        // Citizen raises a concern or request for support assistance when an application review fails or is rejected
+        [HttpPost("{id:int}/raise-concern")]
+        public async Task<IActionResult> RaiseConcern(int id, [FromBody] RaiseConcernDto dto)
+        {
+            var submission = await _context.ApplicationSubmissions
+                .Include(s => s.ServiceProcedure)
+                .FirstOrDefaultAsync(s => s.Id == id);
+
+            if (submission == null) return NotFound(new { message = $"Application #{id} not found." });
+
+            var email = User.FindFirstValue(ClaimTypes.Email) ?? User.FindFirst("email")?.Value ?? User.Identity?.Name ?? submission.UserEmail;
+            var ticketRef = $"CONCERN-{id}-{Guid.NewGuid().ToString("N")[..6].ToUpper()}";
+
+            var audit = new AuditLog
+            {
+                ApplicationId = id,
+                Action = "Citizen Support Concern Raised",
+                PerformedBy = email,
+                Timestamp = DateTime.UtcNow,
+                OldValues = $"Status: {submission.StageStatus}",
+                NewValues = $"Ticket: {ticketRef}, Subject: {dto.Subject}, Message: {dto.Message}, Phone: {dto.ContactPhone ?? "N/A"}"
+            };
+            _context.AuditLogs.Add(audit);
+            await _context.SaveChangesAsync();
+
+            return Ok(new
+            {
+                ticketReference = ticketRef,
+                applicationId = id,
+                department = submission.CurrentDepartment ?? "Department Desk",
+                serviceName = submission.ServiceProcedure?.Name ?? "Application Service",
+                subject = dto.Subject,
+                status = "ConcernLogged",
+                message = "Your support concern has been logged and escalated to the department officer. Reference ID: " + ticketRef
+            });
+        }
+
+        [HttpPost("save-draft")]
+        public async Task<IActionResult> SaveDraft([FromBody] SaveDraftRequest request)
+        {
+            var nic = User.FindFirstValue("nicNumber");
+            if (string.IsNullOrWhiteSpace(nic)) return Forbid();
+
+            var submission = await _context.ApplicationSubmissions
+                .FirstOrDefaultAsync(s => s.Id == request.ApplicationId && s.CitizenNic == nic);
+            if (submission == null) return NotFound("Application not found.");
+
+            Dictionary<string, string> currentAnswers = new();
+            try { currentAnswers = JsonSerializer.Deserialize<Dictionary<string, string>>(submission.FormDataJson) ?? new(); }
+            catch { }
+
+            var draftPayload = new
+            {
+                answers = request.Answers,
+                documents = request.Documents.ToDictionary(k => k.Key, v => v.Value.ToString()),
+                paymentReference = request.PaymentReference,
+                paymentMethod = request.PaymentMethod,
+                savedAt = DateTime.UtcNow
+            };
+
+            currentAnswers[$"[Draft Stage {request.StageNumber}]"] = JsonSerializer.Serialize(draftPayload);
+            submission.FormDataJson = JsonSerializer.Serialize(currentAnswers);
+
+            if (submission.CurrentStage <= request.StageNumber)
+            {
+                submission.CurrentStage = request.StageNumber;
+            }
+
+            var hasActiveTask = await _context.VerificationTasks
+                .AnyAsync(t => t.ApplicationId == submission.Id && t.StageNumber == submission.CurrentStage);
+            if (!hasActiveTask && submission.StageStatus != "Completed")
+            {
+                submission.StageStatus = "Draft";
+            }
+
+            await _context.SaveChangesAsync();
+
+            return Ok(new { message = "Draft saved successfully", stage = request.StageNumber });
+        }
+
+        [HttpGet("{id:int}/draft")]
+        public async Task<IActionResult> GetDraft(int id, [FromQuery] int stage = 1)
+        {
+            var nic = User.FindFirstValue("nicNumber");
+            if (string.IsNullOrWhiteSpace(nic)) return Forbid();
+
+            var submission = await _context.ApplicationSubmissions
+                .FirstOrDefaultAsync(s => s.Id == id && s.CitizenNic == nic);
+            if (submission == null) return NotFound("Application not found.");
+
+            Dictionary<string, string> currentAnswers = new();
+            try { currentAnswers = JsonSerializer.Deserialize<Dictionary<string, string>>(submission.FormDataJson) ?? new(); }
+            catch { }
+
+            if (currentAnswers.TryGetValue($"[Draft Stage {stage}]", out var draftJson))
+            {
+                try
+                {
+                    using var doc = JsonDocument.Parse(draftJson);
+                    return Ok(new
+                    {
+                        hasDraft = true,
+                        stage,
+                        data = doc.RootElement.Clone()
+                    });
+                }
+                catch { }
+            }
+
+            return Ok(new { hasDraft = false, stage });
+        }
     }
 
     public class SubmitStageRequest
@@ -789,5 +971,16 @@ namespace Government_Service_Navigator.Backend.Controllers
         public Guid TemplateId { get; set; }
         public Dictionary<string, string> Answers { get; set; } = new();
         public Dictionary<string, Guid> Documents { get; set; } = new();
+    }
+
+    public class SaveDraftRequest
+    {
+        public int ApplicationId { get; set; }
+        public int StageNumber { get; set; }
+        public Guid? TemplateId { get; set; }
+        public Dictionary<string, string> Answers { get; set; } = new();
+        public Dictionary<string, Guid> Documents { get; set; } = new();
+        public string? PaymentReference { get; set; }
+        public string? PaymentMethod { get; set; }
     }
 }

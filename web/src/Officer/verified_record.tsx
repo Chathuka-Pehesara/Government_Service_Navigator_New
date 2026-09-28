@@ -109,10 +109,10 @@ export default function VerifiedRecords() {
             id: t.id.toString(),
             appId: t.referenceNumber ?? `APP-${t.applicationId}`,
             citizen: t.citizenName || t.citizenNic || 'Unknown citizen',
-            service: t.serviceName || 'Unknown service',
+            service: t.serviceName ? `${t.serviceName}${t.stageNumber ? ` (Stage ${t.stageNumber})` : ''}` : 'General Service',
             dateVerified: new Date(t.createdDate).toISOString().split('T')[0],
             status: t.status,
-            comments: t.comments || ''
+            comments: (t.comments as string) || ''
           };
         });
         setRows(mappedRows);
@@ -272,38 +272,47 @@ export default function VerifiedRecords() {
             </div>
 
             {/* Stat Cards for Historical Context[cite: 6] */}
-            <Grid style={{ paddingLeft: 0, paddingRight: 0, marginBottom: '2rem' }}>
-              <Column sm={4} md={4} lg={4}>
-                <Tile>
-                  <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: '1rem' }}>
-                    <p style={{ color: '#525252', fontSize: '0.875rem' }}>Total Processed</p>
-                    <Document size={20} />
-                  </div>
-                  <h3 style={{ fontSize: '2.5rem', fontWeight: 300, margin: '0.5rem 0' }}>1,284</h3>
-                  <p style={{ color: '#525252', fontSize: '0.875rem', marginTop: '1rem' }}>Lifetime records</p>
-                </Tile>
-              </Column>
-              <Column sm={4} md={4} lg={4}>
-                <Tile style={{ borderTop: '4px solid #24a148' }}>
-                  <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: '1rem' }}>
-                    <p style={{ color: '#525252', fontSize: '0.875rem' }}>Total Approved</p>
-                    <CheckmarkOutline size={20} color="#24a148" />
-                  </div>
-                  <h3 style={{ fontSize: '2.5rem', fontWeight: 300, margin: '0.5rem 0' }}>1,150</h3>
-                  <p style={{ color: '#24a148', fontSize: '0.875rem', marginTop: '1rem' }}>90% approval rate</p>
-                </Tile>
-              </Column>
-              <Column sm={4} md={4} lg={4}>
-                <Tile style={{ borderTop: '4px solid #da1e28' }}>
-                  <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: '1rem' }}>
-                    <p style={{ color: '#525252', fontSize: '0.875rem' }}>Total Rejected</p>
-                    <CloseOutline size={20} color="#da1e28" />
-                  </div>
-                  <h3 style={{ fontSize: '2.5rem', fontWeight: 300, margin: '0.5rem 0' }}>134</h3>
-                  <p style={{ color: '#da1e28', fontSize: '0.875rem', marginTop: '1rem' }}>10% rejection rate</p>
-                </Tile>
-              </Column>
-            </Grid>
+            {(() => {
+              const totalProcessed = rows.length;
+              const totalApproved = rows.filter(r => r.status === 'Approved').length;
+              const totalRejectedOrSuspended = rows.filter(r => r.status === 'Rejected' || r.status === 'Suspended').length;
+              const approvalRate = totalProcessed > 0 ? Math.round((totalApproved / totalProcessed) * 100) : 100;
+              const rejectionRate = totalProcessed > 0 ? Math.round((totalRejectedOrSuspended / totalProcessed) * 100) : 0;
+              return (
+                <Grid style={{ paddingLeft: 0, paddingRight: 0, marginBottom: '2rem' }}>
+                  <Column sm={4} md={4} lg={4}>
+                    <Tile>
+                      <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: '1rem' }}>
+                        <p style={{ color: '#525252', fontSize: '0.875rem' }}>Total Processed</p>
+                        <Document size={20} />
+                      </div>
+                      <h3 style={{ fontSize: '2.5rem', fontWeight: 300, margin: '0.5rem 0' }}>{totalProcessed}</h3>
+                      <p style={{ color: '#525252', fontSize: '0.875rem', marginTop: '1rem' }}>Active records</p>
+                    </Tile>
+                  </Column>
+                  <Column sm={4} md={4} lg={4}>
+                    <Tile style={{ borderTop: '4px solid #24a148' }}>
+                      <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: '1rem' }}>
+                        <p style={{ color: '#525252', fontSize: '0.875rem' }}>Total Approved</p>
+                        <CheckmarkOutline size={20} color="#24a148" />
+                      </div>
+                      <h3 style={{ fontSize: '2.5rem', fontWeight: 300, margin: '0.5rem 0' }}>{totalApproved}</h3>
+                      <p style={{ color: '#24a148', fontSize: '0.875rem', marginTop: '1rem' }}>{approvalRate}% approval rate</p>
+                    </Tile>
+                  </Column>
+                  <Column sm={4} md={4} lg={4}>
+                    <Tile style={{ borderTop: '4px solid #da1e28' }}>
+                      <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: '1rem' }}>
+                        <p style={{ color: '#525252', fontSize: '0.875rem' }}>Suspended / Rejected</p>
+                        <CloseOutline size={20} color="#da1e28" />
+                      </div>
+                      <h3 style={{ fontSize: '2.5rem', fontWeight: 300, margin: '0.5rem 0' }}>{totalRejectedOrSuspended}</h3>
+                      <p style={{ color: '#da1e28', fontSize: '0.875rem', marginTop: '1rem' }}>{rejectionRate}% flagged rate</p>
+                    </Tile>
+                  </Column>
+                </Grid>
+              );
+            })()}
 
             {/* Data Table for Verified Records[cite: 6] */}
             <DataTable rows={rows} headers={headers}>
@@ -347,10 +356,17 @@ export default function VerifiedRecords() {
                             
                             // Format Status with Carbon Tags[cite: 6]
                             if (cell.info.header === 'status') {
+                              const s = cell.value;
+                              let tagType: "green" | "red" | "warm-gray" | "blue" = "green";
+                              if (s === 'Approved') tagType = 'green';
+                              else if (s === 'Suspended') tagType = 'warm-gray';
+                              else if (s === 'Rejected') tagType = 'red';
+                              else tagType = 'blue';
+
                               return (
                                 <TableCell key={cell.id}>
-                                  <Tag type={cell.value === 'Approved' ? 'green' : 'red'}>
-                                    {cell.value}
+                                  <Tag type={tagType}>
+                                    {s}
                                   </Tag>
                                 </TableCell>
                               );
@@ -414,6 +430,7 @@ export default function VerifiedRecords() {
                 onChange={(e) => setEditStatus(e.target.value)}
               >
                 <SelectItem value="Approved" text="Approved" />
+                <SelectItem value="Suspended" text="Suspended" />
                 <SelectItem value="Rejected" text="Rejected" />
               </Select>
             </div>
@@ -452,9 +469,15 @@ export default function VerifiedRecords() {
                   <div>
                     <span style={{ fontSize: '0.75rem', color: '#525252', textTransform: 'uppercase', letterSpacing: '0.32px' }}>Decision Status</span>
                     <div style={{ marginTop: '0.25rem' }}>
-                      <Tag type={viewingRecord.cells?.find((c: DataCell) => c.info.header === 'status')?.value === 'Approved' ? 'green' : 'red'}>
-                        {viewingRecord.cells?.find((c: DataCell) => c.info.header === 'status')?.value}
-                      </Tag>
+                      {(() => {
+                        const s = viewingRecord.cells?.find((c: DataCell) => c.info.header === 'status')?.value;
+                        let tagType: "green" | "red" | "warm-gray" | "blue" = "green";
+                        if (s === 'Approved') tagType = 'green';
+                        else if (s === 'Suspended') tagType = 'warm-gray';
+                        else if (s === 'Rejected') tagType = 'red';
+                        else tagType = 'blue';
+                        return <Tag type={tagType}>{s}</Tag>;
+                      })()}
                     </div>
                   </div>
                 </div>

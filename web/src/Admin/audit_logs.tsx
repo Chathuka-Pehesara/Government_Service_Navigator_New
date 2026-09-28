@@ -26,7 +26,8 @@ import {
   Button,
   Tag,
   Search,
-  Loading
+  Loading,
+  Pagination,
 } from "@carbon/react";
 import {
   Dashboard,
@@ -76,6 +77,8 @@ function deriveStatus(action: string): string {
 export default function AuditLogs() {
   const [rows, setRows] = useState<AuditLogRow[]>([]);
   const [isLoading, setIsLoading] = useState(true);
+  const [page, setPage] = useState<number>(1);
+  const [pageSize, setPageSize] = useState<number>(10);
   const [currentUser] = useState(getStoredUser);
   const isSysAdmin = canManageServices(currentUser);
   const deptSlug = currentUser?.department ? getDepartmentSlug(currentUser.department) : null;
@@ -195,6 +198,12 @@ export default function AuditLogs() {
                       Service Configuration
                     </SideNavLink>
                     <SideNavLink
+                      renderIcon={Document}
+                      href="/admin/services/builder"
+                    >
+                      Template Builder
+                    </SideNavLink>
+                    <SideNavLink
                       renderIcon={Rule}
                       href="/admin/services/simulator"
                     >
@@ -202,6 +211,13 @@ export default function AuditLogs() {
                     </SideNavLink>
                   </>
                 )}
+
+                <SideNavLink
+                  renderIcon={Categories}
+                  href="/admin/departments"
+                >
+                  Department Management
+                </SideNavLink>
 
                 <SideNavLink
                   renderIcon={UserMultiple}
@@ -291,7 +307,9 @@ export default function AuditLogs() {
                             </TableCell>
                           </TableRow>
                         ) : (
-                          rows.map((row) => (
+                          rows
+                            .slice((page - 1) * pageSize, page * pageSize)
+                            .map((row) => (
                             <TableRow {...getRowProps({ row })} key={row.id}>
                               {row.cells.map((cell) => {
                                 if (cell.info.header === 'status') {
@@ -324,6 +342,19 @@ export default function AuditLogs() {
                         )}
                       </TableBody>
                     </Table>
+                    <Pagination
+                      backwardText="Previous page"
+                      forwardText="Next page"
+                      itemsPerPageText="Rows per page:"
+                      page={page}
+                      pageSize={pageSize}
+                      pageSizes={[10, 20, 50]}
+                      totalItems={rows.length}
+                      onChange={({ page, pageSize }) => {
+                        if (page) setPage(page);
+                        if (pageSize) setPageSize(pageSize);
+                      }}
+                    />
                   </TableContainer>
                 )}
               </DataTable>

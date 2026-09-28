@@ -515,13 +515,14 @@ class _ProcedureDetailScreenState extends ConsumerState<ProcedureDetailScreen> {
         (stage - 1 < workflowDepts.length ? workflowDepts[stage - 1] : "Assigned Dept");
     final status = activeApp.stageStatus;
 
-    if (status == 'StageApproved' || status.endsWith('Unlocked')) {
-      // Officer approved previous stage! Next stage is ready to fill!
+    if (status == 'StageApproved' || status == 'Draft' || status.endsWith('Unlocked')) {
+      // Officer approved previous stage, or current stage is saved as draft!
+      final bool isDraft = status == 'Draft';
       return SizedBox(
         width: double.infinity,
         child: ElevatedButton(
           style: ElevatedButton.styleFrom(
-            backgroundColor: AppColors.success,
+            backgroundColor: isDraft ? const Color(0xFFD97706) : AppColors.success,
             foregroundColor: Colors.white,
             padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
             shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
@@ -548,21 +549,21 @@ class _ProcedureDetailScreenState extends ConsumerState<ProcedureDetailScreen> {
           child: Row(
             mainAxisAlignment: MainAxisAlignment.center,
             children: [
-              const Icon(Icons.arrow_forward_rounded, size: 20),
+              Icon(isDraft ? Icons.edit_note_rounded : Icons.arrow_forward_rounded, size: 20),
               const SizedBox(width: 10),
               Flexible(
                 child: Column(
                   mainAxisSize: MainAxisSize.min,
                   children: [
                     Text(
-                      'Continue to Stage $stage',
+                      isDraft ? 'Resume Stage $stage Application (Draft)' : 'Continue to Stage $stage',
                       style: const TextStyle(fontSize: 15, fontWeight: FontWeight.bold),
                       textAlign: TextAlign.center,
                     ),
                     if (dept.isNotEmpty) ...[
                       const SizedBox(height: 2),
                       Text(
-                        dept,
+                        isDraft ? 'Draft saved • $dept' : dept,
                         style: TextStyle(
                           fontSize: 12,
                           color: Colors.white.withValues(alpha: 0.9),
@@ -649,7 +650,10 @@ class _ProcedureDetailScreenState extends ConsumerState<ProcedureDetailScreen> {
       );
     }
 
-    if (status == 'Completed' || activeApp.status == 'Approved') {
+    final bool isAllCompleted = status == 'Completed' ||
+        (stage >= totalStages && (status == 'StageApproved' || activeApp.status.toLowerCase() == 'approved'));
+
+    if (isAllCompleted) {
       return SizedBox(
         width: double.infinity,
         child: ElevatedButton(

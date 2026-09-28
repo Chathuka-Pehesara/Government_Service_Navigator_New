@@ -8,7 +8,11 @@ import '../providers/application_providers.dart';
 import '../providers/catalog_providers.dart';
 import '../providers/session_provider.dart';
 import '../services/service_api_client.dart';
+import '../providers/payment_providers.dart';
+import '../providers/service_providers.dart';
 import 'payments/payment_screen.dart';
+import 'payments/checkout_webview_screen.dart';
+import 'package:shared_preferences/shared_preferences.dart';
 
 /// Renders the admin-built application template as a paper-style government form
 /// (matching the web Template Builder canvas) and submits the citizen's answers.
@@ -32,14 +36,8 @@ class ApplicationFormScreen extends ConsumerStatefulWidget {
 
 class _ApplicationFormScreenState extends ConsumerState<ApplicationFormScreen> {
   static const _ink = Color(0xFF000000);
-  static const _faint = Color(0xFF999999);
   static const _tableHeaderBg = Color(0xFFE0E0E0);
   static const _displayOnly = {'heading', 'paragraph'};
-
-  // Footer keys, sent alongside the template answers.
-  static const _presentedByKey = 'Presented by';
-  static const _emailKey = 'Email';
-  static const _telephoneKey = 'Telephone';
 
   static const _maxDocumentBytes = 10 * 1024 * 1024;
 
@@ -67,6 +65,7 @@ class _ApplicationFormScreenState extends ConsumerState<ApplicationFormScreen> {
   final Map<String, List<List<TextEditingController>>> _tableRows = {};
 
   Map<String, dynamic>? _stageFormResponse;
+  Map<String, dynamic>? _resolvedDepartment;
   bool _isLoadingStageForm = false;
   String? _stageFormError;
 
@@ -78,14 +77,26 @@ class _ApplicationFormScreenState extends ConsumerState<ApplicationFormScreen> {
     if (_isStageMode) {
       _loadStageForm();
     } else {
-      // Prefill the footer from the department once the form has loaded
       ref.listenManual(applicationFormDataProvider(widget.serviceId), (previous, next) {
         final department = next.value?.department;
         if (previous?.value != null || next.value == null) return;
-        _controllerFor(_presentedByKey).text = department?['name']?.toString() ?? '';
-        _controllerFor(_emailKey).text = department?['email']?.toString() ?? '';
+        final deptName = department?['name']?.toString() ?? '';
+        _resolveDepartmentMetadata(deptName);
       }, fireImmediately: true);
     }
+  }
+
+  Future<void> _resolveDepartmentMetadata([String? deptName]) async {
+    final target = (deptName != null && deptName.isNotEmpty) ? deptName : _stageDepartment;
+    if (target.isEmpty || target == 'Assigned Department') return;
+    try {
+      final dept = await ServiceApiClient.fetchDepartmentByNameOrCode(target);
+      if (dept != null && mounted) {
+        setState(() {
+          _resolvedDepartment = dept;
+        });
+      }
+    } catch (_) {}
   }
 
   Future<void> _loadStageForm() async {
@@ -106,8 +117,9 @@ class _ApplicationFormScreenState extends ConsumerState<ApplicationFormScreen> {
           _isLoadingStageForm = false;
         });
         final department = form['department'] as Map<String, dynamic>?;
-        _controllerFor(_presentedByKey).text = department?['name']?.toString() ?? '';
-        _controllerFor(_emailKey).text = department?['email']?.toString() ?? '';
+        final deptName = department?['name']?.toString() ?? '';
+        _resolveDepartmentMetadata(deptName);
+        await _restoreDraft();
       } else {
         setState(() {
           _isLoadingStageForm = false;
@@ -120,6 +132,171 @@ class _ApplicationFormScreenState extends ConsumerState<ApplicationFormScreen> {
         _stageFormError = 'Could not load Stage ${widget.stageNumber} form.';
       });
     }
+  }
+
+  String get _draftStorageKey =>
+      'gsn_draft_app_${widget.applicationId ?? widget.serviceId}_stage_$_currentStage';
+
+  Future<void> _saveDraft({bool showNotice = false}) async {
+    try {
+      final answers = _collectAnswers();
+      final docs = {for (final e in _documents.entries) e.key: e.value.id};
+      final paymentRef = _collectPaymentRef();
+      final paymentMethod = _collectPaymentMethod();
+
+      final draftData = {
+        'answers': answers,
+        'documents': docs,
+        'paymentReference': paymentRef,
+        'paymentMethod': paymentMethod,
+        'savedAt': DateTime.now().toUtc().toIso8601String(),
+      };
+
+      final prefs = await SharedPreferences.getInstance();
+      await prefs.setString(_draftStorageKey, jsonEncode(draftData));
+
+      if (widget.applicationId != null) {
+        final token = ref.read(authTokenProvider);
+        if (token.isNotEmpty) {
+          await ServiceApiClient.saveDraft(
+            applicationId: widget.applicationId!,
+            stageNumber: _currentStage,
+            templateId: _template?['id']?.toString(),
+            answers: answers,
+            documents: docs,
+            paymentReference: paymentRef,
+            paymentMethod: paymentMethod,
+            token: token,
+          );
+          ref.invalidate(myApplicationsProvider);
+        }
+      }
+
+      if (showNotice && mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(
+            content: Text('Stage application draft saved successfully.'),
+            duration: Duration(seconds: 2),
+            backgroundColor: Color(0xFF24A148),
+          ),
+        );
+      }
+    } catch (e) {
+      debugPrint('Failed to save draft: $e');
+    }
+  }
+
+  Future<void> _restoreDraft() async {
+    try {
+      Map<String, dynamic>? draft;
+
+      if (widget.applicationId != null) {
+        final token = ref.read(authTokenProvider);
+        if (token.isNotEmpty) {
+          draft = await ServiceApiClient.getDraft(
+            applicationId: widget.applicationId!,
+            stageNumber: _currentStage,
+            token: token,
+          );
+        }
+      }
+
+      if (draft == null) {
+        final prefs = await SharedPreferences.getInstance();
+        final raw = prefs.getString(_draftStorageKey);
+        if (raw != null && raw.isNotEmpty) {
+          draft = jsonDecode(raw) as Map<String, dynamic>?;
+        }
+      }
+
+      if (draft == null || !mounted) return;
+
+      final answers = (draft['answers'] as Map?)?.cast<String, dynamic>() ?? {};
+      final documents = (draft['documents'] as Map?)?.cast<String, dynamic>() ?? {};
+      final paymentRef = draft['paymentReference']?.toString();
+      final paymentMethod = draft['paymentMethod']?.toString();
+
+      setState(() {
+        for (final entry in answers.entries) {
+          final label = entry.key;
+          final value = entry.value?.toString() ?? '';
+          if (value.isEmpty) continue;
+
+          final field = _fields.firstWhere((f) => f['label'] == label, orElse: () => {});
+          final type = field['type']?.toString() ?? 'text';
+
+          if (type == 'select') {
+            _selectValues[label] = value;
+          } else if (type == 'multiselect') {
+            _multiValues[label] = value.split(', ').map((s) => s.trim()).toSet();
+          } else if (type == 'table') {
+            try {
+              final List rowsList = jsonDecode(value) as List;
+              final cols = _columnsOf(field);
+              final tableControllers = _rowsFor(label, cols.length);
+              while (tableControllers.length < rowsList.length) {
+                tableControllers.add(List.generate(cols.length, (_) => TextEditingController()));
+              }
+              for (var r = 0; r < rowsList.length && r < tableControllers.length; r++) {
+                final rowMap = rowsList[r] as Map;
+                for (var c = 0; c < cols.length; c++) {
+                  final colName = cols[c];
+                  if (rowMap.containsKey(colName)) {
+                    tableControllers[r][c].text = rowMap[colName]?.toString() ?? '';
+                  }
+                }
+              }
+            } catch (_) {}
+          } else {
+            _controllerFor(label).text = value;
+          }
+        }
+
+        for (final docEntry in documents.entries) {
+          final label = docEntry.key;
+          final docId = docEntry.value?.toString();
+          if (docId != null && docId.isNotEmpty) {
+            final fileName = answers[label] ?? 'Uploaded Document';
+            _documents[label] = (id: docId, fileName: fileName);
+          }
+        }
+
+        if (paymentRef != null && paymentRef.isNotEmpty) {
+          for (final f in _fields) {
+            if (f['type'] == 'payment') {
+              final pLabel = f['label']?.toString() ?? '';
+              if (pLabel.isNotEmpty) {
+                _controllerFor(pLabel).text = paymentRef;
+                _paymentModes[pLabel] = paymentMethod ?? 'slip';
+              }
+            }
+          }
+        }
+      });
+    } catch (e) {
+      debugPrint('Failed to restore draft: $e');
+    }
+  }
+
+  String? _collectPaymentRef() {
+    for (final f in _fields) {
+      if (f['type'] == 'payment') {
+        final label = f['label']?.toString() ?? '';
+        final text = _controllers[label]?.text.trim() ?? '';
+        if (text.isNotEmpty) return text;
+      }
+    }
+    return null;
+  }
+
+  String? _collectPaymentMethod() {
+    for (final f in _fields) {
+      if (f['type'] == 'payment') {
+        final label = f['label']?.toString() ?? '';
+        return _paymentModes[label];
+      }
+    }
+    return null;
   }
 
   // Loaded form data. Read (not watched) so these are safe in callbacks; [build] watches.
@@ -156,6 +333,24 @@ class _ApplicationFormScreenState extends ConsumerState<ApplicationFormScreen> {
       : (_formState.value?.stage ?? widget.stageNumber ?? 1);
   int get _totalStages => _formState.value?.totalStages ?? 1;
   List<String> get _workflowDepartments => _formState.value?.workflowDepartments ?? const [];
+
+  Map<String, dynamic>? get _departmentData {
+    if (_resolvedDepartment != null) return _resolvedDepartment;
+    if (_isStageMode && _stageFormResponse != null && _stageFormResponse!['department'] != null) {
+      return _stageFormResponse!['department'] as Map<String, dynamic>?;
+    }
+    return _formState.value?.department;
+  }
+
+  String? get _departmentLogoUrl => _departmentData?['logoUrl']?.toString();
+  String get _departmentCode {
+    final code = _departmentData?['departmentCode']?.toString();
+    if (code != null && code.isNotEmpty) return code;
+    return 'GSN';
+  }
+  String? get _departmentContact => _departmentData?['contactNumber']?.toString();
+  String? get _departmentEmail => _departmentData?['email']?.toString();
+
   String get _stageDepartment {
     if (_isStageMode && _stageFormResponse != null && _stageFormResponse!['department'] != null) {
       return _stageFormResponse!['department']['name']?.toString() ?? 'Assigned Department';
@@ -236,20 +431,16 @@ class _ApplicationFormScreenState extends ConsumerState<ApplicationFormScreen> {
               .toList();
           answers[label] = rows.isEmpty ? '' : jsonEncode(rows);
         case 'payment':
-          final mode = _paymentModes[label] ?? 'slip';
-          if (mode == 'slip') {
-            final fileName = _documents[label]?.fileName ?? '';
-            answers[label] = fileName.isNotEmpty ? 'Bank Deposit Slip: $fileName' : '';
+          final ref = _controllers[label]?.text.trim() ?? '';
+          if (ref.isNotEmpty) {
+            answers[label] = ref;
           } else {
-            final ref = _controllers[label]?.text.trim() ?? '';
-            answers[label] = ref.isNotEmpty ? 'Online Ref: $ref' : '';
+            final fileName = _documents[label]?.fileName ?? '';
+            answers[label] = fileName.isNotEmpty ? 'Bank Deposit Slip: $fileName' : 'Stage Payment Logged / Pending Clearance';
           }
         default:
           answers[label] = _controllers[label]?.text.trim() ?? '';
       }
-    }
-    for (final key in [_presentedByKey, _emailKey, _telephoneKey]) {
-      answers[key] = _controllers[key]?.text.trim() ?? '';
     }
     return answers;
   }
@@ -282,6 +473,10 @@ class _ApplicationFormScreenState extends ConsumerState<ApplicationFormScreen> {
         );
       }
       if (!mounted) return;
+      try {
+        final prefs = await SharedPreferences.getInstance();
+        await prefs.remove(_draftStorageKey);
+      } catch (_) {}
       ref.invalidate(myApplicationsProvider);
       if (result['paymentRequired'] == true) {
         // Saved, but only sent to the officers once the fee is paid
@@ -350,14 +545,36 @@ class _ApplicationFormScreenState extends ConsumerState<ApplicationFormScreen> {
   @override
   Widget build(BuildContext context) {
     ref.watch(applicationFormDataProvider(widget.serviceId));
-    return Scaffold(
-      backgroundColor: AppColors.background,
-      appBar: AppBar(
-        title: Text(widget.serviceName),
-        backgroundColor: AppColors.cardBg,
-        elevation: 0,
+    return PopScope(
+      canPop: true,
+      onPopInvokedWithResult: (didPop, result) {
+        if (!didPop) return;
+        if (!_isSubmitting && _submitted == null) {
+          _saveDraft();
+        }
+      },
+      child: Scaffold(
+        backgroundColor: AppColors.background,
+        appBar: AppBar(
+          title: Text(widget.serviceName),
+          backgroundColor: AppColors.cardBg,
+          elevation: 0,
+          actions: [
+            if (!_isSubmitting && _submitted == null) ...[
+              TextButton.icon(
+                onPressed: () => _saveDraft(showNotice: true),
+                icon: const Icon(CupertinoIcons.floppy_disk, size: 16, color: AppColors.primary),
+                label: const Text(
+                  'Save Draft',
+                  style: TextStyle(fontSize: 12.5, fontWeight: FontWeight.w700, color: AppColors.primary),
+                ),
+              ),
+              const SizedBox(width: 4),
+            ],
+          ],
+        ),
+        body: _buildBody(),
       ),
-      body: _buildBody(),
     );
   }
 
@@ -383,12 +600,13 @@ class _ApplicationFormScreenState extends ConsumerState<ApplicationFormScreen> {
 
           // The "paper" sheet
           Container(
-            padding: const EdgeInsets.fromLTRB(14, 14, 14, 18),
+            padding: const EdgeInsets.fromLTRB(16, 16, 16, 20),
             decoration: BoxDecoration(
               color: Colors.white,
-              border: Border.all(color: const Color(0xFFCCCCCC)),
+              borderRadius: BorderRadius.circular(8),
+              border: Border.all(color: const Color(0xFFD0D7DE)),
               boxShadow: [
-                BoxShadow(color: Colors.black.withValues(alpha: 0.1), blurRadius: 8, offset: const Offset(0, 4)),
+                BoxShadow(color: Colors.black.withValues(alpha: 0.06), blurRadius: 10, offset: const Offset(0, 3)),
               ],
             ),
             child: Theme(
@@ -403,8 +621,6 @@ class _ApplicationFormScreenState extends ConsumerState<ApplicationFormScreen> {
                     const SizedBox(height: 28),
                     ..._fields.map(_buildField),
                     if (_requiredDocs.isNotEmpty) ..._buildRequiredDocuments(),
-                    const SizedBox(height: 28),
-                    _buildFooter(),
                   ],
                 ),
               ),
@@ -617,28 +833,42 @@ class _ApplicationFormScreenState extends ConsumerState<ApplicationFormScreen> {
     final total = _totalStages > 1 ? _totalStages : (_workflowDepartments.isNotEmpty ? _workflowDepartments.length : 1);
 
     return Container(
-      margin: const EdgeInsets.only(bottom: 18),
-      padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
+      margin: const EdgeInsets.only(bottom: 16),
+      padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 9),
       decoration: BoxDecoration(
-        color: const Color(0xFFF0F5FF),
-        border: Border.all(color: const Color(0xFF0F62FE), width: 1.5),
-        borderRadius: BorderRadius.circular(4),
+        color: const Color(0xFFEDF5FF),
+        border: Border.all(color: const Color(0xFFA6C8FF), width: 1.2),
+        borderRadius: BorderRadius.circular(6),
       ),
       child: Row(
         children: [
-          const Icon(Icons.shield_outlined, color: Color(0xFF0F62FE), size: 22),
+          Container(
+            padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
+            decoration: BoxDecoration(
+              color: const Color(0xFF0F62FE),
+              borderRadius: BorderRadius.circular(4),
+            ),
+            child: Text(
+              'STAGE $_currentStage OF $total',
+              style: const TextStyle(
+                fontSize: 10,
+                fontWeight: FontWeight.bold,
+                color: Colors.white,
+                letterSpacing: 0.5,
+              ),
+            ),
+          ),
           const SizedBox(width: 10),
           Expanded(
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
                 Text(
-                  'STAGE $_currentStage OF $total APPLICATION GATE • ${_stageDepartment.toUpperCase()}',
+                  _stageDepartment,
                   style: const TextStyle(
-                    fontSize: 11,
+                    fontSize: 12,
                     fontWeight: FontWeight.bold,
-                    letterSpacing: 0.5,
-                    color: Color(0xFF0F62FE),
+                    color: Color(0xFF0043CE),
                   ),
                 ),
                 if (_stageDescription != null && _stageDescription!.isNotEmpty)
@@ -646,7 +876,7 @@ class _ApplicationFormScreenState extends ConsumerState<ApplicationFormScreen> {
                     padding: const EdgeInsets.only(top: 2),
                     child: Text(
                       _stageDescription!,
-                      style: const TextStyle(fontSize: 11, fontStyle: FontStyle.italic, color: Color(0xFF525252)),
+                      style: const TextStyle(fontSize: 10.5, fontStyle: FontStyle.italic, color: Color(0xFF525252)),
                     ),
                   ),
               ],
@@ -657,53 +887,267 @@ class _ApplicationFormScreenState extends ConsumerState<ApplicationFormScreen> {
     );
   }
 
-  // ── Header: Logo | Form name / subtitle / law text | Emblem / QR ──────────────
+  Widget _buildDepartmentLogo(String? logoUrl, String deptCode) {
+    Widget? logoWidget;
+
+    if (logoUrl != null && logoUrl.trim().isNotEmpty) {
+      final cleanUrl = logoUrl.trim();
+      if (cleanUrl.startsWith('data:image') || cleanUrl.contains(';base64,')) {
+        try {
+          final base64String = cleanUrl.contains(';base64,')
+              ? cleanUrl.split(';base64,').last
+              : cleanUrl;
+          final bytes = base64Decode(base64String);
+          logoWidget = Image.memory(
+            bytes,
+            fit: BoxFit.contain,
+            errorBuilder: (ctx, err, st) => _fallbackLogoBadge(deptCode),
+          );
+        } catch (_) {
+          logoWidget = null;
+        }
+      } else if (cleanUrl.startsWith('http://') || cleanUrl.startsWith('https://')) {
+        logoWidget = Image.network(
+          cleanUrl,
+          fit: BoxFit.contain,
+          errorBuilder: (ctx, err, st) => _fallbackLogoBadge(deptCode),
+        );
+      } else {
+        // Raw base64 string
+        try {
+          final bytes = base64Decode(cleanUrl);
+          logoWidget = Image.memory(
+            bytes,
+            fit: BoxFit.contain,
+            errorBuilder: (ctx, err, st) => _fallbackLogoBadge(deptCode),
+          );
+        } catch (_) {
+          logoWidget = null;
+        }
+      }
+    }
+
+    return Container(
+      width: 58,
+      height: 58,
+      padding: const EdgeInsets.all(4),
+      decoration: BoxDecoration(
+        color: Colors.white,
+        shape: BoxShape.circle,
+        border: Border.all(color: const Color(0xFF0F62FE), width: 1.8),
+        boxShadow: [
+          BoxShadow(
+            color: Colors.black.withValues(alpha: 0.08),
+            blurRadius: 4,
+            offset: const Offset(0, 2),
+          ),
+        ],
+      ),
+      child: ClipOval(
+        child: logoWidget ?? _fallbackLogoBadge(deptCode),
+      ),
+    );
+  }
+
+  Widget _fallbackLogoBadge(String deptCode) {
+    final code = deptCode.isNotEmpty ? deptCode : 'GSN';
+    return Container(
+      color: const Color(0xFFEDF5FF),
+      alignment: Alignment.center,
+      child: Column(
+        mainAxisAlignment: MainAxisAlignment.center,
+        children: [
+          Text(
+            code,
+            textAlign: TextAlign.center,
+            style: const TextStyle(
+              fontSize: 10,
+              fontWeight: FontWeight.bold,
+              color: Color(0xFF0F62FE),
+            ),
+          ),
+          const Text(
+            'LOGO',
+            style: TextStyle(
+              fontSize: 7.5,
+              fontWeight: FontWeight.w600,
+              color: Color(0xFF525252),
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildStageStamp() {
+    return Container(
+      width: 68,
+      height: 58,
+      padding: const EdgeInsets.symmetric(horizontal: 4, vertical: 4),
+      decoration: BoxDecoration(
+        color: const Color(0xFFF0F5FF),
+        borderRadius: BorderRadius.circular(6),
+        border: Border.all(color: const Color(0xFF0F62FE), width: 1.5),
+      ),
+      child: Column(
+        mainAxisAlignment: MainAxisAlignment.center,
+        children: [
+          const Text(
+            'OFFICIAL STAMP',
+            textAlign: TextAlign.center,
+            style: TextStyle(
+              fontSize: 6.8,
+              fontWeight: FontWeight.w800,
+              letterSpacing: 0.3,
+              color: Color(0xFF0043CE),
+            ),
+          ),
+          const SizedBox(height: 2),
+          Text(
+            _departmentCode,
+            textAlign: TextAlign.center,
+            maxLines: 1,
+            overflow: TextOverflow.ellipsis,
+            style: const TextStyle(
+              fontSize: 10,
+              fontWeight: FontWeight.bold,
+              color: Color(0xFF161616),
+            ),
+          ),
+          const SizedBox(height: 1),
+          Text(
+            '✓ STAGE $_currentStage',
+            textAlign: TextAlign.center,
+            style: const TextStyle(
+              fontSize: 7.5,
+              fontWeight: FontWeight.w700,
+              color: Color(0xFF24A148),
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  // ── Official Header: Department Logo | Sri Lanka Government & Form Info | Official Stamp ──────────────
   Widget _buildHeader() {
     final subTitle = _template!['subTitle']?.toString() ?? '';
     final lawText = _template!['lawText']?.toString() ?? '';
+    final formName = _template!['formName']?.toString() ?? widget.serviceName;
 
-    return Row(
-      crossAxisAlignment: CrossAxisAlignment.start,
-      children: [
-        Container(
-          width: 56,
-          height: 56,
-          alignment: Alignment.center,
-          decoration: BoxDecoration(shape: BoxShape.circle, border: Border.all(color: const Color(0xFFCCCCCC))),
-          child: const Text('Logo', style: TextStyle(fontSize: 10, color: _faint)),
-        ),
-        Expanded(
-          child: Padding(
-            padding: const EdgeInsets.symmetric(horizontal: 8),
+    final contactItems = [
+      if (_departmentCode.isNotEmpty && _departmentCode != 'GSN') 'ID: $_departmentCode',
+      if (_departmentContact != null && _departmentContact!.isNotEmpty) 'Tel: $_departmentContact',
+      if (_departmentEmail != null && _departmentEmail!.isNotEmpty) 'Email: $_departmentEmail',
+    ];
+
+    return Container(
+      padding: const EdgeInsets.only(bottom: 16),
+      decoration: const BoxDecoration(
+        border: Border(bottom: BorderSide(color: Color(0xFF161616), width: 2)),
+      ),
+      child: Column(
+        children: [
+          // Top Row: Official Department Logo | Government Header | Official Stamp
+          Row(
+            crossAxisAlignment: CrossAxisAlignment.center,
+            children: [
+              _buildDepartmentLogo(_departmentLogoUrl, _departmentCode),
+              const SizedBox(width: 8),
+              Expanded(
+                child: Column(
+                  children: [
+                    const Text(
+                      'DEMOCRATIC SOCIALIST REPUBLIC OF SRI LANKA',
+                      textAlign: TextAlign.center,
+                      style: TextStyle(
+                        fontSize: 8.2,
+                        fontWeight: FontWeight.w800,
+                        letterSpacing: 0.7,
+                        color: Color(0xFF525252),
+                      ),
+                    ),
+                    const SizedBox(height: 3),
+                    Text(
+                      _stageDepartment.toUpperCase(),
+                      textAlign: TextAlign.center,
+                      maxLines: 2,
+                      overflow: TextOverflow.ellipsis,
+                      style: const TextStyle(
+                        fontSize: 13,
+                        fontWeight: FontWeight.bold,
+                        color: Color(0xFF0043CE),
+                        height: 1.2,
+                      ),
+                    ),
+                    if (contactItems.isNotEmpty) ...[
+                      const SizedBox(height: 3),
+                      Text(
+                        contactItems.join(' • '),
+                        textAlign: TextAlign.center,
+                        maxLines: 1,
+                        overflow: TextOverflow.ellipsis,
+                        style: const TextStyle(
+                          fontSize: 8.5,
+                          color: Color(0xFF525252),
+                        ),
+                      ),
+                    ],
+                  ],
+                ),
+              ),
+              const SizedBox(width: 8),
+              _buildStageStamp(),
+            ],
+          ),
+
+          const SizedBox(height: 14),
+
+          // Form Name & Subtitle
+          Container(
+            width: double.infinity,
+            padding: const EdgeInsets.symmetric(vertical: 2),
             child: Column(
               children: [
                 Text(
-                  _template!['formName']?.toString() ?? widget.serviceName,
+                  formName.toUpperCase(),
                   textAlign: TextAlign.center,
-                  style: const TextStyle(fontSize: 22, fontWeight: FontWeight.bold),
+                  style: const TextStyle(
+                    fontSize: 16.5,
+                    fontWeight: FontWeight.bold,
+                    letterSpacing: 0.5,
+                    color: Color(0xFF161616),
+                  ),
                 ),
-                if (subTitle.isNotEmpty) ...[
-                  const SizedBox(height: 4),
-                  Text(subTitle.toUpperCase(), textAlign: TextAlign.center, style: const TextStyle(fontSize: 16)),
-                ],
+                const SizedBox(height: 4),
+                Text(
+                  subTitle.isNotEmpty
+                      ? subTitle.toUpperCase()
+                      : 'OFFICIAL PUBLIC SERVICE INTAKE - ${_stageDepartment.toUpperCase()}',
+                  textAlign: TextAlign.center,
+                  style: const TextStyle(
+                    fontSize: 11,
+                    fontWeight: FontWeight.w600,
+                    color: Color(0xFF393939),
+                  ),
+                ),
                 if (lawText.isNotEmpty) ...[
                   const SizedBox(height: 4),
-                  Text(lawText,
-                      textAlign: TextAlign.center,
-                      style: const TextStyle(fontSize: 12, fontStyle: FontStyle.italic)),
+                  Text(
+                    lawText,
+                    textAlign: TextAlign.center,
+                    style: const TextStyle(
+                      fontSize: 10.5,
+                      fontStyle: FontStyle.italic,
+                      color: Color(0xFF525252),
+                    ),
+                  ),
                 ],
               ],
             ),
           ),
-        ),
-        Container(
-          width: 64,
-          height: 56,
-          alignment: Alignment.center,
-          decoration: BoxDecoration(border: Border.all(color: const Color(0xFFCCCCCC))),
-          child: const Text('Emblem / QR', textAlign: TextAlign.center, style: TextStyle(fontSize: 9, color: _faint)),
-        ),
-      ],
+        ],
+      ),
     );
   }
 
@@ -875,9 +1319,6 @@ class _ApplicationFormScreenState extends ConsumerState<ApplicationFormScreen> {
         }
 
         final controller = _controllerFor(label);
-        if (controller.text.isEmpty && amount > 0) {
-          controller.text = amount.toStringAsFixed(2);
-        }
 
         return _buildPaymentSection(
           label: label,
@@ -1056,6 +1497,37 @@ class _ApplicationFormScreenState extends ConsumerState<ApplicationFormScreen> {
     );
   }
 
+  void _openMakePaymentModal({
+    required String label,
+    required String feeType,
+    required double amount,
+    required TextEditingController controller,
+  }) {
+    showModalBottomSheet(
+      context: context,
+      isScrollControlled: true,
+      backgroundColor: Colors.transparent,
+      builder: (modalCtx) => _StagePaymentModal(
+        department: _stageDepartment,
+        serviceName: widget.serviceName,
+        amount: amount,
+        feeType: feeType,
+        applicationId: widget.applicationId,
+        onPaymentCompleted: (reference, method, [docId, docName]) {
+          setState(() {
+            controller.text = reference;
+            _paymentModes[label] = method;
+            if (docId != null && docName != null) {
+              _documents[label] = (id: docId, fileName: docName);
+            }
+          });
+          // Immediately save draft so leaving the screen preserves the uploaded slip!
+          _saveDraft();
+        },
+      ),
+    );
+  }
+
   Widget _buildPaymentSection({
     required String label,
     required String feeType,
@@ -1064,299 +1536,334 @@ class _ApplicationFormScreenState extends ConsumerState<ApplicationFormScreen> {
     required bool required,
     required TextEditingController controller,
   }) {
-    final currentMode = _paymentModes[label] ?? 'slip';
+    final hasPaid = controller.text.trim().isNotEmpty;
+    final paymentRef = controller.text.trim();
 
-    return Container(
-      margin: const EdgeInsets.only(top: 8, bottom: 20),
-      decoration: BoxDecoration(
-        color: const Color(0xFFF0F5FF),
-        border: Border.all(color: const Color(0xFF0F62FE), width: 1.5),
-        borderRadius: BorderRadius.circular(4),
-      ),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.stretch,
-        children: [
-          Container(
-            padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
-            decoration: const BoxDecoration(
-              color: Color(0xFF0F62FE),
-              borderRadius: BorderRadius.vertical(top: Radius.circular(2)),
-            ),
-            child: Row(
-              mainAxisAlignment: MainAxisAlignment.spaceBetween,
-              children: [
-                Row(
-                  children: const [
-                    Icon(CupertinoIcons.creditcard, size: 16, color: Colors.white),
-                    SizedBox(width: 6),
-                    Text(
-                      'STATUTORY PAYMENT REQUIRED',
-                      style: TextStyle(
-                        color: Colors.white,
-                        fontSize: 11,
-                        fontWeight: FontWeight.bold,
-                        letterSpacing: 0.5,
-                      ),
-                    ),
-                  ],
-                ),
-                if (required)
-                  Container(
-                    padding: const EdgeInsets.symmetric(horizontal: 5, vertical: 2),
-                    decoration: BoxDecoration(
-                      color: Colors.white.withOpacity(0.25),
-                      borderRadius: BorderRadius.circular(3),
-                    ),
-                    child: const Text(
-                      'MANDATORY',
-                      style: TextStyle(color: Colors.white, fontSize: 9, fontWeight: FontWeight.bold),
-                    ),
-                  ),
-              ],
-            ),
+    return FormField<String>(
+      validator: (_) => required && !hasPaid
+          ? 'Please complete or record the stage payment before submitting.'
+          : null,
+      builder: (state) => Container(
+        margin: const EdgeInsets.only(top: 8, bottom: 20),
+        decoration: BoxDecoration(
+          color: hasPaid ? const Color(0xFFF6FFED) : const Color(0xFFF0F5FF),
+          border: Border.all(
+            color: state.hasError
+                ? AppColors.danger
+                : (hasPaid ? const Color(0xFF52C41A) : const Color(0xFF0F62FE)),
+            width: 1.5,
           ),
-          Padding(
-            padding: const EdgeInsets.all(12),
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                Row(
-                  mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    Expanded(
-                      child: Column(
-                        crossAxisAlignment: CrossAxisAlignment.start,
-                        children: [
-                          Text(
-                            label.isNotEmpty ? label : feeType,
-                            style: const TextStyle(fontSize: 14, fontWeight: FontWeight.bold, color: _ink),
-                          ),
-                          const SizedBox(height: 2),
-                          Text(
-                            'Accepted: $methods',
-                            style: const TextStyle(fontSize: 11, color: Color(0xFF525252)),
-                          ),
-                        ],
-                      ),
-                    ),
-                    Container(
-                      padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
-                      decoration: BoxDecoration(
-                        color: Colors.white,
-                        border: Border.all(color: const Color(0xFFD0E2FF)),
-                        borderRadius: BorderRadius.circular(4),
-                      ),
-                      child: Column(
-                        crossAxisAlignment: CrossAxisAlignment.end,
-                        children: [
-                          const Text('Payable Fee', style: TextStyle(fontSize: 9, color: Color(0xFF525252))),
-                          Text(
-                            'LKR ${amount.toStringAsFixed(2)}',
+          borderRadius: BorderRadius.circular(8),
+        ),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.stretch,
+          children: [
+            // Top Bar
+            Container(
+              padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 9),
+              decoration: BoxDecoration(
+                color: hasPaid ? const Color(0xFF24A148) : const Color(0xFF0F62FE),
+                borderRadius: const BorderRadius.vertical(top: Radius.circular(6)),
+              ),
+              child: Row(
+                children: [
+                  Expanded(
+                    child: Row(
+                      mainAxisSize: MainAxisSize.min,
+                      children: [
+                        Icon(
+                          hasPaid ? CupertinoIcons.checkmark_seal_fill : CupertinoIcons.creditcard,
+                          size: 15,
+                          color: Colors.white,
+                        ),
+                        const SizedBox(width: 6),
+                        Flexible(
+                          child: Text(
+                            hasPaid
+                                ? 'STATUTORY STAGE PAYMENT RECORDED'
+                                : 'STATUTORY STAGE PAYMENT REQUIRED',
                             style: const TextStyle(
-                              fontSize: 15,
+                              color: Colors.white,
+                              fontSize: 10.5,
                               fontWeight: FontWeight.bold,
-                              color: Color(0xFF0F62FE),
+                              letterSpacing: 0.3,
                             ),
-                          ),
-                        ],
-                      ),
-                    ),
-                  ],
-                ),
-                const SizedBox(height: 12),
-
-                // Payment mode switcher: Bank Deposit Slip vs Online Ref ID
-                Container(
-                  margin: const EdgeInsets.only(bottom: 12),
-                  padding: const EdgeInsets.all(3),
-                  decoration: BoxDecoration(
-                    color: const Color(0xFFE5EFFF),
-                    borderRadius: BorderRadius.circular(6),
-                    border: Border.all(color: const Color(0xFFD0E2FF)),
-                  ),
-                  child: Row(
-                    children: [
-                      Expanded(
-                        child: GestureDetector(
-                          onTap: () {
-                            setState(() {
-                              _paymentModes[label] = 'slip';
-                              controller.clear();
-                            });
-                          },
-                          child: Container(
-                            padding: const EdgeInsets.symmetric(vertical: 8),
-                            decoration: BoxDecoration(
-                              color: currentMode == 'slip' ? Colors.white : Colors.transparent,
-                              borderRadius: BorderRadius.circular(4),
-                              boxShadow: currentMode == 'slip'
-                                  ? [
-                                      BoxShadow(
-                                        color: Colors.black.withValues(alpha: 0.08),
-                                        blurRadius: 3,
-                                        offset: const Offset(0, 1),
-                                      ),
-                                    ]
-                                  : null,
-                            ),
-                            child: Row(
-                              mainAxisAlignment: MainAxisAlignment.center,
-                              children: [
-                                Icon(
-                                  CupertinoIcons.doc_text,
-                                  size: 14,
-                                  color: currentMode == 'slip' ? const Color(0xFF0F62FE) : const Color(0xFF525252),
-                                ),
-                                const SizedBox(width: 6),
-                                Text(
-                                  'Bank Deposit Slip',
-                                  style: TextStyle(
-                                    fontSize: 12,
-                                    fontWeight: currentMode == 'slip' ? FontWeight.bold : FontWeight.w500,
-                                    color: currentMode == 'slip' ? const Color(0xFF0F62FE) : const Color(0xFF525252),
-                                  ),
-                                ),
-                              ],
-                            ),
+                            maxLines: 1,
+                            overflow: TextOverflow.ellipsis,
                           ),
                         ),
-                      ),
+                      ],
+                    ),
+                  ),
+                  const SizedBox(width: 6),
+                  Container(
+                    padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
+                    decoration: BoxDecoration(
+                      color: Colors.white.withValues(alpha: 0.25),
+                      borderRadius: BorderRadius.circular(4),
+                    ),
+                    child: Text(
+                      hasPaid ? 'STAGE $_currentStage LOGGED' : 'MANDATORY',
+                      style: const TextStyle(color: Colors.white, fontSize: 9.5, fontWeight: FontWeight.bold),
+                    ),
+                  ),
+                ],
+              ),
+            ),
+
+            // Card Body
+            Padding(
+              padding: const EdgeInsets.all(14),
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Row(
+                    mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
                       Expanded(
-                        child: GestureDetector(
-                          onTap: () {
-                            setState(() {
-                              _paymentModes[label] = 'online';
-                              _documents.remove(label);
-                            });
-                          },
-                          child: Container(
-                            padding: const EdgeInsets.symmetric(vertical: 8),
-                            decoration: BoxDecoration(
-                              color: currentMode == 'online' ? Colors.white : Colors.transparent,
-                              borderRadius: BorderRadius.circular(4),
-                              boxShadow: currentMode == 'online'
-                                  ? [
-                                      BoxShadow(
-                                        color: Colors.black.withValues(alpha: 0.08),
-                                        blurRadius: 3,
-                                        offset: const Offset(0, 1),
-                                      ),
-                                    ]
-                                  : null,
+                        child: Column(
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          children: [
+                            Text(
+                              label.isNotEmpty ? label : feeType,
+                              style: const TextStyle(fontSize: 14.5, fontWeight: FontWeight.bold, color: _ink),
                             ),
-                            child: Row(
-                              mainAxisAlignment: MainAxisAlignment.center,
-                              children: [
-                                Icon(
-                                  CupertinoIcons.creditcard,
-                                  size: 14,
-                                  color: currentMode == 'online' ? const Color(0xFF0F62FE) : const Color(0xFF525252),
-                                ),
-                                const SizedBox(width: 6),
-                                Text(
-                                  'Online Ref ID',
-                                  style: TextStyle(
-                                    fontSize: 12,
-                                    fontWeight: currentMode == 'online' ? FontWeight.bold : FontWeight.w500,
-                                    color: currentMode == 'online' ? const Color(0xFF0F62FE) : const Color(0xFF525252),
-                                  ),
-                                ),
-                              ],
+                            const SizedBox(height: 3),
+                            Text(
+                              'Assigned to $_stageDepartment',
+                              style: const TextStyle(fontSize: 11.5, color: Color(0xFF525252), fontWeight: FontWeight.w500),
                             ),
-                          ),
+                          ],
+                        ),
+                      ),
+                      Container(
+                        padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 5),
+                        decoration: BoxDecoration(
+                          color: Colors.white,
+                          border: Border.all(color: hasPaid ? const Color(0xFFB7EB8F) : const Color(0xFFD0E2FF)),
+                          borderRadius: BorderRadius.circular(6),
+                        ),
+                        child: Column(
+                          crossAxisAlignment: CrossAxisAlignment.end,
+                          children: [
+                            const Text('Statutory Fee', style: TextStyle(fontSize: 9.5, color: Color(0xFF525252))),
+                            Text(
+                              'LKR ${amount.toStringAsFixed(2)}',
+                              style: TextStyle(
+                                fontSize: 15,
+                                fontWeight: FontWeight.bold,
+                                color: hasPaid ? const Color(0xFF24A148) : const Color(0xFF0F62FE),
+                              ),
+                            ),
+                          ],
                         ),
                       ),
                     ],
                   ),
-                ),
 
-                if (currentMode == 'slip')
-                  Container(
-                    padding: const EdgeInsets.all(10),
-                    decoration: BoxDecoration(
-                      color: Colors.white,
-                      border: Border.all(color: const Color(0xFFE0E0E0)),
-                      borderRadius: BorderRadius.circular(4),
-                    ),
-                    child: Column(
-                      crossAxisAlignment: CrossAxisAlignment.start,
-                      children: [
-                        Row(
-                          children: const [
-                            Icon(CupertinoIcons.arrow_up_doc, size: 14, color: Color(0xFF0F62FE)),
-                            SizedBox(width: 6),
+                  const SizedBox(height: 12),
+
+                  if (!hasPaid) ...[
+                    // Action button to trigger payment redirection
+                    SizedBox(
+                      width: double.infinity,
+                      child: CupertinoButton(
+                        padding: const EdgeInsets.symmetric(vertical: 12),
+                        color: const Color(0xFF0F62FE),
+                        borderRadius: BorderRadius.circular(8),
+                        onPressed: () => _openMakePaymentModal(
+                          label: label,
+                          feeType: feeType,
+                          amount: amount,
+                          controller: controller,
+                        ),
+                        child: const Row(
+                          mainAxisAlignment: MainAxisAlignment.center,
+                          children: [
+                            Icon(CupertinoIcons.creditcard_fill, size: 16, color: Colors.white),
+                            SizedBox(width: 8),
                             Text(
-                              'Upload Bank Deposit Slip / Payment Evidence',
-                              style: TextStyle(fontSize: 12, fontWeight: FontWeight.w600, color: _ink),
+                              'Make Stage Payment',
+                              style: TextStyle(
+                                fontSize: 13.5,
+                                fontWeight: FontWeight.bold,
+                                color: Colors.white,
+                              ),
                             ),
                           ],
                         ),
-                        const SizedBox(height: 3),
-                        const Text(
-                          'Upload stamped deposit slip or payment receipt for official departmental finance audit.',
-                          style: TextStyle(fontSize: 10, color: Color(0xFF666666)),
+                      ),
+                    ),
+                    const SizedBox(height: 8),
+                    Center(
+                      child: Text(
+                        'Redirects to official payment flow with $_stageDepartment pre-selected.',
+                        style: const TextStyle(fontSize: 10.5, color: Color(0xFF525252)),
+                      ),
+                    ),
+                  ] else ...[
+                    // Payment is completed/logged
+                    Container(
+                      padding: const EdgeInsets.all(12),
+                      decoration: BoxDecoration(
+                        color: Colors.white,
+                        border: Border.all(color: const Color(0xFFB7EB8F)),
+                        borderRadius: BorderRadius.circular(8),
+                      ),
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          Row(
+                            children: [
+                              const Icon(CupertinoIcons.checkmark_circle_fill, color: Color(0xFF24A148), size: 15),
+                              const SizedBox(width: 6),
+                              const Text(
+                                'Payment Ref:',
+                                style: TextStyle(fontSize: 12, fontWeight: FontWeight.w600, color: _ink),
+                              ),
+                              const SizedBox(width: 6),
+                              Expanded(
+                                child: Text(
+                                  paymentRef,
+                                  textAlign: TextAlign.end,
+                                  style: const TextStyle(fontSize: 11.5, fontWeight: FontWeight.bold, color: Color(0xFF0F62FE)),
+                                  maxLines: 1,
+                                  overflow: TextOverflow.ellipsis,
+                                ),
+                              ),
+                            ],
+                          ),
+                          const SizedBox(height: 10),
+                          const Divider(height: 1, color: Color(0xFFE8E8E8)),
+                          const SizedBox(height: 10),
+                          Row(
+                            children: [
+                              Expanded(
+                                child: Container(
+                                  padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 6),
+                                  decoration: BoxDecoration(
+                                    color: const Color(0xFFFFFBE6),
+                                    border: Border.all(color: const Color(0xFFFFE58F)),
+                                    borderRadius: BorderRadius.circular(4),
+                                  ),
+                                  child: const Column(
+                                    crossAxisAlignment: CrossAxisAlignment.start,
+                                    children: [
+                                      Text(
+                                        'Step 1 • Finance Audit',
+                                        style: TextStyle(fontSize: 9.5, fontWeight: FontWeight.bold, color: Color(0xFFD46B08)),
+                                        maxLines: 1,
+                                        overflow: TextOverflow.ellipsis,
+                                      ),
+                                      SizedBox(height: 2),
+                                      Text(
+                                        'Verifying by Finance Officer',
+                                        style: TextStyle(fontSize: 10.5, fontWeight: FontWeight.w600, color: Color(0xFF874D00)),
+                                        maxLines: 1,
+                                        overflow: TextOverflow.ellipsis,
+                                      ),
+                                    ],
+                                  ),
+                                ),
+                              ),
+                              const SizedBox(width: 8),
+                              Expanded(
+                                child: Container(
+                                  padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 6),
+                                  decoration: BoxDecoration(
+                                    color: const Color(0xFFE6F7FF),
+                                    border: Border.all(color: const Color(0xFF91D5FF)),
+                                    borderRadius: BorderRadius.circular(4),
+                                  ),
+                                  child: const Column(
+                                    crossAxisAlignment: CrossAxisAlignment.start,
+                                    children: [
+                                      Text(
+                                        'Step 2 • Application',
+                                        style: TextStyle(fontSize: 9.5, fontWeight: FontWeight.bold, color: Color(0xFF096DD9)),
+                                        maxLines: 1,
+                                        overflow: TextOverflow.ellipsis,
+                                      ),
+                                      SizedBox(height: 2),
+                                      Text(
+                                        'Under Review by Officer',
+                                        style: TextStyle(fontSize: 10.5, fontWeight: FontWeight.w600, color: Color(0xFF003A8C)),
+                                        maxLines: 1,
+                                        overflow: TextOverflow.ellipsis,
+                                      ),
+                                    ],
+                                  ),
+                                ),
+                              ),
+                            ],
+                          ),
+                        ],
+                      ),
+                    ),
+                    const SizedBox(height: 8),
+                    Row(
+                      children: [
+                        const Expanded(
+                          child: Text(
+                            'Payment submitted for financial audit clearance.',
+                            style: TextStyle(fontSize: 10.5, fontStyle: FontStyle.italic, color: Color(0xFF525252)),
+                            maxLines: 1,
+                            overflow: TextOverflow.ellipsis,
+                          ),
                         ),
-                        const SizedBox(height: 8),
-                        _buildFilePicker(label, required),
+                        const SizedBox(width: 8),
+                        GestureDetector(
+                          onTap: () => _openMakePaymentModal(
+                            label: label,
+                            feeType: feeType,
+                            amount: amount,
+                            controller: controller,
+                          ),
+                          child: const Text(
+                            'Edit / Re-submit',
+                            style: TextStyle(fontSize: 11, fontWeight: FontWeight.bold, color: Color(0xFF0F62FE)),
+                          ),
+                        ),
                       ],
                     ),
-                  )
-                else
+                  ],
+
+                  // Approval lock rule explanation
+                  const SizedBox(height: 10),
                   Container(
-                    padding: const EdgeInsets.all(10),
+                    padding: const EdgeInsets.all(8),
                     decoration: BoxDecoration(
                       color: Colors.white,
                       border: Border.all(color: const Color(0xFFE0E0E0)),
-                      borderRadius: BorderRadius.circular(4),
+                      borderRadius: BorderRadius.circular(6),
                     ),
-                    child: Column(
-                      crossAxisAlignment: CrossAxisAlignment.start,
+                    child: Row(
                       children: [
-                        Row(
-                          children: const [
-                            Icon(CupertinoIcons.checkmark_shield, size: 14, color: Color(0xFF0F62FE)),
-                            SizedBox(width: 6),
-                            Text(
-                              'Online Payment / Transfer Reference ID',
-                              style: TextStyle(fontSize: 12, fontWeight: FontWeight.w600, color: _ink),
-                            ),
-                          ],
-                        ),
-                        const SizedBox(height: 3),
-                        const Text(
-                          'Enter the reference number or transaction ID from your confirmation email or banking transfer.',
-                          style: TextStyle(fontSize: 10, color: Color(0xFF666666)),
-                        ),
-                        const SizedBox(height: 8),
-                        TextFormField(
-                          controller: controller,
-                          decoration: _boxDecoration().copyWith(
-                            hintText: 'e.g. TXN-984210 / REF-123456',
-                            hintStyle: const TextStyle(color: Color(0xFF8D8D8D), fontSize: 13),
+                        const Icon(CupertinoIcons.lock_shield, size: 14, color: Color(0xFF525252)),
+                        const SizedBox(width: 6),
+                        Expanded(
+                          child: Text(
+                            'Notice: Verification Officer cannot approve this stage until the Finance Officer of $_stageDepartment audits and verifies this payment.',
+                            style: const TextStyle(fontSize: 10.5, color: Color(0xFF525252), height: 1.25),
                           ),
-                          validator: (v) {
-                            if (required && (v == null || v.trim().isEmpty)) {
-                              return '$label reference ID is required';
-                            }
-                            return null;
-                          },
                         ),
                       ],
                     ),
                   ),
 
-                const SizedBox(height: 6),
-                Text(
-                  currentMode == 'slip'
-                      ? 'Deposit slips and receipts are audited by the Department Finance Officer before stage clearance.'
-                      : 'Online transaction reference IDs are audited and cleared against gateway statements.',
-                  style: const TextStyle(fontSize: 10, fontStyle: FontStyle.italic, color: Color(0xFF525252)),
-                ),
-              ],
+                  if (state.hasError) ...[
+                    const SizedBox(height: 6),
+                    Text(
+                      state.errorText!,
+                      style: const TextStyle(fontSize: 11, color: AppColors.danger, fontWeight: FontWeight.bold),
+                    ),
+                  ],
+                ],
+              ),
             ),
-          ),
-        ],
+          ],
+        ),
       ),
     );
   }
@@ -1480,77 +1987,6 @@ class _ApplicationFormScreenState extends ConsumerState<ApplicationFormScreen> {
     );
   }
 
-  // ── Footer: Presented by | Email / Telephone ──────────────────────────────────
-  Widget _buildFooter() {
-    return Container(
-      padding: const EdgeInsets.only(top: 14),
-      decoration: const BoxDecoration(border: Border(top: BorderSide(color: _ink, width: 2))),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.stretch,
-        children: [
-          const Text('Presented by:', style: TextStyle(fontWeight: FontWeight.bold, fontSize: 15)),
-          const SizedBox(height: 8),
-          // Filled from the service's department; not editable by the applicant.
-          TextFormField(
-            controller: _controllerFor(_presentedByKey),
-            readOnly: true,
-            minLines: 3,
-            maxLines: 4,
-            style: const TextStyle(fontWeight: FontWeight.w600),
-            decoration: _boxDecoration(),
-          ),
-          const SizedBox(height: 14),
-          _footerBox(
-            'Email:',
-            // Department Admin's email; not editable by the applicant.
-            TextFormField(
-              controller: _controllerFor(_emailKey),
-              readOnly: true,
-              decoration: _cellDecoration().copyWith(hintText: 'Not assigned'),
-            ),
-          ),
-          const SizedBox(height: 8),
-          _footerBox(
-            'Telephone:',
-            TextFormField(
-              controller: _controllerFor(_telephoneKey),
-              keyboardType: TextInputType.phone,
-              decoration: _cellDecoration(),
-              validator: (v) {
-                final digits = (v ?? '').replaceAll(RegExp(r'[^0-9]'), '');
-                if (digits.isEmpty) return 'Telephone is required';
-                if (digits.length < 9) return 'Enter a valid phone number';
-                return null;
-              },
-            ),
-          ),
-        ],
-      ),
-    );
-  }
-
-  /// Bordered "Label | input" cell pair, as in the web footer.
-  Widget _footerBox(String label, Widget input) {
-    return Container(
-      decoration: BoxDecoration(border: Border.all(color: _ink)),
-      child: IntrinsicHeight(
-        child: Row(
-          crossAxisAlignment: CrossAxisAlignment.stretch,
-          children: [
-            Container(
-              width: 92,
-              padding: const EdgeInsets.symmetric(horizontal: 6),
-              alignment: Alignment.centerLeft,
-              decoration: const BoxDecoration(border: Border(right: BorderSide(color: _ink))),
-              child: Text(label, style: const TextStyle(fontSize: 13)),
-            ),
-            Expanded(child: input),
-          ],
-        ),
-      ),
-    );
-  }
-
   ThemeData _paperTheme(BuildContext context) {
     final light = ThemeData(
       brightness: Brightness.light,
@@ -1563,19 +1999,13 @@ class _ApplicationFormScreenState extends ConsumerState<ApplicationFormScreen> {
     );
   }
 
-  InputDecoration _boxDecoration() => const InputDecoration(
+  InputDecoration _boxDecoration() => InputDecoration(
         isDense: true,
-        contentPadding: EdgeInsets.symmetric(horizontal: 10, vertical: 12),
-        border: OutlineInputBorder(borderRadius: BorderRadius.zero, borderSide: BorderSide(color: _ink)),
-        enabledBorder: OutlineInputBorder(borderRadius: BorderRadius.zero, borderSide: BorderSide(color: _ink)),
+        contentPadding: const EdgeInsets.symmetric(horizontal: 10, vertical: 12),
+        border: OutlineInputBorder(borderRadius: BorderRadius.circular(4), borderSide: const BorderSide(color: Color(0xFFB0B0B0))),
+        enabledBorder: OutlineInputBorder(borderRadius: BorderRadius.circular(4), borderSide: const BorderSide(color: Color(0xFFB0B0B0))),
         focusedBorder:
-            OutlineInputBorder(borderRadius: BorderRadius.zero, borderSide: BorderSide(color: AppColors.primary, width: 2)),
-      );
-
-  InputDecoration _cellDecoration() => const InputDecoration(
-        isDense: true,
-        border: InputBorder.none,
-        contentPadding: EdgeInsets.symmetric(horizontal: 8, vertical: 10),
+            OutlineInputBorder(borderRadius: BorderRadius.circular(4), borderSide: const BorderSide(color: AppColors.primary, width: 2)),
       );
 
   Widget _buildMessage(IconData icon, String message) {
@@ -1711,6 +2141,436 @@ class _ApplicationFormScreenState extends ConsumerState<ApplicationFormScreen> {
                 foregroundColor: Colors.white,
               ),
               child: const Text('Done'),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+}
+
+class _StagePaymentModal extends ConsumerStatefulWidget {
+  final String department;
+  final String serviceName;
+  final double amount;
+  final String feeType;
+  final int? applicationId;
+  final Function(String reference, String method, [String? docId, String? docName]) onPaymentCompleted;
+
+  const _StagePaymentModal({
+    required this.department,
+    required this.serviceName,
+    required this.amount,
+    required this.feeType,
+    this.applicationId,
+    required this.onPaymentCompleted,
+  });
+
+  @override
+  ConsumerState<_StagePaymentModal> createState() => _StagePaymentModalState();
+}
+
+class _StagePaymentModalState extends ConsumerState<_StagePaymentModal> {
+  String _selectedMethod = 'Online'; // 'Online' or 'Bank Transfer'
+  final _bankSlipRefController = TextEditingController();
+  PlatformFile? _pickedSlipFile;
+  bool _isProcessing = false;
+  String? _errorMessage;
+
+  @override
+  void dispose() {
+    _bankSlipRefController.dispose();
+    super.dispose();
+  }
+
+  Future<void> _pickSlip() async {
+    try {
+      final res = await FilePicker.pickFiles(
+        type: FileType.custom,
+        allowedExtensions: const ['pdf', 'jpg', 'jpeg', 'png'],
+      );
+      if (res.isNotEmpty) {
+        setState(() {
+          _pickedSlipFile = res.first;
+          _errorMessage = null;
+        });
+      }
+    } catch (e) {
+      setState(() => _errorMessage = 'Failed to pick file: $e');
+    }
+  }
+
+  Future<void> _handlePayment() async {
+    final session = ref.read(sessionProvider);
+    final nic = session.user?['nicNumber']?.toString() ?? (session.email.isNotEmpty ? session.email : 'CITIZEN-NIC');
+
+    if (_selectedMethod == 'Bank Transfer' && _pickedSlipFile == null && _bankSlipRefController.text.trim().isEmpty) {
+      setState(() => _errorMessage = 'Please upload a bank deposit slip or provide the transfer reference number.');
+      return;
+    }
+
+    setState(() {
+      _isProcessing = true;
+      _errorMessage = null;
+    });
+
+    try {
+      final paymentService = ref.read(paymentServiceProvider);
+
+      String? slipDetail;
+      String? uploadedDocId;
+      String? uploadedDocName;
+      if (_pickedSlipFile != null) {
+        try {
+          final bytes = await _pickedSlipFile!.readAsBytes();
+          final ext = _pickedSlipFile!.name.split('.').last.toLowerCase();
+          final mime = ext == 'pdf' ? 'application/pdf' : (ext == 'png' ? 'image/png' : 'image/jpeg');
+
+          try {
+            final uploaded = await ServiceApiClient.uploadDocument(
+              fieldLabel: 'Bank Deposit Slip',
+              fileName: _pickedSlipFile!.name,
+              bytes: bytes,
+              token: ref.read(authTokenProvider),
+            );
+            uploadedDocId = uploaded['id']?.toString();
+            uploadedDocName = uploaded['fileName']?.toString() ?? _pickedSlipFile!.name;
+            if (uploadedDocId != null && uploadedDocId.isNotEmpty) {
+              slipDetail = '/api/verification/documents/$uploadedDocId/content';
+            }
+          } catch (e) {
+            debugPrint('Error uploading slip document directly: $e');
+          }
+
+          slipDetail ??= 'data:$mime;base64,${base64Encode(bytes)}';
+        } catch (e) {
+          debugPrint('Error reading slip file bytes: $e');
+          slipDetail = 'slip-${_pickedSlipFile!.name}';
+        }
+      } else if (_bankSlipRefController.text.trim().isNotEmpty) {
+        slipDetail = _bankSlipRefController.text.trim();
+      }
+
+      final result = await paymentService.departmentPay(
+        department: widget.department,
+        serviceName: widget.serviceName,
+        amount: widget.amount > 0 ? widget.amount : 2500.0,
+        paymentMethod: _selectedMethod == 'Online' ? 'Online' : 'Manual',
+        citizenNic: nic,
+        userEmail: session.email,
+        citizenName: session.fullName ?? 'Citizen',
+        manualSlipUrl: _selectedMethod == 'Bank Transfer' ? slipDetail : null,
+        applicationId: widget.applicationId,
+        notes: 'Statutory Fee: ${widget.feeType}',
+      );
+
+      final checkoutUrl = result['checkoutUrl']?.toString();
+      final paymentId = result['paymentId']?.toString();
+      final paymentRef = result['paymentReference']?.toString() ?? 'PAY-STAGE-${DateTime.now().millisecondsSinceEpoch}';
+
+      if (_selectedMethod == 'Online' && checkoutUrl != null && checkoutUrl.isNotEmpty) {
+        setState(() => _isProcessing = false);
+        if (!mounted) return;
+        final webviewSuccess = await Navigator.of(context).push<bool>(
+          CupertinoPageRoute(
+            builder: (_) => CheckoutWebViewScreen(checkoutUrl: checkoutUrl),
+          ),
+        );
+
+        if (!mounted) return;
+
+        if (webviewSuccess == true) {
+          if (paymentId != null) {
+            try {
+              await paymentService.confirmPayment(paymentId);
+            } catch (_) {}
+          }
+          ref.invalidate(myPaymentsProvider);
+          ref.invalidate(myApplicationsProvider);
+          widget.onPaymentCompleted(paymentRef, 'online');
+          if (mounted) {
+            Navigator.of(context).pop();
+          }
+        } else {
+          setState(() {
+            _isProcessing = false;
+            _errorMessage = 'Online payment was not completed. You can retry or choose Bank Transfer.';
+          });
+        }
+        return;
+      }
+
+      // Bank Transfer completed
+      ref.invalidate(myPaymentsProvider);
+      ref.invalidate(myApplicationsProvider);
+      widget.onPaymentCompleted(paymentRef, 'slip', uploadedDocId, uploadedDocName);
+      if (mounted) {
+        Navigator.of(context).pop();
+      }
+    } catch (e) {
+      if (mounted) {
+        setState(() {
+          _isProcessing = false;
+          _errorMessage = e.toString().replaceAll('Exception: ', '');
+        });
+      }
+    }
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      padding: EdgeInsets.only(
+        top: 20,
+        left: 20,
+        right: 20,
+        bottom: MediaQuery.of(context).viewInsets.bottom + 24,
+      ),
+      decoration: const BoxDecoration(
+        color: Colors.white,
+        borderRadius: BorderRadius.vertical(top: Radius.circular(24)),
+      ),
+      child: SingleChildScrollView(
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          crossAxisAlignment: CrossAxisAlignment.stretch,
+          children: [
+            // Drag handle
+            Center(
+              child: Container(
+                width: 40,
+                height: 4,
+                decoration: BoxDecoration(
+                  color: Colors.grey.shade300,
+                  borderRadius: BorderRadius.circular(2),
+                ),
+              ),
+            ),
+            const SizedBox(height: 16),
+
+            // Header
+            Row(
+              mainAxisAlignment: MainAxisAlignment.spaceBetween,
+              children: [
+                Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    const Text(
+                      'Official Stage Payment',
+                      style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold, color: Color(0xFF161616)),
+                    ),
+                    const SizedBox(height: 2),
+                    Text(
+                      widget.department,
+                      style: const TextStyle(fontSize: 12, fontWeight: FontWeight.w600, color: Color(0xFF0F62FE)),
+                    ),
+                  ],
+                ),
+                Container(
+                  padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
+                  decoration: BoxDecoration(
+                    color: const Color(0xFFF0F5FF),
+                    border: Border.all(color: const Color(0xFF0F62FE)),
+                    borderRadius: BorderRadius.circular(6),
+                  ),
+                  child: Text(
+                    'LKR ${widget.amount.toStringAsFixed(2)}',
+                    style: const TextStyle(
+                      fontSize: 14,
+                      fontWeight: FontWeight.bold,
+                      color: Color(0xFF0F62FE),
+                    ),
+                  ),
+                ),
+              ],
+            ),
+            const SizedBox(height: 14),
+
+            // Service details box
+            Container(
+              padding: const EdgeInsets.all(10),
+              decoration: BoxDecoration(
+                color: const Color(0xFFF4F7FB),
+                borderRadius: BorderRadius.circular(8),
+              ),
+              child: Row(
+                children: [
+                  const Icon(CupertinoIcons.briefcase, size: 16, color: Color(0xFF525252)),
+                  const SizedBox(width: 8),
+                  Expanded(
+                    child: Text(
+                      '${widget.serviceName} • ${widget.feeType}',
+                      style: const TextStyle(fontSize: 11.5, color: Color(0xFF525252), fontWeight: FontWeight.w500),
+                    ),
+                  ),
+                ],
+              ),
+            ),
+            const SizedBox(height: 16),
+
+            // Method Toggle
+            Row(
+              children: [
+                Expanded(
+                  child: GestureDetector(
+                    onTap: () => setState(() => _selectedMethod = 'Online'),
+                    child: Container(
+                      padding: const EdgeInsets.symmetric(vertical: 10),
+                      decoration: BoxDecoration(
+                        color: _selectedMethod == 'Online' ? const Color(0xFF0F62FE) : const Color(0xFFF4F4F4),
+                        borderRadius: BorderRadius.circular(8),
+                      ),
+                      child: Row(
+                        mainAxisAlignment: MainAxisAlignment.center,
+                        children: [
+                          Icon(
+                            CupertinoIcons.creditcard,
+                            size: 16,
+                            color: _selectedMethod == 'Online' ? Colors.white : const Color(0xFF525252),
+                          ),
+                          const SizedBox(width: 6),
+                          Text(
+                            'Online Card (Stripe)',
+                            style: TextStyle(
+                              fontSize: 12,
+                              fontWeight: FontWeight.bold,
+                              color: _selectedMethod == 'Online' ? Colors.white : const Color(0xFF525252),
+                            ),
+                          ),
+                        ],
+                      ),
+                    ),
+                  ),
+                ),
+                const SizedBox(width: 10),
+                Expanded(
+                  child: GestureDetector(
+                    onTap: () => setState(() => _selectedMethod = 'Bank Transfer'),
+                    child: Container(
+                      padding: const EdgeInsets.symmetric(vertical: 10),
+                      decoration: BoxDecoration(
+                        color: _selectedMethod == 'Bank Transfer' ? const Color(0xFF0F62FE) : const Color(0xFFF4F4F4),
+                        borderRadius: BorderRadius.circular(8),
+                      ),
+                      child: Row(
+                        mainAxisAlignment: MainAxisAlignment.center,
+                        children: [
+                          Icon(
+                            CupertinoIcons.arrow_up_doc,
+                            size: 16,
+                            color: _selectedMethod == 'Bank Transfer' ? Colors.white : const Color(0xFF525252),
+                          ),
+                          const SizedBox(width: 6),
+                          Text(
+                            'Bank Deposit Slip',
+                            style: TextStyle(
+                              fontSize: 12,
+                              fontWeight: FontWeight.bold,
+                              color: _selectedMethod == 'Bank Transfer' ? Colors.white : const Color(0xFF525252),
+                            ),
+                          ),
+                        ],
+                      ),
+                    ),
+                  ),
+                ),
+              ],
+            ),
+            const SizedBox(height: 16),
+
+            if (_selectedMethod == 'Online') ...[
+              Container(
+                padding: const EdgeInsets.all(12),
+                decoration: BoxDecoration(
+                  color: const Color(0xFFF0F5FF),
+                  borderRadius: BorderRadius.circular(8),
+                  border: Border.all(color: const Color(0xFFD0E2FF)),
+                ),
+                child: const Row(
+                  children: [
+                    Icon(CupertinoIcons.shield_lefthalf_fill, size: 20, color: Color(0xFF0F62FE)),
+                    SizedBox(width: 10),
+                    Expanded(
+                      child: Text(
+                        'Instant verification through official Stripe card gateway. Once confirmed, payment is registered for department audit.',
+                        style: TextStyle(fontSize: 11, color: Color(0xFF525252), height: 1.3),
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+            ] else ...[
+              Container(
+                padding: const EdgeInsets.all(12),
+                decoration: BoxDecoration(
+                  color: const Color(0xFFF4F7FB),
+                  borderRadius: BorderRadius.circular(8),
+                  border: Border.all(color: const Color(0xFFE0E0E0)),
+                ),
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    const Text(
+                      'Upload Bank Deposit Slip / Receipt:',
+                      style: TextStyle(fontSize: 12, fontWeight: FontWeight.bold, color: Color(0xFF161616)),
+                    ),
+                    const SizedBox(height: 6),
+                    OutlinedButton.icon(
+                      onPressed: _isProcessing ? null : _pickSlip,
+                      icon: const Icon(CupertinoIcons.paperclip, size: 16),
+                      label: Text(
+                        _pickedSlipFile != null ? _pickedSlipFile!.name : 'Choose Slip (PDF, JPG, PNG)',
+                        style: const TextStyle(fontSize: 12),
+                        overflow: TextOverflow.ellipsis,
+                      ),
+                    ),
+                    const SizedBox(height: 10),
+                    const Text(
+                      'Or Bank Reference Number:',
+                      style: TextStyle(fontSize: 11, color: Color(0xFF525252), fontWeight: FontWeight.w600),
+                    ),
+                    const SizedBox(height: 4),
+                    TextField(
+                      controller: _bankSlipRefController,
+                      decoration: InputDecoration(
+                        hintText: 'e.g. BOC-TXN-849201 / REF-12345',
+                        hintStyle: const TextStyle(fontSize: 12, color: Color(0xFF8D8D8D)),
+                        contentPadding: const EdgeInsets.symmetric(horizontal: 10, vertical: 8),
+                        border: OutlineInputBorder(borderRadius: BorderRadius.circular(6)),
+                      ),
+                      style: const TextStyle(fontSize: 12),
+                    ),
+                  ],
+                ),
+              ),
+            ],
+
+            if (_errorMessage != null) ...[
+              const SizedBox(height: 10),
+              Text(
+                _errorMessage!,
+                style: const TextStyle(fontSize: 11.5, color: AppColors.danger, fontWeight: FontWeight.bold),
+              ),
+            ],
+
+            const SizedBox(height: 18),
+
+            // Pay Button
+            ElevatedButton(
+              style: ElevatedButton.styleFrom(
+                backgroundColor: const Color(0xFF0F62FE),
+                padding: const EdgeInsets.symmetric(vertical: 14),
+                shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
+              ),
+              onPressed: _isProcessing ? null : _handlePayment,
+              child: _isProcessing
+                  ? const SizedBox(height: 20, width: 20, child: CircularProgressIndicator(strokeWidth: 2, color: Colors.white))
+                  : Text(
+                      _selectedMethod == 'Online'
+                          ? 'Proceed to Online Payment (LKR ${widget.amount.toStringAsFixed(2)})'
+                          : 'Submit Bank Evidence for Audit',
+                      style: const TextStyle(fontSize: 13.5, fontWeight: FontWeight.bold, color: Colors.white),
+                    ),
             ),
           ],
         ),

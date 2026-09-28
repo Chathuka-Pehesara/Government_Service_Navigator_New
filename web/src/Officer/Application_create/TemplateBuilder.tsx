@@ -9,10 +9,32 @@ import {
   TextArea,
   Tag,
   InlineNotification,
+  Table,
+  TableHead,
+  TableRow,
+  TableHeader,
+  TableBody,
+  TableCell,
+  TableContainer,
+  Modal,
+  Search,
+  Tile,
+  Loading,
+  Pagination,
 } from "@carbon/react";
-import { TrashCan, UpToTop, DownToBottom, ArrowLeft } from "@carbon/icons-react";
+import {
+  TrashCan,
+  UpToTop,
+  DownToBottom,
+  ArrowLeft,
+  Add,
+  Edit,
+  Catalog,
+  Renew,
+} from "@carbon/icons-react";
 import { getStoredUser } from "../../utils/currentUser";
 import { getCategoryForDepartment } from "../../constants/departments";
+import type { Department } from "../../Admin/Department_Management/types";
 
 export type FieldType = 
   | 'text' | 'textarea' | 'number' | 'select' | 'multiselect' 
@@ -65,17 +87,65 @@ interface ServiceDetail {
   feeSchedules: FeeScheduleInfo[];
 }
 
+export interface SavedTemplate {
+  id: string;
+  formName: string;
+  subTitle?: string;
+  lawText?: string;
+  department?: string;
+  stageOrder: number;
+  stageDescription?: string;
+  serviceProcedureId?: number;
+  serviceProcedure?: {
+    id: number;
+    serviceId: string;
+    name: string;
+    category?: string;
+  };
+  fields?: Array<{ id?: string; label: string; type: FieldType; options?: string; required?: boolean; isRequired?: boolean }>;
+  status?: string;
+  createdAt?: string;
+}
+
 export default function TemplateBuilder() {
   const [templateId, setTemplateId] = useState<string | null>(null);
   const [formName, setFormName] = useState("");
   const [subTitle, setSubTitle] = useState("");
   const [lawText, setLawText] = useState("");
+  const [templateStatus, setTemplateStatus] = useState<string>("Active");
   
   // Multi-department sequential stage configuration
   const [department, setDepartment] = useState<string>("Civil Department");
   const [stageOrder, setStageOrder] = useState<number>(1);
   const [stageDescription, setStageDescription] = useState<string>("");
   
+  // Dynamic Departments from Department Management
+  const [departments, setDepartments] = useState<Department[]>([]);
+  
+  // Cloning / Stage customization state (preserves original base template)
+  const [isClonedTemplate, setIsClonedTemplate] = useState<boolean>(false);
+  const [clonedSourceTitle, setClonedSourceTitle] = useState<string>("");
+
+  // Saved Templates Catalog View State
+  const [savedTemplates, setSavedTemplates] = useState<SavedTemplate[]>([]);
+  const [isLoadingTemplates, setIsLoadingTemplates] = useState<boolean>(true);
+  const [templateSearchTerm, setTemplateSearchTerm] = useState<string>("");
+  const [templateDeptFilter, setTemplateDeptFilter] = useState<string>("All");
+  const [templateStageFilter, setTemplateStageFilter] = useState<string>("All");
+  const [templateStatusFilter, setTemplateStatusFilter] = useState<string>("All");
+  const [activeView, setActiveView] = useState<"list" | "builder">(() => {
+    const params = new URLSearchParams(window.location.search);
+    if (params.get("id") || params.get("cloneFromId") || params.get("create") || params.get("serviceId") || params.get("stage")) {
+      return "builder";
+    }
+    return "list";
+  });
+  const [deletingTemplate, setDeletingTemplate] = useState<SavedTemplate | null>(null);
+  const [isDeleting, setIsDeleting] = useState<boolean>(false);
+  const [listNotification, setListNotification] = useState<{ type: "success" | "error" | "info"; message: string } | null>(null);
+  const [templatePage, setTemplatePage] = useState<number>(1);
+  const [templatePageSize, setTemplatePageSize] = useState<number>(10);
+
   const [customFields, setCustomFields] = useState<FormField[]>([]);
   
   const [newFieldLabel, setNewFieldLabel] = useState("");
@@ -99,6 +169,23 @@ export default function TemplateBuilder() {
   const [linkedServiceId, setLinkedServiceId] = useState<string>("");
   const [linkedServiceDetail, setLinkedServiceDetail] = useState<ServiceDetail | null>(null);
   const [isLoadingServiceDetail, setIsLoadingServiceDetail] = useState(false);
+
+  // Fetch departments from backend
+  useEffect(() => {
+    fetch("http://localhost:5119/api/departments")
+      .then((res) => res.json())
+      .then((data) => {
+        if (Array.isArray(data)) {
+          setDepartments(data);
+          // If no department selected yet, default to first active department
+          const urlDept = new URLSearchParams(window.location.search).get("department");
+          if (!urlDept && !currentUser?.department && data.length > 0) {
+            setDepartment(data[0].name);
+          }
+        }
+      })
+      .catch((error) => console.error("Error fetching departments:", error));
+  }, []);
 
   useEffect(() => {
     const urlDept = new URLSearchParams(window.location.search).get("department");
@@ -137,6 +224,31 @@ export default function TemplateBuilder() {
     return () => clearTimeout(timer);
   }, [linkedServiceId]);
 
+  // Current matched department object for logo, contact and official details
+  const currentDeptObj = departments.find(
+    (d) =>
+      d.name.toLowerCase() === (department || "").toLowerCase() ||
+      d.departmentCode.toLowerCase() === (department || "").toLowerCase()
+  );
+
+  // Handle department selection with auto-filling of header and important sections
+  const handleDepartmentChange = (newDeptName: string) => {
+    setDepartment(newDeptName);
+    const matched = departments.find(
+      (d) =>
+        d.name.toLowerCase() === newDeptName.toLowerCase() ||
+        d.departmentCode.toLowerCase() === newDeptName.toLowerCase()
+    );
+    if (matched) {
+      if (!subTitle || subTitle === "Document Title" || subTitle.startsWith("Official Public Service Intake") || subTitle.includes("Application Form")) {
+        setSubTitle(matched.description || `Official Public Service Intake - ${matched.name}`);
+      }
+      if (!formName || formName === "FORM NO" || formName.includes("-FORM-")) {
+        setFormName(`${matched.departmentCode}-FORM-${stageOrder}`);
+      }
+    }
+  };
+
   const fetchTemplateData = async (id: string) => {
     try {
       const response = await fetch(`http://localhost:5119/api/templates/${id}`);
@@ -145,6 +257,7 @@ export default function TemplateBuilder() {
         setFormName(data.formName || "");
         setSubTitle(data.subTitle || "");
         setLawText(data.lawText || "");
+        if (data.status) setTemplateStatus(data.status);
         if (data.serviceProcedureId) {
           setLinkedServiceId(data.serviceProcedureId.toString());
         }
@@ -160,15 +273,19 @@ export default function TemplateBuilder() {
             required: f.isRequired
           })));
         }
+        return data;
       }
     } catch (error) {
       console.error("Error fetching template", error);
     }
+    return null;
   };
 
   useEffect(() => {
     const queryParams = new URLSearchParams(window.location.search);
     const id = queryParams.get("id");
+    const cloneFromId = queryParams.get("cloneFromId");
+    const isClone = queryParams.get("clone") === "true";
     const serviceId = queryParams.get("serviceId");
     const stage = queryParams.get("stage");
     const dept = queryParams.get("department");
@@ -177,7 +294,25 @@ export default function TemplateBuilder() {
     if (stage) setStageOrder(parseInt(stage, 10) || 1);
     if (dept) setDepartment(dept);
 
-    if (id) {
+    // If cloning an existing base template for a workflow stage:
+    // We load all fields and structure, but set templateId to NULL so saving creates a separate copy!
+    if (cloneFromId || (id && isClone)) {
+      const sourceId = cloneFromId || id!;
+      const loadClone = async () => {
+        setIsClonedTemplate(true);
+        setTemplateId(null); // CRITICAL: null guarantees POST create (new independent stage template)
+        const data = await fetchTemplateData(sourceId);
+        if (data) {
+          setTemplateId(null); // Re-assert null so update isn't triggered
+          setClonedSourceTitle(data.formName || "Base Template");
+          const targetStage = stage || data.stageOrder || 1;
+          setFormName(data.formName ? `${data.formName} (Stage ${targetStage})` : `Stage ${targetStage} Form`);
+          if (dept) setDepartment(dept);
+          if (stage) setStageOrder(parseInt(stage, 10) || 1);
+        }
+      };
+      loadClone();
+    } else if (id) {
       const load = async () => {
         setTemplateId(id);
         await fetchTemplateData(id);
@@ -185,6 +320,146 @@ export default function TemplateBuilder() {
       load();
     }
   }, []);
+
+  // Fetch all created templates from backend
+  const fetchAllTemplates = async () => {
+    setIsLoadingTemplates(true);
+    try {
+      const res = await fetch("http://localhost:5119/api/templates/all");
+      if (res.ok) {
+        const data = await res.json();
+        if (Array.isArray(data)) {
+          setSavedTemplates(data);
+        }
+      }
+    } catch (err) {
+      console.error("Error fetching templates:", err);
+    } finally {
+      setIsLoadingTemplates(false);
+    }
+  };
+
+  useEffect(() => {
+    fetchAllTemplates();
+  }, []);
+
+  const handleCreateNewTemplate = () => {
+    setTemplateId(null);
+    setFormName("");
+    setSubTitle("");
+    setLawText("");
+    setTemplateStatus("Active");
+    setCustomFields([]);
+    setLinkedServiceId("");
+    setLinkedServiceDetail(null);
+    setIsClonedTemplate(false);
+    setClonedSourceTitle("");
+    setStageOrder(1);
+    setStageDescription("");
+    if (departments.length > 0) {
+      setDepartment(departments[0].name);
+    }
+    const url = new URL(window.location.href);
+    url.search = "?create=true";
+    window.history.pushState({}, "", url.toString());
+    setActiveView("builder");
+  };
+
+  const handleEditTemplate = async (template: SavedTemplate) => {
+    setIsClonedTemplate(false);
+    setClonedSourceTitle("");
+    setTemplateId(template.id);
+    setFormName(template.formName || "");
+    setSubTitle(template.subTitle || "");
+    setLawText(template.lawText || "");
+    setTemplateStatus(template.status || "Active");
+    if (template.department) setDepartment(template.department);
+    if (template.stageOrder) setStageOrder(template.stageOrder);
+    if (template.stageDescription) setStageDescription(template.stageDescription);
+    if (template.serviceProcedureId) {
+      setLinkedServiceId(template.serviceProcedureId.toString());
+    } else {
+      setLinkedServiceId("");
+      setLinkedServiceDetail(null);
+    }
+    if (template.fields && template.fields.length > 0) {
+      setCustomFields(template.fields.map(f => ({
+        id: f.id || Date.now().toString() + Math.random(),
+        label: f.label,
+        type: f.type,
+        options: f.options,
+        required: f.isRequired ?? f.required
+      })));
+    } else {
+      await fetchTemplateData(template.id);
+    }
+    const url = new URL(window.location.href);
+    url.search = `?id=${template.id}`;
+    window.history.pushState({}, "", url.toString());
+    setActiveView("builder");
+  };
+
+  const confirmDeleteTemplate = async () => {
+    if (!deletingTemplate) return;
+    setIsDeleting(true);
+    try {
+      const res = await fetch(`http://localhost:5119/api/templates/${deletingTemplate.id}`, {
+        method: "DELETE",
+      });
+      if (res.ok || res.status === 204) {
+        setSavedTemplates(prev => prev.filter(t => t.id !== deletingTemplate.id));
+        setListNotification({
+          type: "success",
+          message: `Template "${deletingTemplate.formName}" was successfully deleted.`
+        });
+        setDeletingTemplate(null);
+      } else {
+        const err = await res.json().catch(() => ({}));
+        alert(`Failed to delete template: ${err.message || res.statusText}`);
+      }
+    } catch (error) {
+      console.error("Error deleting template:", error);
+      alert("An error occurred while deleting the template.");
+    } finally {
+      setIsDeleting(false);
+    }
+  };
+
+  const handleUpdateStatus = async (id: string, newStatus: "Active" | "Inactive") => {
+    try {
+      const res = await fetch(`http://localhost:5119/api/templates/${id}/status`, {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ status: newStatus }),
+      });
+      if (!res.ok) {
+        const err = await res.json().catch(() => ({}));
+        throw new Error(err.message || "Failed to update template status");
+      }
+      setSavedTemplates((prev) =>
+        prev.map((t) => (t.id === id ? { ...t, status: newStatus } : t))
+      );
+      const displayStatus = newStatus === "Active" ? "Active" : "Deactive";
+      setListNotification({
+        type: "success",
+        message: `Template status updated to "${displayStatus}".`,
+      });
+    } catch (err: any) {
+      console.error("Error updating template status:", err);
+      setListNotification({
+        type: "error",
+        message: err.message || "Could not update template status.",
+      });
+    }
+  };
+
+  const handleBackToList = () => {
+    const url = new URL(window.location.href);
+    url.search = "";
+    window.history.pushState({}, "", url.toString());
+    setActiveView("list");
+    fetchAllTemplates();
+  };
 
   const handleSaveTemplate = async () => {
     try {
@@ -195,6 +470,7 @@ export default function TemplateBuilder() {
         formName: formName,
         subTitle: subTitle,
         lawText: lawText,
+        status: templateStatus,
         serviceProcedureId: linkedServiceId ? Number(linkedServiceId) : null,
         department: department || currentUser?.department || null,
         stageOrder: Number(stageOrder) || 1,
@@ -225,14 +501,23 @@ export default function TemplateBuilder() {
         throw new Error("Failed to save template");
       }
 
-      alert(`Stage ${stageOrder} Form Template Saved Successfully!`);
       const searchServiceId = new URLSearchParams(window.location.search).get("serviceId");
-      const returnSvcId = linkedServiceId || searchServiceId || "";
-      const isAdminContext = window.location.pathname.startsWith("/admin") || Boolean(searchServiceId);
-      if (isAdminContext) {
+      const isWorkflowContext = Boolean(searchServiceId) && new URLSearchParams(window.location.search).get("standalone") !== "true";
+
+      if (isWorkflowContext) {
+        alert(`Stage ${stageOrder} Form Template Saved Successfully!`);
+        const returnSvcId = linkedServiceId || searchServiceId || "";
         window.location.href = `/admin/services/config?serviceId=${encodeURIComponent(returnSvcId)}&tab=3`;
       } else {
-        window.location.href = "/officer/dashboard";
+        setListNotification({
+          type: "success",
+          message: `Template "${formName || "Application Form"}" (Stage ${stageOrder}) was successfully saved!`
+        });
+        await fetchAllTemplates();
+        const navUrl = new URL(window.location.href);
+        navUrl.search = "";
+        window.history.pushState({}, "", navUrl.toString());
+        setActiveView("list");
       }
     } catch (error) {
       console.error(error);
@@ -333,7 +618,7 @@ export default function TemplateBuilder() {
         );
 
       case 'payment': {
-        let paymentConfig = { feeType: "Statutory Processing Fee", amount: 5000, methods: "Online Card, Manual Bank Deposit Slip" };
+        let paymentConfig = { feeType: "Statutory Stage Processing Fee", amount: 5000, methods: "Online Card, Manual Bank Deposit Slip" };
         if (field.options) {
           try {
             paymentConfig = { ...paymentConfig, ...JSON.parse(field.options) };
@@ -342,41 +627,109 @@ export default function TemplateBuilder() {
           }
         }
         return (
-          <div style={{ margin: '1.25rem 0', border: '2px solid #0043ce', borderRadius: '4px', backgroundColor: '#f0f5ff', padding: '1.25rem' }}>
-            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', borderBottom: '1px solid #d0e2ff', paddingBottom: '0.75rem', marginBottom: '1rem' }}>
-              <div>
-                <span style={{ fontSize: '0.75rem', textTransform: 'uppercase', letterSpacing: '0.5px', color: '#0043ce', fontWeight: 'bold' }}>
-                  Statutory Government Fee
+          <div style={{ margin: '1.5rem 0', border: '2px solid #0043ce', borderRadius: '8px', backgroundColor: '#f0f5ff', overflow: 'hidden', boxShadow: '0 2px 6px rgba(0,67,206,0.08)' }}>
+            {/* Action Card Top Bar */}
+            <div style={{ backgroundColor: '#0043ce', color: '#ffffff', padding: '0.625rem 1rem', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+              <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
+                <span style={{ fontSize: '1rem' }}>💳</span>
+                <span style={{ fontSize: '0.75rem', fontWeight: 700, letterSpacing: '0.5px', textTransform: 'uppercase' }}>
+                  Statutory Stage Payment Action
                 </span>
-                <h4 style={{ margin: '0.25rem 0 0 0', fontWeight: 'bold', fontSize: '1.1rem', color: '#161616' }}>
-                  {field.label || paymentConfig.feeType}
-                </h4>
               </div>
-              <div style={{ textAlign: 'right' }}>
-                <span style={{ fontSize: '0.75rem', color: '#525252' }}>Payable Amount</span>
-                <div style={{ fontSize: '1.25rem', fontWeight: 'bold', color: '#0043ce' }}>
-                  Rs. {Number(paymentConfig.amount).toLocaleString()}
+              <div style={{ display: 'flex', gap: '0.5rem', alignItems: 'center' }}>
+                <span style={{ fontSize: '0.7rem', backgroundColor: 'rgba(255,255,255,0.2)', padding: '2px 8px', borderRadius: '10px', fontWeight: 600 }}>
+                  STAGE {stageOrder} REQUIRED
+                </span>
+                <span style={{ fontSize: '0.7rem', backgroundColor: '#ffffff', color: '#0043ce', padding: '2px 8px', borderRadius: '10px', fontWeight: 700 }}>
+                  {department}
+                </span>
+              </div>
+            </div>
+
+            {/* Action Card Content */}
+            <div style={{ padding: '1.25rem' }}>
+              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', marginBottom: '1rem' }}>
+                <div>
+                  <h4 style={{ margin: 0, fontWeight: 700, fontSize: '1.15rem', color: '#161616' }}>
+                    {field.label || paymentConfig.feeType}
+                  </h4>
+                  <p style={{ margin: '0.25rem 0 0 0', fontSize: '0.8125rem', color: '#525252' }}>
+                    Official statutory fee for <strong>{department}</strong> processing. Payment routes to the Financial Officer for audit clearance.
+                  </p>
+                </div>
+                <div style={{ textAlign: 'right', backgroundColor: '#ffffff', padding: '0.5rem 1rem', borderRadius: '6px', border: '1px solid #d0e2ff' }}>
+                  <div style={{ fontSize: '0.7rem', textTransform: 'uppercase', color: '#525252', fontWeight: 600 }}>Payable Amount</div>
+                  <div style={{ fontSize: '1.35rem', fontWeight: 800, color: '#0043ce' }}>
+                    Rs. {Number(paymentConfig.amount).toLocaleString()}
+                  </div>
                 </div>
               </div>
-            </div>
 
-            <div style={{ fontSize: '0.85rem', color: '#393939', marginBottom: '0.75rem' }}>
-              <strong>Payment Options Accepted:</strong> {paymentConfig.methods}
-            </div>
-
-            <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '0.75rem', backgroundColor: '#fff', padding: '0.75rem', border: '1px solid #d0e2ff', borderRadius: '4px' }}>
-              <div>
-                <span style={{ fontSize: '0.75rem', color: '#666', display: 'block' }}>Option 1: Online Payment</span>
-                <span style={{ fontSize: '0.85rem', fontWeight: 600 }}>{"Credit / Debit Card (Instant Clearance)"}</span>
+              {/* Stage Payment Action Button Preview */}
+              <div style={{ backgroundColor: '#ffffff', padding: '1rem', borderRadius: '6px', border: '1px solid #d0e2ff', marginBottom: '1rem' }}>
+                <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', flexWrap: 'wrap', gap: '0.75rem' }}>
+                  <div style={{ display: 'flex', alignItems: 'center', gap: '0.75rem' }}>
+                    <button
+                      type="button"
+                      disabled
+                      style={{
+                        backgroundColor: '#0043ce',
+                        color: '#ffffff',
+                        border: 'none',
+                        borderRadius: '4px',
+                        padding: '0.625rem 1.25rem',
+                        fontSize: '0.875rem',
+                        fontWeight: 600,
+                        cursor: 'default',
+                        display: 'flex',
+                        alignItems: 'center',
+                        gap: '0.5rem',
+                        boxShadow: '0 2px 4px rgba(0,67,206,0.2)'
+                      }}
+                    >
+                      <span>💳</span> Make Stage Payment
+                    </button>
+                    <span style={{ fontSize: '0.75rem', color: '#525252' }}>
+                      Auto-redirects citizen to Payments Hub with <strong>{department}</strong> and Service pre-selected
+                    </span>
+                  </div>
+                  <span style={{ fontSize: '0.75rem', color: '#0f62fe', fontWeight: 600 }}>
+                    Accepted: {paymentConfig.methods}
+                  </span>
+                </div>
               </div>
-              <div>
-                <span style={{ fontSize: '0.75rem', color: '#666', display: 'block' }}>Option 2: Bank Deposit Slip</span>
-                <span style={{ fontSize: '0.85rem', fontWeight: 600 }}>{"Upload stamped deposit slip and reference number"}</span>
-              </div>
-            </div>
 
-            <div style={{ marginTop: '0.75rem', fontSize: '0.75rem', color: '#525252', fontStyle: 'italic' }}>
-              {"Payments are automatically routed to the Department Finance Officer for statutory ledger auditing."}
+              {/* Dual-Step Workflow Review Preview */}
+              <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '0.75rem', marginBottom: '0.75rem' }}>
+                <div style={{ backgroundColor: '#edf5ff', border: '1px solid #a6c8ff', padding: '0.625rem 0.875rem', borderRadius: '4px' }}>
+                  <div style={{ fontSize: '0.7rem', fontWeight: 700, color: '#0043ce', textTransform: 'uppercase' }}>
+                    Step 1 • Financial Officer
+                  </div>
+                  <div style={{ fontSize: '0.8125rem', fontWeight: 600, color: '#161616', marginTop: '2px' }}>
+                    Payment Verification & Ledger Audit
+                  </div>
+                  <div style={{ fontSize: '0.75rem', color: '#525252', marginTop: '2px' }}>
+                    Clears online Stripe receipt or bank transfer slip
+                  </div>
+                </div>
+
+                <div style={{ backgroundColor: '#fff8f0', border: '1px solid #fed29f', padding: '0.625rem 0.875rem', borderRadius: '4px' }}>
+                  <div style={{ fontSize: '0.7rem', fontWeight: 700, color: '#b24c00', textTransform: 'uppercase' }}>
+                    Step 2 • Verification Officer
+                  </div>
+                  <div style={{ fontSize: '0.8125rem', fontWeight: 600, color: '#161616', marginTop: '2px' }}>
+                    Application Documents Review
+                  </div>
+                  <div style={{ fontSize: '0.75rem', color: '#b24c00', fontWeight: 600, marginTop: '2px' }}>
+                    🔒 Approval locked until Step 1 payment is cleared
+                  </div>
+                </div>
+              </div>
+
+              {/* Policy note */}
+              <div style={{ fontSize: '0.75rem', color: '#525252', fontStyle: 'italic', display: 'flex', alignItems: 'center', gap: '0.35rem' }}>
+                <span>ℹ️</span> The citizen sees real-time dual status in their mobile tracker: <strong>Payment Verifying</strong> and <strong>Application Under Review</strong>.
+              </div>
             </div>
           </div>
         );
@@ -428,45 +781,527 @@ export default function TemplateBuilder() {
 
   const queryParams = new URLSearchParams(window.location.search);
   const isWorkflowLocked = Boolean(
-    queryParams.get("serviceId") || 
-    queryParams.get("stage") ||
-    window.location.pathname.startsWith("/admin")
+    queryParams.get("serviceId") && 
+    queryParams.get("stage") &&
+    !isClonedTemplate &&
+    queryParams.get("standalone") !== "true"
   );
+
+  const filteredTemplates = savedTemplates.filter((t) => {
+    const term = templateSearchTerm.trim().toLowerCase();
+    const matchesSearch =
+      !term ||
+      (t.formName && t.formName.toLowerCase().includes(term)) ||
+      (t.subTitle && t.subTitle.toLowerCase().includes(term)) ||
+      (t.department && t.department.toLowerCase().includes(term)) ||
+      (t.serviceProcedure?.name && t.serviceProcedure.name.toLowerCase().includes(term)) ||
+      (t.serviceProcedure?.serviceId && t.serviceProcedure.serviceId.toLowerCase().includes(term));
+
+    const matchesDept =
+      templateDeptFilter === "All" ||
+      (t.department && t.department.toLowerCase() === templateDeptFilter.toLowerCase());
+
+    const matchesStage =
+      templateStageFilter === "All" ||
+      (templateStageFilter === "4+" ? t.stageOrder >= 4 : t.stageOrder.toString() === templateStageFilter);
+
+    const matchesStatus =
+      templateStatusFilter === "All" ||
+      (templateStatusFilter === "Active" && (t.status === "Active" || !t.status)) ||
+      (templateStatusFilter === "Inactive" && (t.status === "Inactive" || t.status === "Deactive"));
+
+    return matchesSearch && matchesDept && matchesStage && matchesStatus;
+  });
 
   return (
     <main className="gsn-shell-main">
-      {isWorkflowLocked && (
-        <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: '1.5rem', flexWrap: 'wrap', gap: '1rem' }}>
+      {/* Top Header & View Switcher */}
+      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '1.5rem', flexWrap: 'wrap', gap: '1rem' }}>
+        <div style={{ display: 'flex', gap: '0.75rem', alignItems: 'center' }}>
           <Button
-            kind="ghost"
-            size="sm"
-            renderIcon={ArrowLeft}
+            kind={activeView === "list" ? "primary" : "tertiary"}
+            size="md"
+            renderIcon={Catalog}
             onClick={() => {
-              const searchServiceId = new URLSearchParams(window.location.search).get("serviceId");
-              const returnSvcId = linkedServiceId || searchServiceId || "";
-              window.location.href = `/admin/services/config?serviceId=${encodeURIComponent(returnSvcId)}&tab=3`;
+              setActiveView("list");
+              fetchAllTemplates();
             }}
-            style={{ color: '#0f62fe' }}
           >
-            Back to Service Workflow Configuration
+            Created Templates ({savedTemplates.length})
           </Button>
-          <div style={{ display: 'flex', gap: '0.5rem', alignItems: 'center' }}>
-            <Tag type="blue" size="md">ADMIN SERVICE DESIGNER</Tag>
-            <Tag type="teal" size="md">STAGE {stageOrder}</Tag>
-          </div>
+          <Button
+            kind={activeView === "builder" ? "primary" : "tertiary"}
+            size="md"
+            renderIcon={templateId ? Edit : Add}
+            onClick={() => setActiveView("builder")}
+          >
+            {templateId ? `Form Designer (Editing: ${formName || "Template"})` : "Form Designer"}
+          </Button>
         </div>
-      )}
 
-      <div style={{ marginBottom: '2.5rem' }}>
-        <h1 style={{ fontSize: '2rem', fontWeight: 400, color: '#161616' }}>Advanced Template Builder</h1>
-        <p style={{ color: '#525252', marginTop: '0.5rem' }}>Design highly customizable application forms matching official government layouts.</p>
+        {activeView === "list" ? (
+          <div style={{ display: 'flex', gap: '0.5rem', alignItems: 'center' }}>
+            <Button
+              kind="ghost"
+              size="md"
+              renderIcon={Renew}
+              onClick={fetchAllTemplates}
+              hasIconOnly
+              iconDescription="Refresh Templates"
+            />
+            <Button
+              kind="primary"
+              size="md"
+              renderIcon={Add}
+              onClick={handleCreateNewTemplate}
+            >
+              Create New Template
+            </Button>
+          </div>
+        ) : (
+          <div style={{ display: 'flex', gap: '0.5rem', alignItems: 'center' }}>
+            <Button
+              kind="ghost"
+              size="md"
+              renderIcon={ArrowLeft}
+              onClick={handleBackToList}
+            >
+              Back to Created Templates
+            </Button>
+            <Button
+              kind="secondary"
+              size="md"
+              renderIcon={Add}
+              onClick={handleCreateNewTemplate}
+            >
+              New Blank Template
+            </Button>
+          </div>
+        )}
       </div>
 
-      <div style={{ display: 'flex', gap: '2rem', alignItems: 'flex-start', flexWrap: 'wrap' }}>
+      {listNotification && (
+        <InlineNotification
+          kind={listNotification.type}
+          title={listNotification.type === "success" ? "Success" : "Notification"}
+          subtitle={listNotification.message}
+          onClose={() => setListNotification(null)}
+          lowContrast
+          style={{ marginBottom: '1.5rem' }}
+        />
+      )}
+
+      {activeView === "list" ? (
+        <div>
+          {/* Header */}
+          <div style={{ marginBottom: '1.5rem' }}>
+            <h1 style={{ fontSize: '2rem', fontWeight: 400, color: '#161616' }}>
+              Advanced Template Builder
+            </h1>
+            <p style={{ color: '#525252', marginTop: '0.5rem' }}>
+              View, edit, manage, and create official Sri Lankan government application forms and multi-department sequential workflow templates.
+            </p>
+          </div>
+
+          {/* Metric Tiles */}
+          <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(220px, 1fr))', gap: '1rem', marginBottom: '1.5rem' }}>
+            <Tile style={{ padding: '1.25rem', borderLeft: '4px solid #0f62fe', backgroundColor: '#fff' }}>
+              <div style={{ fontSize: '0.8rem', color: '#525252', textTransform: 'uppercase', letterSpacing: '0.5px', fontWeight: 600 }}>Total Templates</div>
+              <div style={{ fontSize: '2.25rem', fontWeight: 600, color: '#161616', marginTop: '0.25rem' }}>{savedTemplates.length}</div>
+              <div style={{ fontSize: '0.75rem', color: '#6f6f6f', marginTop: '0.25rem' }}>Active system form designs</div>
+            </Tile>
+            <Tile style={{ padding: '1.25rem', borderLeft: '4px solid #198038', backgroundColor: '#fff' }}>
+              <div style={{ fontSize: '0.8rem', color: '#525252', textTransform: 'uppercase', letterSpacing: '0.5px', fontWeight: 600 }}>Participating Departments</div>
+              <div style={{ fontSize: '2.25rem', fontWeight: 600, color: '#161616', marginTop: '0.25rem' }}>
+                {Array.from(new Set(savedTemplates.map(t => t.department).filter(Boolean))).length}
+              </div>
+              <div style={{ fontSize: '0.75rem', color: '#6f6f6f', marginTop: '0.25rem' }}>With assigned templates</div>
+            </Tile>
+            <Tile style={{ padding: '1.25rem', borderLeft: '4px solid #8a3ffc', backgroundColor: '#fff' }}>
+              <div style={{ fontSize: '0.8rem', color: '#525252', textTransform: 'uppercase', letterSpacing: '0.5px', fontWeight: 600 }}>Multi-Stage Templates</div>
+              <div style={{ fontSize: '2.25rem', fontWeight: 600, color: '#161616', marginTop: '0.25rem' }}>
+                {savedTemplates.filter(t => t.stageOrder > 1).length}
+              </div>
+              <div style={{ fontSize: '0.75rem', color: '#6f6f6f', marginTop: '0.25rem' }}>Stage 2+ workflow forms</div>
+            </Tile>
+            <Tile style={{ padding: '1.25rem', borderLeft: '4px solid #0043ce', backgroundColor: '#fff' }}>
+              <div style={{ fontSize: '0.8rem', color: '#525252', textTransform: 'uppercase', letterSpacing: '0.5px', fontWeight: 600 }}>Linked to Services</div>
+              <div style={{ fontSize: '2.25rem', fontWeight: 600, color: '#161616', marginTop: '0.25rem' }}>
+                {savedTemplates.filter(t => Boolean(t.serviceProcedureId || t.serviceProcedure)).length}
+              </div>
+              <div style={{ fontSize: '0.75rem', color: '#6f6f6f', marginTop: '0.25rem' }}>Service procedures connected</div>
+            </Tile>
+          </div>
+
+          {/* Search & Filter Bar */}
+          <div style={{ display: 'flex', gap: '1rem', alignItems: 'flex-end', marginBottom: '1.25rem', flexWrap: 'wrap', backgroundColor: '#fff', padding: '1.25rem', border: '1px solid #e0e0e0' }}>
+            <div style={{ flex: '1 1 320px' }}>
+              <Search
+                id="templateSearch"
+                labelText="Search Templates"
+                placeholder="Search by form identifier, title, department, or service..."
+                value={templateSearchTerm}
+                onChange={(e) => {
+                  setTemplateSearchTerm(e.target.value);
+                  setTemplatePage(1);
+                }}
+                size="md"
+              />
+            </div>
+            <div style={{ width: '240px' }}>
+              <Select
+                id="deptFilter"
+                labelText="Filter by Department"
+                value={templateDeptFilter}
+                onChange={(e) => {
+                  setTemplateDeptFilter(e.target.value);
+                  setTemplatePage(1);
+                }}
+                size="md"
+              >
+                <SelectItem value="All" text="All Departments" />
+                {departments.map((d) => (
+                  <SelectItem key={d.id} value={d.name} text={d.name} />
+                ))}
+              </Select>
+            </div>
+            <div style={{ width: '160px' }}>
+              <Select
+                id="stageFilter"
+                labelText="Filter by Stage"
+                value={templateStageFilter}
+                onChange={(e) => {
+                  setTemplateStageFilter(e.target.value);
+                  setTemplatePage(1);
+                }}
+                size="md"
+              >
+                <SelectItem value="All" text="All Stages" />
+                <SelectItem value="1" text="Stage 1" />
+                <SelectItem value="2" text="Stage 2" />
+                <SelectItem value="3" text="Stage 3" />
+                <SelectItem value="4+" text="Stage 4+" />
+              </Select>
+            </div>
+            <div style={{ width: '160px' }}>
+              <Select
+                id="statusFilter"
+                labelText="Filter by Status"
+                value={templateStatusFilter}
+                onChange={(e) => {
+                  setTemplateStatusFilter(e.target.value);
+                  setTemplatePage(1);
+                }}
+                size="md"
+              >
+                <SelectItem value="All" text="All Statuses" />
+                <SelectItem value="Active" text="Active" />
+                <SelectItem value="Inactive" text="Deactive" />
+              </Select>
+            </div>
+            {(templateSearchTerm || templateDeptFilter !== "All" || templateStageFilter !== "All" || templateStatusFilter !== "All") && (
+              <Button
+                kind="ghost"
+                size="md"
+                onClick={() => {
+                  setTemplateSearchTerm("");
+                  setTemplateDeptFilter("All");
+                  setTemplateStageFilter("All");
+                  setTemplateStatusFilter("All");
+                  setTemplatePage(1);
+                }}
+              >
+                Clear Filters
+              </Button>
+            )}
+          </div>
+
+          {/* Table Container */}
+          <TableContainer
+            title={`Created Form Templates (${filteredTemplates.length})`}
+            description="Official Sri Lankan government form layouts designed with field components, payment stamps, and departmental seals."
+            style={{ backgroundColor: '#fff', border: '1px solid #e0e0e0', borderRadius: '4px' }}
+          >
+            <style>{`
+              .template-catalog-table.cds--data-table {
+                background-color: #f4f4f4 !important;
+                border-collapse: collapse !important;
+                width: 100% !important;
+              }
+              .template-catalog-table.cds--data-table thead {
+                background-color: #e0e0e0 !important;
+              }
+              .template-catalog-table.cds--data-table thead tr th {
+                background-color: #e0e0e0 !important;
+                color: #161616 !important;
+                font-weight: 700 !important;
+                border-bottom: 2px solid #525252 !important;
+                font-size: 0.85rem !important;
+                letter-spacing: 0.3px !important;
+              }
+              .template-catalog-table.cds--data-table tbody tr {
+                background-color: #f4f4f4 !important;
+                border-bottom: 1px solid #e0e0e0 !important;
+              }
+              .template-catalog-table.cds--data-table tbody tr td {
+                background-color: #f4f4f4 !important;
+                border-bottom: 1px solid #e0e0e0 !important;
+                color: #161616 !important;
+                padding-top: 0.85rem !important;
+                padding-bottom: 0.85rem !important;
+              }
+              .template-catalog-table.cds--data-table tbody tr:hover td {
+                background-color: #e8e8e8 !important;
+              }
+            `}</style>
+            {isLoadingTemplates ? (
+              <div style={{ display: 'flex', justifyContent: 'center', padding: '3rem' }}>
+                <Loading description="Loading templates..." withOverlay={false} />
+              </div>
+            ) : filteredTemplates.length === 0 ? (
+              <div style={{ padding: '3rem', textAlign: 'center', backgroundColor: '#fafafa' }}>
+                <p style={{ fontSize: '1.1rem', color: '#525252', marginBottom: '1rem' }}>
+                  {savedTemplates.length === 0 
+                    ? "No form templates have been created yet." 
+                    : "No templates match your search criteria."}
+                </p>
+                <Button kind="primary" renderIcon={Add} onClick={handleCreateNewTemplate}>
+                  Create New Template
+                </Button>
+              </div>
+            ) : (
+              <>
+                <div style={{ width: '100%', overflowX: 'auto' }}>
+                  <Table className="template-catalog-table">
+                  <TableHead style={{ backgroundColor: '#e0e0e0' }}>
+                    <TableRow style={{ backgroundColor: '#e0e0e0', borderBottom: '2px solid #525252' }}>
+                      <TableHeader style={{ backgroundColor: '#e0e0e0', color: '#161616', fontWeight: 700 }}>Form Identifier</TableHeader>
+                      <TableHeader style={{ backgroundColor: '#e0e0e0', color: '#161616', fontWeight: 700 }}>Department</TableHeader>
+                      <TableHeader style={{ backgroundColor: '#e0e0e0', color: '#161616', fontWeight: 700 }}>Workflow Stage</TableHeader>
+                      <TableHeader style={{ backgroundColor: '#e0e0e0', color: '#161616', fontWeight: 700 }}>Linked Service</TableHeader>
+                      <TableHeader style={{ backgroundColor: '#e0e0e0', color: '#161616', fontWeight: 700 }}>Configured Fields</TableHeader>
+                      <TableHeader style={{ backgroundColor: '#e0e0e0', color: '#161616', fontWeight: 700 }}>Status</TableHeader>
+                      <TableHeader style={{ backgroundColor: '#e0e0e0', color: '#161616', fontWeight: 700, textAlign: 'right' }}>Actions</TableHeader>
+                    </TableRow>
+                  </TableHead>
+                  <TableBody>
+                    {filteredTemplates
+                      .slice((templatePage - 1) * templatePageSize, templatePage * templatePageSize)
+                      .map((template) => (
+                      <TableRow key={template.id} style={{ borderBottom: '1px solid #e0e0e0' }}>
+                        <TableCell>
+                          <span style={{ fontWeight: 600, color: '#161616', fontSize: '0.95rem' }} title={template.subTitle || undefined}>
+                            {template.formName || "—"}
+                          </span>
+                        </TableCell>
+                        <TableCell>
+                          <Tag type="blue" size="md">
+                            {template.department || "General"}
+                          </Tag>
+                        </TableCell>
+                        <TableCell>
+                          <Tag type={template.stageOrder === 1 ? "cool-gray" : "teal"} size="md">
+                            Stage {template.stageOrder}
+                          </Tag>
+                          {template.stageDescription && (
+                            <div style={{ fontSize: '0.75rem', color: '#6f6f6f', marginTop: '2px', maxWidth: '180px' }}>
+                              {template.stageDescription}
+                            </div>
+                          )}
+                        </TableCell>
+                        <TableCell>
+                          {template.serviceProcedure?.name ? (
+                            <div>
+                              <div style={{ fontWeight: 500, fontSize: '0.85rem', color: '#161616' }}>
+                                {template.serviceProcedure.name}
+                              </div>
+                              <div style={{ fontSize: '0.75rem', color: '#0f62fe' }}>
+                                {template.serviceProcedure.serviceId}
+                              </div>
+                            </div>
+                          ) : (
+                            <span style={{ color: '#8d8d8d', fontSize: '0.85rem', fontStyle: 'italic' }}>
+                              Standalone Base Template
+                            </span>
+                          )}
+                        </TableCell>
+                        <TableCell>
+                          <Tag type="gray" size="sm">
+                            {template.fields?.length || 0} fields
+                          </Tag>
+                        </TableCell>
+                        <TableCell>
+                          <select
+                            id={`status-select-${template.id}`}
+                            aria-label="Status"
+                            value={template.status === "Active" || !template.status ? "Active" : "Inactive"}
+                            onChange={(e) => handleUpdateStatus(template.id, e.target.value as "Active" | "Inactive")}
+                            style={{
+                              display: 'inline-flex',
+                              alignItems: 'center',
+                              appearance: 'none',
+                              WebkitAppearance: 'none',
+                              MozAppearance: 'none',
+                              backgroundImage: `url("data:image/svg+xml;charset=UTF-8,%3csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 16 16'%3e%3cpath fill='${(template.status === "Active" || !template.status) ? '%230e6027' : '%23c62828'}' d='M8 11L3 6h10l-5 5z'/%3e%3c/svg%3e")`,
+                              backgroundRepeat: 'no-repeat',
+                              backgroundPosition: 'right 10px center',
+                              backgroundSize: '10px 10px',
+                              backgroundColor: (template.status === "Active" || !template.status) ? '#defbe6' : '#ffebee',
+                              color: (template.status === "Active" || !template.status) ? '#0e6027' : '#c62828',
+                              border: `1px solid ${(template.status === "Active" || !template.status) ? '#a7f0ba' : '#ffcdd2'}`,
+                              borderRadius: '16px',
+                              height: '32px',
+                              paddingLeft: '14px',
+                              paddingRight: '30px',
+                              fontSize: '0.85rem',
+                              fontWeight: 600,
+                              cursor: 'pointer',
+                              outline: 'none',
+                              width: '120px',
+                              minWidth: '120px',
+                              whiteSpace: 'nowrap',
+                              transition: 'all 0.15s ease',
+                            }}
+                          >
+                            <option value="Active" style={{ backgroundColor: '#ffffff', color: '#0e6027', fontWeight: 600 }}>Active</option>
+                            <option value="Inactive" style={{ backgroundColor: '#ffffff', color: '#c62828', fontWeight: 600 }}>Deactive</option>
+                          </select>
+                        </TableCell>
+                        <TableCell style={{ textAlign: 'right' }}>
+                          <div style={{ display: 'inline-flex', gap: '0.5rem', justifyContent: 'flex-end', alignItems: 'center' }}>
+                            <Button
+                              kind="ghost"
+                              size="sm"
+                              renderIcon={Edit}
+                              onClick={() => handleEditTemplate(template)}
+                            >
+                              Edit
+                            </Button>
+                            <Button
+                              kind="danger--ghost"
+                              size="sm"
+                              renderIcon={TrashCan}
+                              hasIconOnly
+                              iconDescription="Delete Template"
+                              onClick={() => setDeletingTemplate(template)}
+                            />
+                          </div>
+                        </TableCell>
+                      </TableRow>
+                    ))}
+                  </TableBody>
+                </Table>
+              </div>
+                <Pagination
+                  backwardText="Previous page"
+                  forwardText="Next page"
+                  itemsPerPageText="Rows per page:"
+                  page={templatePage}
+                  pageSize={templatePageSize}
+                  pageSizes={[10, 20, 50]}
+                  totalItems={filteredTemplates.length}
+                  onChange={({ page, pageSize }) => {
+                    if (page) setTemplatePage(page);
+                    if (pageSize) setTemplatePageSize(pageSize);
+                  }}
+                />
+              </>
+            )}
+          </TableContainer>
+
+          {/* Delete Confirmation Modal */}
+          <Modal
+            danger
+            open={Boolean(deletingTemplate)}
+            modalHeading="Delete Form Template"
+            primaryButtonText={isDeleting ? "Deleting..." : "Delete Template"}
+            secondaryButtonText="Cancel"
+            onRequestClose={() => setDeletingTemplate(null)}
+            onRequestSubmit={confirmDeleteTemplate}
+          >
+            <p style={{ marginBottom: '1rem', color: '#161616' }}>
+              Are you sure you want to permanently delete the template <strong>"{deletingTemplate?.formName}"</strong>?
+            </p>
+            {deletingTemplate?.department && (
+              <p style={{ marginBottom: '0.5rem', color: '#525252', fontSize: '0.875rem' }}>
+                Department: <strong>{deletingTemplate.department}</strong> (Stage {deletingTemplate.stageOrder})
+              </p>
+            )}
+            <p style={{ color: '#da1e28', fontSize: '0.85rem' }}>
+              This action cannot be undone. Any services currently linked to this template may need re-configuration.
+            </p>
+          </Modal>
+        </div>
+      ) : (
+        /* Form Designer Builder View */
+        <div>
+          {isWorkflowLocked && (
+            <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: '1.5rem', flexWrap: 'wrap', gap: '1rem' }}>
+              <Button
+                kind="ghost"
+                size="sm"
+                renderIcon={ArrowLeft}
+                onClick={() => {
+                  const searchServiceId = new URLSearchParams(window.location.search).get("serviceId");
+                  const returnSvcId = linkedServiceId || searchServiceId || "";
+                  window.location.href = `/admin/services/config?serviceId=${encodeURIComponent(returnSvcId)}&tab=3`;
+                }}
+                style={{ color: '#0f62fe' }}
+              >
+                Back to Service Workflow Configuration
+              </Button>
+              <div style={{ display: 'flex', gap: '0.5rem', alignItems: 'center' }}>
+                <Tag type="blue" size="md">ADMIN SERVICE DESIGNER</Tag>
+                <Tag type="teal" size="md">STAGE {stageOrder}</Tag>
+              </div>
+            </div>
+          )}
+
+          {isClonedTemplate && (
+            <InlineNotification
+              kind="info"
+              title="Customizing Stage-Specific Template Copy"
+              subtitle={`You are configuring a customized copy for Stage ${stageOrder} based on "${clonedSourceTitle}". Any fields you add, modify, or remove will be saved as a separate template for this service stage. The original base template in Template Builder will NOT be modified.`}
+              lowContrast
+              hideCloseButton
+              style={{ marginBottom: '1.5rem' }}
+            />
+          )}
+
+          <div style={{ marginBottom: '2rem', display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', flexWrap: 'wrap', gap: '1rem' }}>
+            <div>
+              <h1 style={{ fontSize: '2rem', fontWeight: 400, color: '#161616' }}>
+                {templateId 
+                  ? `Edit Template: ${formName || "Application Form"}`
+                  : isClonedTemplate 
+                    ? `Customize Template for Stage ${stageOrder}` 
+                    : "Create New Application Template"}
+              </h1>
+              <p style={{ color: '#525252', marginTop: '0.5rem' }}>
+                {templateId
+                  ? `Editing existing template (${templateId}). Changes will update this template upon saving.`
+                  : isClonedTemplate 
+                    ? `Tailoring form fields for ${department}. Saving creates a new stage template copy.`
+                    : "Design highly customizable application forms matching official Sri Lankan government layouts."}
+              </p>
+            </div>
+            <div style={{ display: 'flex', gap: '0.5rem', alignItems: 'center' }}>
+              <Button
+                kind="ghost"
+                size="md"
+                renderIcon={ArrowLeft}
+                onClick={handleBackToList}
+              >
+                Back to Created Templates
+              </Button>
+            </div>
+          </div>
+
+          <div style={{ display: 'flex', gap: '2rem', alignItems: 'flex-start', flexWrap: 'wrap' }}>
         
         {/* Builder Controls (Left Side) */}
         <div className="w-full lg:flex-1 lg:min-w-[350px] lg:max-w-[450px] lg:sticky lg:top-20" style={{ backgroundColor: '#fff', padding: '1.5rem', border: '1px solid #e0e0e0' }}>
-          <h3 style={{ fontSize: '1.2rem', marginBottom: '1.5rem', borderBottom: '1px solid #e0e0e0', paddingBottom: '0.5rem' }}>Document Headers</h3>
+          <h3 style={{ fontSize: '1.2rem', marginBottom: '1.5rem', borderBottom: '1px solid #e0e0e0', paddingBottom: '0.5rem' }}>Document Headers & Department</h3>
           <Stack gap={5}>
             <TextInput
               id="formName"
@@ -487,6 +1322,7 @@ export default function TemplateBuilder() {
               onChange={(e) => setLawText(e.target.value)}
             />
 
+            {/* Department Selection */}
             {isWorkflowLocked ? (
               <div style={{
                 padding: '1.25rem',
@@ -499,14 +1335,19 @@ export default function TemplateBuilder() {
               }}>
                 <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '0.75rem' }}>
                   <span style={{ fontSize: '0.75rem', fontWeight: 'bold', color: '#0f62fe', textTransform: 'uppercase', letterSpacing: '0.5px' }}>
-                    Workflow Stage Assignment (Locked)
+                    Workflow Stage Assignment
                   </span>
                   <Tag type="blue" size="sm">Stage {stageOrder}</Tag>
                 </div>
 
                 <div style={{ marginBottom: '0.75rem' }}>
                   <div style={{ fontSize: '0.75rem', color: '#525252', textTransform: 'uppercase', fontWeight: 600 }}>Assigned Department</div>
-                  <div style={{ fontSize: '1rem', fontWeight: 600, color: '#161616', marginTop: '2px' }}>{department}</div>
+                  <div style={{ fontSize: '1rem', fontWeight: 600, color: '#161616', marginTop: '2px', display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
+                    {currentDeptObj?.logoUrl && (
+                      <img src={currentDeptObj.logoUrl} alt="" style={{ width: '22px', height: '22px', borderRadius: '50%', objectFit: 'contain' }} />
+                    )}
+                    {department}
+                  </div>
                 </div>
 
                 <div>
@@ -517,7 +1358,7 @@ export default function TemplateBuilder() {
                 </div>
 
                 <p style={{ margin: '0.75rem 0 0 0', fontSize: '0.75rem', color: '#525252', fontStyle: 'italic', borderTop: '1px dashed #c6c6c6', paddingTop: '0.5rem' }}>
-                  Assigned and locked by Service Workflow Configuration. Applications at this stage route directly to {department} verification officers.
+                  Applications at this stage route directly to {department} verification officers.
                 </p>
               </div>
             ) : (
@@ -525,17 +1366,25 @@ export default function TemplateBuilder() {
                 <Select
                   id="department"
                   labelText="Assigned Department"
-                  helperText="The government department whose officers will verify this form stage."
+                  helperText="Selecting a department auto-fills the official logo, header titles, and contact information."
                   value={department}
-                  onChange={(e) => setDepartment(e.target.value)}
+                  onChange={(e) => handleDepartmentChange(e.target.value)}
                 >
-                  <SelectItem value="Civil Department" text="Civil Department" />
-                  <SelectItem value="Police Department" text="Police Department" />
-                  <SelectItem value="Transport Department" text="Transport Department" />
-                  <SelectItem value="Department of Registration of Persons" text="Department of Registration of Persons" />
-                  <SelectItem value="Department of Immigration & Emigration" text="Department of Immigration & Emigration" />
-                  <SelectItem value="Department of Motor Traffic" text="Department of Motor Traffic" />
-                  <SelectItem value="Divisional Secretariat" text="Divisional Secretariat" />
+                  {departments.length > 0 ? (
+                    departments.map((d) => (
+                      <SelectItem key={d.id} value={d.name} text={`${d.name} (${d.departmentCode})`} />
+                    ))
+                  ) : (
+                    <>
+                      <SelectItem value="Civil Department" text="Civil Department" />
+                      <SelectItem value="Police Department" text="Police Department" />
+                      <SelectItem value="Transport Department" text="Transport Department" />
+                      <SelectItem value="Department of Registration of Persons" text="Department of Registration of Persons" />
+                      <SelectItem value="Department of Immigration & Emigration" text="Department of Immigration & Emigration" />
+                      <SelectItem value="Department of Motor Traffic" text="Department of Motor Traffic" />
+                      <SelectItem value="Divisional Secretariat" text="Divisional Secretariat" />
+                    </>
+                  )}
                 </Select>
 
                 <TextInput
@@ -550,12 +1399,12 @@ export default function TemplateBuilder() {
 
                 <Select
                   id="linkedService"
-                  labelText="Linked Service Catalog Entry (Optional)"
+                  labelText="Linked Service Catalog Entry"
                   helperText="Ties this template to a service so its eligibility rules and required documents/fees show below."
                   value={linkedServiceId}
                   onChange={(e) => setLinkedServiceId(e.target.value)}
                 >
-                  <SelectItem value="" text="None" />
+                  <SelectItem value="" text="-- None (Standalone Department Template) --" />
                   {visibleServices.map((srv) => (
                     <SelectItem key={srv.id} value={srv.id.toString()} text={`${srv.serviceId} - ${srv.name}`} />
                   ))}
@@ -798,19 +1647,59 @@ export default function TemplateBuilder() {
               )}
             </div>
 
-            {/* Form Header matching Government Style */}
-            <div style={{ textAlign: 'center', marginBottom: '3rem', fontFamily: 'Arial, sans-serif' }}>
-              <div className="flex-wrap" style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', gap: '0.75rem' }}>
-                 <div style={{ width: '80px', height: '80px', flexShrink: 0, border: '1px solid #ccc', display: 'flex', alignItems: 'center', justifyContent: 'center', borderRadius: '50%' }}>
-                   <span style={{ fontSize: '0.7rem', color: '#999' }}>Logo</span>
+            {/* Form Header matching Official Sri Lankan Government Style */}
+            <div style={{ textAlign: 'center', marginBottom: '2.5rem', fontFamily: 'Arial, sans-serif' }}>
+              <div className="flex-wrap" style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: '1rem', borderBottom: '2px solid #161616', paddingBottom: '1.25rem' }}>
+                 {/* Left: Department Logo */}
+                 <div style={{ width: '85px', height: '85px', flexShrink: 0, border: '2px solid #0f62fe', display: 'flex', alignItems: 'center', justifyContent: 'center', borderRadius: '50%', overflow: 'hidden', backgroundColor: '#f4f4f4', padding: '4px', boxShadow: '0 2px 4px rgba(0,0,0,0.08)' }}>
+                   {currentDeptObj?.logoUrl ? (
+                     <img
+                       src={currentDeptObj.logoUrl}
+                       alt={currentDeptObj.name}
+                       style={{ width: '100%', height: '100%', objectFit: 'contain' }}
+                       onError={(e) => {
+                         (e.target as HTMLElement).style.display = 'none';
+                       }}
+                     />
+                   ) : (
+                     <div style={{ textAlign: 'center', color: '#0f62fe' }}>
+                       <span style={{ fontSize: '0.75rem', fontWeight: 'bold', display: 'block' }}>{currentDeptObj?.departmentCode || 'GSN'}</span>
+                       <span style={{ fontSize: '0.6rem', color: '#525252' }}>LOGO</span>
+                     </div>
+                   )}
                  </div>
-                 <div style={{ flex: '1 1 200px', padding: '0 1rem' }}>
-                    <h2 style={{ fontSize: '1.8rem', fontWeight: 'bold', margin: '0' }}>{formName || "FORM NO"}</h2>
-                    <h3 style={{ fontSize: '1.2rem', margin: '0.5rem 0', textTransform: 'uppercase' }}>{subTitle || "Document Title"}</h3>
-                    {lawText && <p style={{ fontSize: '0.9rem', fontStyle: 'italic', margin: 0 }}>{lawText}</p>}
+
+                 {/* Center: Official Government & Department Header */}
+                 <div style={{ flex: '1 1 300px', padding: '0 1rem', textAlign: 'center' }}>
+                    <div style={{ fontSize: '0.75rem', fontWeight: 700, letterSpacing: '1px', textTransform: 'uppercase', color: '#525252' }}>
+                      Democratic Socialist Republic of Sri Lanka
+                    </div>
+                    <h2 style={{ fontSize: '1.35rem', fontWeight: 'bold', margin: '0.25rem 0', color: '#0043ce', textTransform: 'uppercase' }}>
+                      {currentDeptObj?.name || department}
+                    </h2>
+                    {(currentDeptObj?.departmentCode || currentDeptObj?.contactNumber || currentDeptObj?.email) && (
+                      <div style={{ fontSize: '0.75rem', color: '#525252', marginBottom: '0.35rem' }}>
+                        {[
+                          currentDeptObj.departmentCode && `ID: ${currentDeptObj.departmentCode}`,
+                          currentDeptObj.contactNumber && `Tel: ${currentDeptObj.contactNumber}`,
+                          currentDeptObj.email && `Email: ${currentDeptObj.email}`,
+                        ].filter(Boolean).join(" • ")}
+                      </div>
+                    )}
+                    <h3 style={{ fontSize: '1.2rem', fontWeight: 'bold', margin: '0.35rem 0 0.2rem 0', textTransform: 'uppercase', color: '#161616' }}>
+                      {formName || "APPLICATION FORM"}
+                    </h3>
+                    <h4 style={{ fontSize: '0.95rem', fontWeight: 600, margin: '0.2rem 0', color: '#393939' }}>
+                      {subTitle || (currentDeptObj ? `${currentDeptObj.name} - Stage ${stageOrder} Application` : "Official Public Service Intake")}
+                    </h4>
+                    {lawText && <p style={{ fontSize: '0.8rem', fontStyle: 'italic', margin: '0.2rem 0 0 0', color: '#525252' }}>{lawText}</p>}
                  </div>
-                 <div style={{ width: '100px', height: '80px', flexShrink: 0, border: '1px solid #ccc', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
-                   <span style={{ fontSize: '0.7rem', color: '#999' }}>Emblem / QR</span>
+
+                 {/* Right: Official Department Seal / Stage Stamp */}
+                 <div style={{ width: '95px', height: '85px', flexShrink: 0, border: '2px dashed #0043ce', display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', backgroundColor: '#f0f5ff', borderRadius: '4px', padding: '6px' }}>
+                   <span style={{ fontSize: '0.6rem', textTransform: 'uppercase', color: '#0043ce', fontWeight: 'bold' }}>OFFICIAL STAMP</span>
+                   <span style={{ fontSize: '0.85rem', fontWeight: 'bold', color: '#161616', marginTop: '2px' }}>{currentDeptObj?.departmentCode || `DEP-${stageOrder}`}</span>
+                   <span style={{ fontSize: '0.65rem', color: '#24a148', fontWeight: 600, marginTop: '2px' }}>✓ STAGE {stageOrder}</span>
                  </div>
               </div>
             </div>
@@ -838,30 +1727,14 @@ export default function TemplateBuilder() {
                     </div>
                   </div>
                 ))}
-                
-                <div style={{ marginTop: '4rem', display: 'flex', justifyContent: 'space-between', borderTop: '2px solid #000', paddingTop: '1rem' }}>
-                  <div style={{ width: '45%' }}>
-                    <p style={{ fontWeight: 'bold' }}>Presented by:</p>
-                    <div style={{ height: '6rem', border: '1px solid #000', marginTop: '0.5rem' }}></div>
-                  </div>
-                  <div style={{ width: '45%' }}>
-                    <div style={{ display: 'flex', border: '1px solid #000', marginBottom: '0.5rem' }}>
-                      <div style={{ width: '30%', padding: '4px', borderRight: '1px solid #000', fontSize: '0.8rem' }}>Email:</div>
-                      <div style={{ flex: 1 }}></div>
-                    </div>
-                    <div style={{ display: 'flex', border: '1px solid #000', marginBottom: '0.5rem' }}>
-                      <div style={{ width: '30%', padding: '4px', borderRight: '1px solid #000', fontSize: '0.8rem' }}>Telephone:</div>
-                      <div style={{ flex: 1 }}></div>
-                    </div>
-                  </div>
-                </div>
               </div>
             )}
           </div>
         </div>
-
       </div>
-    </main>
-  );
+    </div>
+  )}
+</main>
+);
 }
 
