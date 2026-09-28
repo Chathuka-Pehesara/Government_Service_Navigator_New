@@ -251,6 +251,87 @@ public class ValidationAgentController : ControllerBase
             results
         });
     }
+
+    /// <summary>
+    /// Agent Action 1: Compiles an official Verification Case Dossier with cryptographic integrity seal
+    /// and determines intelligent routing to the appropriate human officer queue tier.
+    /// </summary>
+    [HttpPost("dossier")]
+    public async Task<IActionResult> CompileCaseDossier(
+        [FromBody] ValidateDraftDto request,
+        CancellationToken cancellationToken)
+    {
+        var draft = new DraftApplication
+        {
+            ApplicationId = request.ApplicationId,
+            ServiceProcedureId = request.ServiceProcedureId,
+            ServiceName = request.ServiceName ?? "Government Procedure",
+            CitizenNic = request.CitizenNic ?? string.Empty,
+            CitizenName = request.CitizenName ?? string.Empty,
+            CitizenAge = request.CitizenAge,
+            CitizenIncome = request.CitizenIncome,
+            CalculatedFee = request.CalculatedFee,
+            Stage = request.Stage > 0 ? request.Stage : 1,
+            FormFields = request.FormFields ?? new Dictionary<string, string>(),
+            AttachedDocumentNames = request.AttachedDocumentNames ?? new List<string>()
+        };
+
+        var dossier = await _safetyAgent.CompileCaseDossierAsync(draft, request.RequiredDocuments, cancellationToken);
+        return Ok(dossier);
+    }
+
+    /// <summary>
+    /// Agent Action 2: Generates an official legal determination order (Approval, Revision, Rejection)
+    /// citing Sri Lankan statutory regulations for 1-click human officer sign-off.
+    /// </summary>
+    [HttpPost("decision-order")]
+    public async Task<IActionResult> DraftDecisionOrder(
+        [FromBody] DraftDecisionOrderRequestDto request,
+        CancellationToken cancellationToken)
+    {
+        var draft = new DraftApplication
+        {
+            ApplicationId = request.ApplicationId,
+            ServiceProcedureId = request.ServiceProcedureId,
+            ServiceName = request.ServiceName ?? "Government Procedure",
+            CitizenNic = request.CitizenNic ?? string.Empty,
+            CitizenName = request.CitizenName ?? string.Empty,
+            CalculatedFee = request.CalculatedFee,
+            AttachedDocumentNames = request.AttachedDocumentNames ?? new List<string>()
+        };
+
+        var order = await _safetyAgent.DraftDecisionOrderAsync(
+            draft,
+            request.DeterminationType,
+            request.OfficerNotes,
+            cancellationToken);
+
+        return Ok(order);
+    }
+
+    /// <summary>
+    /// Agent Action 3: Generates an actionable remediation notice with 7-day hold window for the citizen.
+    /// </summary>
+    [HttpPost("remediation-notice")]
+    public async Task<IActionResult> DraftRemediationNotice(
+        [FromBody] DraftRemediationNoticeRequestDto request,
+        CancellationToken cancellationToken)
+    {
+        var draft = new DraftApplication
+        {
+            ApplicationId = request.ApplicationId,
+            ServiceName = request.ServiceName ?? "Government Procedure",
+            CitizenNic = request.CitizenNic ?? string.Empty,
+            CitizenName = request.CitizenName ?? string.Empty
+        };
+
+        var notice = await _safetyAgent.DraftRemediationNoticeAsync(
+            draft,
+            request.Defects ?? new List<string>(),
+            cancellationToken);
+
+        return Ok(notice);
+    }
 }
 
 public class ValidateDraftDto
@@ -268,3 +349,26 @@ public class ValidateDraftDto
     public List<string>? AttachedDocumentNames { get; set; }
     public List<string>? RequiredDocuments { get; set; }
 }
+
+public class DraftDecisionOrderRequestDto
+{
+    public int ApplicationId { get; set; }
+    public int ServiceProcedureId { get; set; }
+    public string? ServiceName { get; set; }
+    public string? CitizenNic { get; set; }
+    public string? CitizenName { get; set; }
+    public decimal CalculatedFee { get; set; }
+    public string DeterminationType { get; set; } = "Approval"; // "Approval", "RevisionRequired", "Rejection"
+    public string? OfficerNotes { get; set; }
+    public List<string>? AttachedDocumentNames { get; set; }
+}
+
+public class DraftRemediationNoticeRequestDto
+{
+    public int ApplicationId { get; set; }
+    public string? ServiceName { get; set; }
+    public string? CitizenNic { get; set; }
+    public string? CitizenName { get; set; }
+    public List<string>? Defects { get; set; }
+}
+

@@ -333,6 +333,157 @@ Respond strictly with a JSON object matching this schema:
                    "No duplicate applications or adversarial injection patterns detected. Ready for officer determination.";
         }
 
+        public async Task<VerificationCaseDossier> CompileCaseDossierAsync(
+            DraftApplication draft,
+            List<string>? requiredDocuments = null,
+            CancellationToken cancellationToken = default)
+        {
+            var validation = await ValidateAndEnqueueAsync(draft, requiredDocuments, cancellationToken);
+
+            int riskScore = 15;
+            if (!validation.IsValid) riskScore += 50;
+            if (validation.RiskLevel.Equals("Medium", StringComparison.OrdinalIgnoreCase)) riskScore += 25;
+            if (validation.RiskLevel.Equals("High", StringComparison.OrdinalIgnoreCase)) riskScore += 45;
+            if (validation.RiskLevel.Equals("Critical", StringComparison.OrdinalIgnoreCase)) riskScore += 70;
+            if (draft.CalculatedFee > 50000m) riskScore += 15;
+            riskScore = Math.Clamp(riskScore, 5, 98);
+
+            string queueTier = riskScore switch
+            {
+                < 30 => "Fast-Track Verification Desk",
+                <= 60 => "Standard Officer Desk",
+                _ => "Senior Regulatory Compliance Desk"
+            };
+
+            // Cryptographic SHA-256 Anti-Tamper Integrity Seal
+            string rawData = $"{draft.ApplicationId}:{draft.CitizenNic}:{draft.CitizenName}:{draft.CalculatedFee}:{draft.ServiceName}:{string.Join(",", draft.AttachedDocumentNames ?? new List<string>())}";
+            using var sha256 = System.Security.Cryptography.SHA256.Create();
+            byte[] hashBytes = sha256.ComputeHash(System.Text.Encoding.UTF8.GetBytes(rawData));
+            string sealHash = "SEAL-SHA256-" + BitConverter.ToString(hashBytes).Replace("-", "").Substring(0, 24);
+
+            return new VerificationCaseDossier
+            {
+                DossierNumber = $"DOS-2026-{(draft.ApplicationId > 0 ? draft.ApplicationId : new Random().Next(1000, 9999))}",
+                ApplicationId = draft.ApplicationId,
+                CitizenNic = draft.CitizenNic,
+                CitizenName = draft.CitizenName,
+                ServiceName = draft.ServiceName,
+                Department = draft.FormFields != null && draft.FormFields.TryGetValue("Presented By", out var d) ? d : "General Services",
+                RiskScore = riskScore,
+                RiskTier = validation.RiskLevel,
+                AssignedQueueTier = queueTier,
+                IntegritySealHash = sealHash,
+                StatutoryComplianceSummary = validation.Summary,
+                VerifiedChecks = validation.ComplianceChecks,
+                FlaggedDefects = validation.RejectionReasons,
+                GeneratedAt = DateTime.UtcNow
+            };
+        }
+
+        public async Task<DecisionOrderDraft> DraftDecisionOrderAsync(
+            DraftApplication draft,
+            string determinationType,
+            string? officerNotes = null,
+            CancellationToken cancellationToken = default)
+        {
+            determinationType = string.IsNullOrWhiteSpace(determinationType) ? "Approval" : determinationType;
+
+            if (_llmService != null && _llmService.IsConfigured && !cancellationToken.IsCancellationRequested)
+            {
+                try
+                {
+                    var systemPrompt = @"You are Agent 4 (Validation & Safety Agent) serving as the Official Legal Determinations Secretary for the Democratic Socialist Republic of Sri Lanka Government Service Navigator.
+Draft a formal, legally grounded Departmental Determination Order (Approval, RevisionRequired, or Rejection) for this government service application.
+Incorporate relevant administrative regulations, Sri Lankan statutory framework citations (e.g. Public Administration Circulars, Electronic Transactions Act No. 19 of 2006, Departmental Standard Operating Procedures), and clear terms/conditions.
+Respond strictly in JSON matching this schema:
+{
+  ""orderTitle"": ""OFFICIAL ORDER TITLE"",
+  ""legalStatutoryBasis"": ""Formal statutory basis citing applicable enactments and regulatory schedules."",
+  ""findingsAndEvidence"": ""Factual findings from citizen evidence, document verification, and statutory checks."",
+  ""termsAndConditions"": [""Condition 1"", ""Condition 2""],
+  ""officerSignOffText"": ""Formal text ready for the human Verifying Officer's official seal and signature."",
+  ""recommendedNextStep"": ""Clear operational directive for dispatch or revision hold.""
+}";
+
+                    var userPrompt = $"Service: {draft.ServiceName}\nProcedure #{draft.ServiceProcedureId}\nCitizen: {draft.CitizenName} (NIC: {draft.CitizenNic})\nDetermination: {determinationType}\nFee Paid: LKR {draft.CalculatedFee:N2}\nOfficer Directions/Notes: {officerNotes ?? "Standard compliance verification"}";
+
+                    var json = await _llmService.GenerateChatCompletionAsync(systemPrompt, userPrompt, jsonMode: true, cancellationToken);
+                    if (!string.IsNullOrWhiteSpace(json))
+                    {
+                        var parsed = JsonSerializer.Deserialize<DecisionOrderDraft>(json, new JsonSerializerOptions { PropertyNameCaseInsensitive = true });
+                        if (parsed != null)
+                        {
+                            parsed.OrderType = determinationType;
+                            parsed.DraftedAt = DateTime.UtcNow;
+                            return parsed;
+                        }
+                    }
+                }
+                catch { }
+            }
+
+            // Deterministic legal order draft fallback
+            bool isApproval = determinationType.Equals("Approval", StringComparison.OrdinalIgnoreCase);
+            return new DecisionOrderDraft
+            {
+                OrderType = determinationType,
+                OrderTitle = isApproval 
+                    ? $"OFFICIAL DETERMINATION ORDER: GRANT OF APPROVAL FOR {draft.ServiceName.ToUpperInvariant()}"
+                    : $"OFFICIAL DIRECTIVE: NOTICE OF REVISION REQUIRED FOR {draft.ServiceName.ToUpperInvariant()}",
+                LegalStatutoryBasis = "Pursuant to the Powers Vested under the Public Administration Circular Framework & National Service Delivery Directive 2026.",
+                FindingsAndEvidence = isApproval
+                    ? $"The applicant {draft.CitizenName} (NIC: {draft.CitizenNic}) has satisfied statutory eligibility, provided required evidentiary documentation, and settled assessed statutory fee of LKR {draft.CalculatedFee:N2}."
+                    : $"The application was scrutinized under statutory guidelines. Revision is mandated prior to final administrative determination: {officerNotes ?? "Applicant must update missing evidentiary records."}",
+                TermsAndConditions = isApproval
+                    ? new List<string>
+                    {
+                        "Subject to verification of original physical documents at designated collection desk if requested.",
+                        "Valid for standard statutory tenure in accordance with department schedules.",
+                        "Non-transferable and enforceable under Sri Lankan administrative regulations."
+                    }
+                    : new List<string>
+                    {
+                        "Submissions must be revised within the 7-day statutory grace window.",
+                        "Failure to rectify flagged defects will lead to formal administrative closure."
+                    },
+                OfficerSignOffText = isApproval
+                    ? $"Having verified all statutory requirements, compliance checks, and anti-fraud clearances, I hereby GRANT APPROVAL for application #{draft.ApplicationId} ({draft.ServiceName}). Issued under the seal of the Verifying Officer."
+                    : $"Application #{draft.ApplicationId} requires revision. Citizen is notified to amend application details in accordance with Section 12 of Departmental Regulations.",
+                RecommendedNextStep = isApproval
+                    ? "Proceed to dispatch digital certificate or issue appointment collection pass."
+                    : "Place application on 7-day administrative hold awaiting citizen update.",
+                DraftedAt = DateTime.UtcNow
+            };
+        }
+
+        public async Task<RemediationNotice> DraftRemediationNoticeAsync(
+            DraftApplication draft,
+            List<string> defects,
+            CancellationToken cancellationToken = default)
+        {
+            var noticeNumber = $"REV-NOTICE-{(draft.ApplicationId > 0 ? draft.ApplicationId : new Random().Next(1000, 9999))}";
+            var holdDate = DateTime.UtcNow.AddDays(7);
+            var defectList = defects ?? new List<string>();
+
+            string instructions = $"Your application for {draft.ServiceName} has been placed on a temporary 7-day administrative hold until {holdDate:MMMM dd, yyyy}. " +
+                                  "Please log in to your Government Service Navigator mobile or web portal, open your application, and submit the requested corrections. " +
+                                  "Our Validation & Safety Agent will re-audit your submission upon update with zero penalty fees.";
+
+            return await Task.FromResult(new RemediationNotice
+            {
+                NoticeNumber = noticeNumber,
+                ApplicationId = draft.ApplicationId,
+                CitizenNic = draft.CitizenNic,
+                CitizenName = draft.CitizenName,
+                ServiceName = draft.ServiceName,
+                GracePeriodDays = 7,
+                HoldUntilDate = holdDate,
+                RequiredActions = defectList,
+                InstructionsText = instructions,
+                IssuedAt = DateTime.UtcNow
+            });
+        }
+
         private class AiSafetyResponse
         {
             public string RiskLevel { get; set; } = "Low";

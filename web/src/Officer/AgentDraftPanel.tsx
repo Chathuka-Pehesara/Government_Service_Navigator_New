@@ -1,3 +1,4 @@
+import { useState } from "react";
 import {
   Accordion,
   AccordionItem,
@@ -7,7 +8,13 @@ import {
   Tag,
 } from "@carbon/react";
 import { Renew } from "@carbon/icons-react";
-import type { AgentDraftView } from "./agentDraftApi";
+import {
+  compileCaseDossier,
+  draftDecisionOrder,
+  type AgentDraftView,
+  type VerificationCaseDossier,
+  type DecisionOrderDraft,
+} from "./agentDraftApi";
 
 interface Props {
   draft: AgentDraftView | null;
@@ -38,6 +45,60 @@ export default function AgentDraftPanel({ draft, loading, error, answers, onRege
   const eligibility = draft?.eligibility;
   const action = draft?.action;
   const fields = action?.draft?.formFields ?? {};
+
+  // Agent 4 Active Actions State
+  const [dossier, setDossier] = useState<VerificationCaseDossier | null>(null);
+  const [isCompilingDossier, setIsCompilingDossier] = useState(false);
+  const [decisionOrder, setDecisionOrder] = useState<DecisionOrderDraft | null>(null);
+  const [isDraftingOrder, setIsDraftingOrder] = useState(false);
+  const [orderTypeDrafted, setOrderTypeDrafted] = useState<string>("");
+  const [copiedText, setCopiedText] = useState(false);
+
+  const handleCompileDossier = async () => {
+    if (!draft) return;
+    setIsCompilingDossier(true);
+    try {
+      const res = await compileCaseDossier({
+        applicationId: draft.applicationId,
+        serviceProcedureId: action?.draft?.serviceProcedureId ?? 1,
+        serviceName: action?.draft?.serviceName ?? "Government Service",
+        citizenNic: action?.draft?.citizenNic ?? "",
+        citizenName: action?.draft?.citizenName ?? "",
+        citizenAge: action?.draft?.citizenAge ?? draft.derivedAgeFromNic ?? 25,
+        calculatedFee: action?.fee?.totalAmount ?? 0,
+        attachedDocumentNames: action?.draft?.attachedDocumentNames ?? [],
+        requiredDocuments: eligibility?.requiredDocuments ?? []
+      });
+      setDossier(res);
+    } catch (e) {
+      console.error(e);
+    } finally {
+      setIsCompilingDossier(false);
+    }
+  };
+
+  const handleDraftOrder = async (type: "Approval" | "RevisionRequired" | "Rejection") => {
+    if (!draft) return;
+    setIsDraftingOrder(true);
+    setOrderTypeDrafted(type);
+    try {
+      const res = await draftDecisionOrder({
+        applicationId: draft.applicationId,
+        serviceProcedureId: action?.draft?.serviceProcedureId ?? 1,
+        serviceName: action?.draft?.serviceName ?? "Government Service",
+        citizenNic: action?.draft?.citizenNic ?? "",
+        citizenName: action?.draft?.citizenName ?? "",
+        calculatedFee: action?.fee?.totalAmount ?? 0,
+        determinationType: type,
+        attachedDocumentNames: action?.draft?.attachedDocumentNames ?? []
+      });
+      setDecisionOrder(res);
+    } catch (e) {
+      console.error(e);
+    } finally {
+      setIsDraftingOrder(false);
+    }
+  };
 
   return (
     <div style={{ backgroundColor: "#fff", padding: "1rem", borderLeft: "4px solid #0f62fe", marginBottom: "2rem" }}>
@@ -238,6 +299,156 @@ export default function AgentDraftPanel({ draft, loading, error, answers, onRege
                     </ul>
                   </div>
                 )}
+
+                {/* Agent 4 High-Impact Autonomous Actions */}
+                <div style={{
+                  marginTop: "1.25rem",
+                  padding: "1rem",
+                  backgroundColor: "#f4f7fb",
+                  border: "1px solid #d0e2ff",
+                  borderRadius: "8px"
+                }}>
+                  <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: "0.75rem" }}>
+                    <span style={{ fontSize: "0.875rem", fontWeight: 700, color: "#0043ce" }}>
+                      ⚡ Agent 4 High-Impact Actions
+                    </span>
+                    <Tag type="purple" size="sm">Autonomous Agent</Tag>
+                  </div>
+
+                  <p style={{ fontSize: "0.8125rem", color: "#525252", marginBottom: "0.75rem" }}>
+                    Execute intelligent compliance actions or instruct Agent 4 to draft official statutory orders:
+                  </p>
+
+                  <div style={{ display: "flex", gap: "0.5rem", flexWrap: "wrap", marginBottom: "1rem" }}>
+                    <Button
+                      size="sm"
+                      kind="secondary"
+                      onClick={handleCompileDossier}
+                      disabled={isCompilingDossier}
+                    >
+                      {isCompilingDossier ? "Compiling Dossier..." : "Compile Verification Dossier"}
+                    </Button>
+
+                    <Button
+                      size="sm"
+                      kind="primary"
+                      onClick={() => handleDraftOrder("Approval")}
+                      disabled={isDraftingOrder}
+                    >
+                      {isDraftingOrder && orderTypeDrafted === "Approval" ? "Drafting..." : "Draft Legal Approval Order"}
+                    </Button>
+
+                    <Button
+                      size="sm"
+                      kind="tertiary"
+                      onClick={() => handleDraftOrder("RevisionRequired")}
+                      disabled={isDraftingOrder}
+                    >
+                      {isDraftingOrder && orderTypeDrafted === "RevisionRequired" ? "Drafting..." : "Draft Revision Order"}
+                    </Button>
+                  </div>
+
+                  {/* Render Compiled Dossier */}
+                  {dossier && (
+                    <div style={{
+                      backgroundColor: "#fff",
+                      border: "1px solid #c6c6c6",
+                      borderRadius: "6px",
+                      padding: "0.875rem 1rem",
+                      marginBottom: "1rem"
+                    }}>
+                      <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: "0.5rem" }}>
+                        <span style={{ fontWeight: 600, fontSize: "0.875rem", color: "#161616" }}>
+                          📋 Official Verification Dossier: {dossier.dossierNumber}
+                        </span>
+                        <Tag type={dossier.riskScore < 30 ? "green" : (dossier.riskScore <= 60 ? "warm-gray" : "red")}>
+                          Risk Score: {dossier.riskScore}/100
+                        </Tag>
+                      </div>
+
+                      <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: "0.5rem", fontSize: "0.8125rem", marginBottom: "0.5rem" }}>
+                        <div><strong>Assigned Queue:</strong> {dossier.assignedQueueTier}</div>
+                        <div><strong>Audit Status:</strong> {dossier.statutoryComplianceSummary}</div>
+                      </div>
+
+                      <div style={{
+                        backgroundColor: "#f4f4f4",
+                        padding: "0.5rem 0.75rem",
+                        borderRadius: "4px",
+                        fontSize: "0.75rem",
+                        fontFamily: "monospace",
+                        color: "#393939"
+                      }}>
+                        🛡️ Anti-Tamper SHA-256 Hash Seal: {dossier.integritySealHash}
+                      </div>
+                    </div>
+                  )}
+
+                  {/* Render Drafted Decision Order */}
+                  {decisionOrder && (
+                    <div style={{
+                      backgroundColor: "#fff",
+                      border: "2px solid #0f62fe",
+                      borderRadius: "6px",
+                      padding: "1rem",
+                      marginTop: "0.5rem"
+                    }}>
+                      <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: "0.5rem" }}>
+                        <Tag type={decisionOrder.orderType === "Approval" ? "green" : "red"}>
+                          {decisionOrder.orderType.toUpperCase()} ORDER
+                        </Tag>
+                        <Button
+                          size="sm"
+                          kind="ghost"
+                          onClick={() => {
+                            navigator.clipboard.writeText(
+                              `${decisionOrder.orderTitle}\n\n${decisionOrder.legalStatutoryBasis}\n\n${decisionOrder.findingsAndEvidence}\n\n${decisionOrder.officerSignOffText}`
+                            );
+                            setCopiedText(true);
+                            setTimeout(() => setCopiedText(false), 2000);
+                          }}
+                        >
+                          {copiedText ? "✓ Copied to Clipboard" : "Copy Legal Order Text"}
+                        </Button>
+                      </div>
+
+                      <h4 style={{ fontSize: "0.875rem", fontWeight: 700, margin: "0.25rem 0 0.5rem", color: "#0f62fe" }}>
+                        {decisionOrder.orderTitle}
+                      </h4>
+
+                      <p style={{ fontSize: "0.8125rem", color: "#525252", fontStyle: "italic", marginBottom: "0.5rem" }}>
+                        {decisionOrder.legalStatutoryBasis}
+                      </p>
+
+                      <p style={{ fontSize: "0.8125rem", color: "#161616", lineHeight: 1.4, marginBottom: "0.5rem" }}>
+                        <strong>Findings:</strong> {decisionOrder.findingsAndEvidence}
+                      </p>
+
+                      {decisionOrder.termsAndConditions.length > 0 && (
+                        <div style={{ marginBottom: "0.5rem" }}>
+                          <span style={{ fontSize: "0.8125rem", fontWeight: 600 }}>Covenants & Conditions:</span>
+                          <ul style={{ fontSize: "0.8125rem", listStyle: "disc", paddingLeft: "1.25rem", margin: "0.25rem 0" }}>
+                            {decisionOrder.termsAndConditions.map((tc, idx) => (
+                              <li key={idx}>{tc}</li>
+                            ))}
+                          </ul>
+                        </div>
+                      )}
+
+                      <div style={{
+                        backgroundColor: "#edf5ff",
+                        padding: "0.75rem",
+                        borderRadius: "4px",
+                        borderLeft: "3px solid #0043ce",
+                        fontSize: "0.8125rem",
+                        color: "#161616"
+                      }}>
+                        <strong>Officer Seal & Sign-Off Directive:</strong>
+                        <p style={{ margin: "0.25rem 0 0" }}>{decisionOrder.officerSignOffText}</p>
+                      </div>
+                    </div>
+                  )}
+                </div>
               </>
             ) : (
               <p style={muted}>Safety and duplicate checks pending review generation.</p>

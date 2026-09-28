@@ -88,6 +88,34 @@ export interface AgentDraftView {
   validation?: ValidationResult | null;
 }
 
+export interface VerificationCaseDossier {
+  dossierNumber: string;
+  applicationId: number;
+  citizenNic: string;
+  citizenName: string;
+  serviceName: string;
+  department: string;
+  riskScore: number;
+  riskTier: string;
+  assignedQueueTier: string;
+  integritySealHash: string;
+  statutoryComplianceSummary: string;
+  verifiedChecks: ComplianceCheckItem[];
+  flaggedDefects: string[];
+  generatedAt: string;
+}
+
+export interface DecisionOrderDraft {
+  orderType: string;
+  orderTitle: string;
+  legalStatutoryBasis: string;
+  findingsAndEvidence: string;
+  termsAndConditions: string[];
+  officerSignOffText: string;
+  recommendedNextStep: string;
+  draftedAt: string;
+}
+
 /** Stored draft for the task, or null if the agents haven't run on it yet. */
 export async function getAgentDraft(taskId: string | number): Promise<AgentDraftView | null> {
   try {
@@ -101,4 +129,32 @@ export async function getAgentDraft(taskId: string | number): Promise<AgentDraft
 /** Runs Agent 2 → Agent 3 on the application and returns the fresh draft. */
 export function generateAgentDraft(taskId: string | number): Promise<AgentDraftView> {
   return apiFetch<AgentDraftView>(`/api/Verification/tasks/${taskId}/agent-draft`, { method: "POST" });
+}
+
+/** Agent 4 Action 1: Compiles full Verification Case Dossier & Routing Tier */
+export function compileCaseDossier(payload: any): Promise<VerificationCaseDossier> {
+  return apiFetch<VerificationCaseDossier>("/api/ValidationAgent/dossier", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(payload)
+  });
+}
+
+/** Agent 4 Action 2: Autonomously drafts official Legal Determination Order */
+export function draftDecisionOrder(payload: {
+  applicationId: number;
+  serviceProcedureId?: number;
+  serviceName?: string;
+  citizenNic?: string;
+  citizenName?: string;
+  calculatedFee?: number;
+  determinationType: "Approval" | "RevisionRequired" | "Rejection";
+  officerNotes?: string;
+  attachedDocumentNames?: string[];
+}): Promise<DecisionOrderDraft> {
+  return apiFetch<DecisionOrderDraft>("/api/ValidationAgent/decision-order", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(payload)
+  });
 }
