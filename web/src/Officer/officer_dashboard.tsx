@@ -1,5 +1,6 @@
 import '@carbon/styles/css/styles.css';
 import { useState, useEffect } from "react";
+import { QUEUE_UPDATED_EVENT } from "../utils/realtime";
 import {
   Header,
   HeaderName,
@@ -199,6 +200,14 @@ export default function OfficerDashboard() {
 
     fetchQueue();
     fetchStats();
+
+    // Live queue: the realtime bridge fires this when tasks change (no polling)
+    const onQueueUpdated = () => {
+      fetchQueue();
+      fetchStats();
+    };
+    window.addEventListener(QUEUE_UPDATED_EVENT, onQueueUpdated);
+    return () => window.removeEventListener(QUEUE_UPDATED_EVENT, onQueueUpdated);
   }, []);
 
   const handleLogout = async () => {

@@ -3,10 +3,30 @@
 // in the domain-specific API modules below should use `apiFetch` so the auth
 // header is never forgotten.
 
-// All existing fetch calls in this project hardcode http://localhost:5119.
-// We do the same here so the new modules are consistent; update this once
-// a proper environment variable strategy is adopted project-wide.
-const BASE_URL = "http://localhost:5119";
+// Backend origin from VITE_API_URL (see .env.example). Older pages still hardcode
+// http://localhost:5119; new code should use apiFetch or API_BASE_URL instead.
+export const API_BASE_URL: string =
+  (import.meta.env.VITE_API_URL as string | undefined)?.replace(/\/$/, "") || "http://localhost:5119";
+const BASE_URL = API_BASE_URL;
+
+// One page of a list endpoint called with ?page= (backend PagedResult<T>)
+export interface Paged<T> {
+  items: T[];
+  total: number;
+  page: number;
+  pageSize: number;
+  totalPages: number;
+}
+
+// Builds "?a=1&b=x" from the defined, non-empty values only
+export function toQuery(params: Record<string, string | number | undefined | null>): string {
+  const query = new URLSearchParams();
+  for (const [key, value] of Object.entries(params)) {
+    if (value !== undefined && value !== null && value !== "") query.set(key, String(value));
+  }
+  const text = query.toString();
+  return text ? `?${text}` : "";
+}
 
 export class ApiError extends Error {
   status: number;

@@ -5,6 +5,8 @@ using Government_Service_Navigator.Backend.Services.Interfaces;
 using Government_Service_Navigator.Backend.Models.Entities;
 using Government_Service_Navigator.Backend.DTOs;
 using Government_Service_Navigator.Backend.Data.Context;
+using Government_Service_Navigator.Backend.Services;
+using Microsoft.Extensions.Caching.Hybrid;
 
 namespace Government_Service_Navigator.Backend.Controllers
 {
@@ -14,11 +16,13 @@ namespace Government_Service_Navigator.Backend.Controllers
     {
         private readonly IServiceCatalogService _catalogService;
         private readonly AppDbContext _context;
+        private readonly HybridCache _cache;
 
-        public ServicesController(IServiceCatalogService catalogService, AppDbContext context)
+        public ServicesController(IServiceCatalogService catalogService, AppDbContext context, HybridCache cache)
         {
             _catalogService = catalogService;
             _context = context;
+            _cache = cache;
         }
 
        // Admin adds a new service/procedure
@@ -39,9 +43,13 @@ public async Task<IActionResult> CreateService([FromBody] ServiceProcedure servi
 
         // Fetch procedure details + document checklist
         [HttpGet("{id}")]
+        // Catalog reads are cached; any catalog write clears the "catalog" tag (CitizenChangeInterceptor)
         public async Task<IActionResult> GetService(int id)
         {
-            var service = await _catalogService.GetServiceByIdAsync(id);
+            var service = await _cache.GetOrCreateAsync(
+                CacheKeys.Service(id),
+                async _ => await _catalogService.GetServiceByIdAsync(id),
+                tags: new[] { CacheKeys.CatalogTag });
             if (service == null) return NotFound();
             return Ok(service);
         }
@@ -50,7 +58,10 @@ public async Task<IActionResult> CreateService([FromBody] ServiceProcedure servi
         [HttpGet]
         public async Task<IActionResult> GetAllServices()
         {
-            var services = await _catalogService.GetAllServicesAsync();
+            var services = await _cache.GetOrCreateAsync(
+                CacheKeys.AllServices,
+                async _ => (await _catalogService.GetAllServicesAsync()).ToList(),
+                tags: new[] { CacheKeys.CatalogTag });
             return Ok(services);
         }
 

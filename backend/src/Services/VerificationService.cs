@@ -249,75 +249,122 @@ namespace Government_Service_Navigator.Backend.Services
                 .ToListAsync();
         }
 
-        public async Task<List<AuditLog>> GetAllAuditLogsAsync()
+        public async Task<PagedResult<AuditLog>> GetAllAuditLogsAsync(AuditLogQuery filter, int? page, int pageSize)
         {
-            return await _context.AuditLogs
-                .OrderByDescending(a => a.Timestamp)
-                .ToListAsync();
-        }
+            var query = _context.AuditLogs.AsNoTracking();
 
-        public async Task<List<VerificationTask>> GetPendingTasksAsync(string? department = null)
-        {
-            // Self-repair: Any task incorrectly marked "Approved" without any actual OfficerReview
-            // belongs back in "Pending" for the department officer to review manually.
-            var unreviewedTasks = await _context.VerificationTasks
-                .Include(t => t.Reviews)
-                .Where(t => t.Status == "Approved" && !t.Reviews.Any())
-                .ToListAsync();
-
-            if (unreviewedTasks.Any())
+            if (filter.ApplicationIds is { Count: > 0 })
             {
-                foreach (var ut in unreviewedTasks)
-                {
-                    ut.Status = "Pending";
-                }
-                await _context.SaveChangesAsync();
+                var ids = filter.ApplicationIds;
+                query = query.Where(a => ids.Contains(a.ApplicationId));
             }
 
-            var query = _context.VerificationTasks
+            switch (filter.Action?.ToUpperInvariant())
+            {
+                case "DELETED": query = query.Where(a => EF.Functions.ILike(a.Action, "%delete%")); break;
+                case "APPROVED": query = query.Where(a => EF.Functions.ILike(a.Action, "%approv%")); break;
+                case "REJECTED": query = query.Where(a => EF.Functions.ILike(a.Action, "%reject%")); break;
+            }
+
+            if (!string.IsNullOrWhiteSpace(filter.Search))
+            {
+                var term = filter.Search.Trim();
+                var appId = ParseApplicationId(term);
+                var like = $"%{EscapeLike(term)}%";
+                query = query.Where(a =>
+                    (appId != null && a.ApplicationId == appId) ||
+                    EF.Functions.ILike(a.Action, like) ||
+                    EF.Functions.ILike(a.PerformedBy, like) ||
+                    EF.Functions.ILike(a.NewValues, like));
+            }
+
+            return await ToPageAsync(query.OrderByDescending(a => a.Timestamp).ThenByDescending(a => a.Id), page, pageSize);
+        }
+
+        public async Task<AuditLogSummaryDto> GetAuditLogSummaryAsync()
+        {
+            var logs = _context.AuditLogs.AsNoTracking();
+            return new AuditLogSummaryDto
+            {
+                Total = await logs.CountAsync(),
+                Deleted = await logs.CountAsync(a => EF.Functions.ILike(a.Action, "%delete%")),
+                Approved = await logs.CountAsync(a => EF.Functions.ILike(a.Action, "%approv%")),
+                Rejected = await logs.CountAsync(a => EF.Functions.ILike(a.Action, "%reject%"))
+            };
+        }
+
+        // Read-only: the "Approved without a review" repair runs in DataRepairService.
+        public async Task<PagedResult<VerificationTask>> GetPendingTasksAsync(string? department, int? page, int pageSize, string? search = null)
+        {
+            var query = ApplySearch(PendingTasks(department), search);
+            return await ToPageAsync(query.OrderByDescending(t => t.CreatedDate).ThenByDescending(t => t.Id), page, pageSize);
+        }
+
+        public async Task<PagedResult<VerificationTask>> GetVerifiedTasksAsync(string? department, int? page, int pageSize, string? search = null, string? status = null)
+        {
+            var query = ApplySearch(VerifiedTasks(department), search);
+            if (!string.IsNullOrWhiteSpace(status))
+            {
+                // "Rejected" in the UI groups rejected and suspended decisions
+                query = string.Equals(status, "Rejected", StringComparison.OrdinalIgnoreCase)
+                    ? query.Where(t => t.Status == "Rejected" || t.Status == "Suspended")
+                    : query.Where(t => t.Status == status);
+            }
+            return await ToPageAsync(query.OrderByDescending(t => t.CreatedDate).ThenByDescending(t => t.Id), page, pageSize);
+        }
+
+        // Counts for dashboard cards, so the browser does not download every task to count them
+        public async Task<TaskSummaryDto> GetTaskSummaryAsync(string? department)
+        {
+            var byStatus = await VerifiedTasks(department)
+                .GroupBy(t => t.Status)
+                .Select(g => new { Status = g.Key, Count = g.Count() })
+                .ToDictionaryAsync(g => g.Status, g => g.Count);
+            int Count(string status) => byStatus.TryGetValue(status, out var c) ? c : 0;
+
+            return new TaskSummaryDto
+            {
+                Pending = await PendingTasks(department).CountAsync(),
+                Approved = Count("Approved"),
+                Rejected = Count("Rejected"),
+                Suspended = Count("Suspended"),
+                Verified = byStatus.Values.Sum()
+            };
+        }
+
+        private IQueryable<VerificationTask> PendingTasks(string? department)
+        {
+            var query = _context.VerificationTasks.AsNoTracking()
                 .Where(t => t.ApplicationId > 0 && (t.Status == "Pending" || t.Status == "Revised" || t.Status == "Revision Requested"));
 
             if (!string.IsNullOrEmpty(department))
             {
                 var deptLower = department.Trim().ToLower();
-                var deptAppIds = _context.ApplicationSubmissions
-                    .Where(s => s.CurrentDepartment != null && 
-                               (s.CurrentDepartment.ToLower() == deptLower || 
-                                s.CurrentDepartment.ToLower().Contains(deptLower) || 
-                                deptLower.Contains(s.CurrentDepartment.ToLower())))
-                    .Select(s => s.Id);
+                var deptAppIds = DepartmentApplicationIds(deptLower);
 
-                query = query.Where(t => 
+                query = query.Where(t =>
                     (t.Department != null && (t.Department.ToLower() == deptLower || t.Department.ToLower().Contains(deptLower) || deptLower.Contains(t.Department.ToLower()))) ||
                     (t.Department == null && deptAppIds.Contains(t.ApplicationId)));
             }
 
-            return await query.OrderByDescending(t => t.CreatedDate).ThenByDescending(t => t.Id).ToListAsync();
+            return query;
         }
 
-        public async Task<List<VerificationTask>> GetVerifiedTasksAsync(string? department = null)
+        private IQueryable<VerificationTask> VerifiedTasks(string? department)
         {
-            var query = _context.VerificationTasks
-                .Include(t => t.Reviews)
-                .Where(t => t.ApplicationId > 0 && 
+            var query = _context.VerificationTasks.AsNoTracking()
+                .Where(t => t.ApplicationId > 0 &&
                            (t.Status == "Approved" || t.Status == "Rejected" || t.Status == "Suspended" || t.Status == "Revised" || t.Reviews.Any()));
 
             if (!string.IsNullOrEmpty(department))
             {
                 var deptLower = department.Trim().ToLower();
+                var currentDeptAppIds = DepartmentApplicationIds(deptLower);
 
-                var currentDeptAppIds = await _context.ApplicationSubmissions
-                    .Where(s => s.CurrentDepartment != null && 
-                                (s.CurrentDepartment.ToLower() == deptLower || 
-                                 s.CurrentDepartment.ToLower().Contains(deptLower) || 
-                                 deptLower.Contains(s.CurrentDepartment.ToLower())))
-                    .Select(s => s.Id)
-                    .ToListAsync();
-
-                query = query.Where(t => 
+                query = query.Where(t =>
                     // 1. Task explicitly belongs to this officer's department
-                    (t.Department != null && (t.Department.ToLower() == deptLower || 
-                                              t.Department.ToLower().Contains(deptLower) || 
+                    (t.Department != null && (t.Department.ToLower() == deptLower ||
+                                              t.Department.ToLower().Contains(deptLower) ||
                                               deptLower.Contains(t.Department.ToLower()))) ||
                     // 2. OR task has no department set, but the submission was for this department
                     (t.Department == null && currentDeptAppIds.Contains(t.ApplicationId)) ||
@@ -325,26 +372,61 @@ namespace Government_Service_Navigator.Backend.Services
                     t.Reviews.Any(r => r.OfficerId.ToLower().Contains(deptLower)));
             }
 
-            return await query.OrderByDescending(t => t.CreatedDate).ThenByDescending(t => t.Id).ToListAsync();
+            return query;
         }
 
-        public async Task<List<VerificationTask>> GetTasksForCitizenAsync(string citizenNic)
-        {
-            var unreviewedTasks = await _context.VerificationTasks
-                .Include(t => t.Reviews)
-                .Where(t => t.CitizenNic == citizenNic && t.Status == "Approved" && !t.Reviews.Any())
-                .ToListAsync();
+        // Submissions currently with the department, as a subquery rather than a list in memory
+        private IQueryable<int> DepartmentApplicationIds(string deptLower) =>
+            _context.ApplicationSubmissions
+                .Where(s => s.CurrentDepartment != null &&
+                           (s.CurrentDepartment.ToLower() == deptLower ||
+                            s.CurrentDepartment.ToLower().Contains(deptLower) ||
+                            deptLower.Contains(s.CurrentDepartment.ToLower())))
+                .Select(s => s.Id);
 
-            if (unreviewedTasks.Any())
+        // Matches the queue search box: an application id ("APP-123" or "123") or part of a NIC
+        private static IQueryable<VerificationTask> ApplySearch(IQueryable<VerificationTask> query, string? search)
+        {
+            if (string.IsNullOrWhiteSpace(search)) return query;
+            var term = search.Trim();
+            var appId = ParseApplicationId(term);
+            var like = $"%{EscapeLike(term)}%";
+            return query.Where(t => (appId != null && t.ApplicationId == appId) ||
+                                    (t.CitizenNic != null && EF.Functions.ILike(t.CitizenNic, like)));
+        }
+
+        private static int? ParseApplicationId(string term)
+        {
+            var digits = term.StartsWith("APP-", StringComparison.OrdinalIgnoreCase) ? term[4..] : term;
+            return int.TryParse(digits, out var id) ? id : null;
+        }
+
+        private static string EscapeLike(string term) =>
+            term.Replace(@"\", @"\\").Replace("%", @"\%").Replace("_", @"\_");
+
+        private static async Task<PagedResult<T>> ToPageAsync<T>(IQueryable<T> ordered, int? page, int pageSize)
+        {
+            if (page == null)
             {
-                foreach (var ut in unreviewedTasks)
-                {
-                    ut.Status = "Pending";
-                }
-                await _context.SaveChangesAsync();
+                var capped = await ordered.Take(Paging.UnpagedLimit).ToListAsync();
+                return new PagedResult<T> { Items = capped, Total = capped.Count, Page = 1, PageSize = Paging.UnpagedLimit };
             }
 
+            var (p, size) = Paging.Normalize(page, pageSize);
+            return new PagedResult<T>
+            {
+                Total = await ordered.CountAsync(),
+                Items = await ordered.Skip((p - 1) * size).Take(size).ToListAsync(),
+                Page = p,
+                PageSize = size
+            };
+        }
+
+        // Read-only: the "Approved without a review" repair runs in DataRepairService.
+        public async Task<List<VerificationTask>> GetTasksForCitizenAsync(string citizenNic)
+        {
             return await _context.VerificationTasks
+                .AsNoTracking()
                 .Where(t => t.CitizenNic == citizenNic)
                 .OrderByDescending(t => t.CreatedDate)
                 .ToListAsync();

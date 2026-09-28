@@ -103,9 +103,21 @@ namespace Government_Service_Navigator.Backend.Controllers
                 .Where(s => appIds.Contains(s.Id))
                 .ToDictionaryAsync(s => s.Id);
 
+            // Metadata only: never pull the file bytes (Content) into a list
             var submissionDocs = await _context.SubmissionDocuments
+                .AsNoTracking()
                 .Where(d => d.ApplicationId != null && appIds.Contains(d.ApplicationId.Value))
                 .OrderByDescending(d => d.UploadedAt)
+                .Select(d => new SubmissionDocument
+                {
+                    Id = d.Id,
+                    ApplicationId = d.ApplicationId,
+                    FieldLabel = d.FieldLabel,
+                    FileName = d.FileName,
+                    ContentType = d.ContentType,
+                    SizeBytes = d.SizeBytes,
+                    UploadedAt = d.UploadedAt
+                })
                 .ToListAsync();
 
             var nics = submissions.Values.Select(s => s.CitizenNic).Where(n => !string.IsNullOrEmpty(n)).Distinct().ToList();
@@ -273,9 +285,21 @@ namespace Government_Service_Navigator.Backend.Controllers
                 .Where(s => appIds.Contains(s.Id))
                 .ToDictionaryAsync(s => s.Id);
 
+            // Metadata only: never pull the file bytes (Content) into a list
             var submissionDocs = await _context.SubmissionDocuments
+                .AsNoTracking()
                 .Where(d => d.ApplicationId != null && appIds.Contains(d.ApplicationId.Value))
                 .OrderByDescending(d => d.UploadedAt)
+                .Select(d => new SubmissionDocument
+                {
+                    Id = d.Id,
+                    ApplicationId = d.ApplicationId,
+                    FieldLabel = d.FieldLabel,
+                    FileName = d.FileName,
+                    ContentType = d.ContentType,
+                    SizeBytes = d.SizeBytes,
+                    UploadedAt = d.UploadedAt
+                })
                 .ToListAsync();
 
             var nics = submissions.Values.Select(s => s.CitizenNic).Where(n => !string.IsNullOrEmpty(n)).Distinct().ToList();
@@ -633,18 +657,20 @@ namespace Government_Service_Navigator.Backend.Controllers
                 }
                 else if (appId > 0)
                 {
-                    var slipDoc = await _context.SubmissionDocuments
+                    var slipDocId = await _context.SubmissionDocuments
                         .Where(d => d.ApplicationId == appId)
                         .OrderByDescending(d => d.UploadedAt)
-                        .FirstOrDefaultAsync(d =>
+                        .Where(d =>
                             d.FieldLabel.Contains("slip", StringComparison.OrdinalIgnoreCase) ||
                             d.FieldLabel.Contains("deposit", StringComparison.OrdinalIgnoreCase) ||
                             d.FieldLabel.Contains("payment", StringComparison.OrdinalIgnoreCase) ||
                             d.FileName.Contains("slip", StringComparison.OrdinalIgnoreCase) ||
-                            d.FileName.Contains("deposit", StringComparison.OrdinalIgnoreCase));
-                    if (slipDoc != null)
+                            d.FileName.Contains("deposit", StringComparison.OrdinalIgnoreCase))
+                        .Select(d => (Guid?)d.Id)
+                        .FirstOrDefaultAsync();
+                    if (slipDocId != null)
                     {
-                        slipUrl = $"/api/verification/documents/{slipDoc.Id}/content";
+                        slipUrl = $"/api/verification/documents/{slipDocId}/content";
                     }
                 }
             }

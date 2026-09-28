@@ -42,6 +42,10 @@ import {
   Calendar,
 } from "@carbon/icons-react";
 import { getDepartmentLabel } from "../constants/departments";
+import { API_BASE_URL, toQuery } from "../utils/api";
+
+// The dashboard shows recent oversight activity; full history lives in Verified Records and Audit Logs
+const RECENT_VERIFICATIONS = 100;
 
 interface StoredOfficerUser {
   fullName?: string;
@@ -122,6 +126,7 @@ export default function DepartmentAdminDashboard() {
   // State
   const [officers, setOfficers] = useState<OfficerSummary[]>([]);
   const [verifications, setVerifications] = useState<VerificationRow[]>([]);
+  const [taskSummary, setTaskSummary] = useState<{ approved: number; rejected: number } | null>(null);
   const [transactions, setTransactions] = useState<PaymentTransactionRow[]>([]);
   const [isLoading, setIsLoading] = useState(true);
   const [searchQuery, setSearchQuery] = useState("");
@@ -240,27 +245,42 @@ export default function DepartmentAdminDashboard() {
           return trimmed;
         };
 
-        // 2. Fetch Tasks (Pending & Verified) and Audit Logs
-        const [verifiedRes, _pendingRes, auditRes] = await Promise.allSettled([
-          fetch("http://localhost:5119/api/verification/tasks/verified", { headers: authHeaders }),
-          fetch("http://localhost:5119/api/verification/tasks/pending", { headers: authHeaders }),
-          fetch("http://localhost:5119/api/verification/audit-logs/all", { headers: authHeaders }),
+        // 2. The most recent verified tasks (not the whole table), plus counts for the stat cards
+        const [verifiedRes, summaryRes] = await Promise.allSettled([
+          fetch(`${API_BASE_URL}/api/verification/tasks/verified${toQuery({ page: 1, pageSize: RECENT_VERIFICATIONS })}`, { headers: authHeaders }),
+          fetch(`${API_BASE_URL}/api/verification/tasks/summary`, { headers: authHeaders }),
         ]);
 
+        if (summaryRes.status === "fulfilled" && summaryRes.value.ok) {
+          const summary = await summaryRes.value.json();
+          if (isMounted) setTaskSummary({ approved: summary.approved, rejected: summary.rejected });
+        }
+
+        // eslint-disable-next-line @typescript-eslint/no-explicit-any
+        let verifiedTasks: any[] = [];
+        if (verifiedRes.status === "fulfilled" && verifiedRes.value.ok) {
+          verifiedTasks = (await verifiedRes.value.json()).items ?? [];
+        }
+
+        // Audit entries for just those applications, newest first, to show who decided each one
         let auditLogs: Array<{
           applicationId: number;
           action: string;
           performedBy: string;
           timestamp: string;
         }> = [];
-        if (auditRes.status === "fulfilled" && auditRes.value.ok) {
-          auditLogs = await auditRes.value.json();
+        if (verifiedTasks.length > 0) {
+          const applicationIds = [...new Set(verifiedTasks.map((t) => t.applicationId))].join(",");
+          const auditRes = await fetch(
+            `${API_BASE_URL}/api/verification/audit-logs/all${toQuery({ applicationIds })}`,
+            { headers: authHeaders },
+          ).catch(() => null);
+          if (auditRes?.ok) auditLogs = await auditRes.json();
         }
 
         const processedList: VerificationRow[] = [];
 
-        if (verifiedRes.status === "fulfilled" && verifiedRes.value.ok) {
-          const verifiedTasks = await verifiedRes.value.json();
+        {
           verifiedTasks.forEach((t: any) => {
             const audit = auditLogs.find((a) => a.applicationId === t.applicationId);
             const decisionMaker = resolveOfficerName(audit?.performedBy, "Verifying Officer");
@@ -480,8 +500,9 @@ export default function DepartmentAdminDashboard() {
   }, [recentActivities, activityFilter]);
 
   // Metrics
-  const approvedCount = verifications.filter((v) => v.status === "Approved").length;
-  const rejectedCount = verifications.filter((v) => v.status === "Rejected").length;
+  // Department-wide totals from the server; the list itself only holds the most recent records
+  const approvedCount = taskSummary?.approved ?? verifications.filter((v) => v.status === "Approved").length;
+  const rejectedCount = taskSummary?.rejected ?? verifications.filter((v) => v.status === "Rejected").length;
   const successTxnCount = transactions.filter((t) => t.status === "Success").length;
   const failedTxnCount = transactions.filter((t) => t.status === "Failed").length;
   const pendingTxnCount = transactions.filter((t) => t.status === "Pending").length;

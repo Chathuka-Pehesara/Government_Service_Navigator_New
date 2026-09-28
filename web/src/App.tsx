@@ -1,39 +1,43 @@
+import { lazy, Suspense } from "react";
 import { BrowserRouter, Routes, Route, Navigate } from "react-router-dom";
-import OfficerLoginPage from "./officer_login";
-import AdminDashboard from "./Admin/admin_dashboard";
-import DepartmentAdminDashboard from "./Admin/department_admin_dashboard";
-import ManageOfficers from "./Admin/manage_officers";
-import OfficerDashboard from "./Officer/officer_dashboard";
-import AuditLogs from "./Admin/audit_logs";
-import SystemSettings from "./Admin/system_settings";
-import AdminInstallmentPlans from "./Admin/admin_installment_plans";
-import AdminAnalytics from "./Admin/admin_analytics";
-import AdminAnomalyReview from "./Admin/admin_anomaly_review";
-import DepartmentManagement from "./Admin/department_management";
-import ApplicationCreate from "./Officer/Application_create/application_create";
+
+// Each page is its own chunk, so the browser only downloads the code for the screen it opens
+// instead of the whole portal on first load.
+const OfficerLoginPage = lazy(() => import("./officer_login"));
+const AdminDashboard = lazy(() => import("./Admin/admin_dashboard"));
+const DepartmentAdminDashboard = lazy(() => import("./Admin/department_admin_dashboard"));
+const ManageOfficers = lazy(() => import("./Admin/manage_officers"));
+const OfficerDashboard = lazy(() => import("./Officer/officer_dashboard"));
+const AuditLogs = lazy(() => import("./Admin/audit_logs"));
+const SystemSettings = lazy(() => import("./Admin/system_settings"));
+const AdminInstallmentPlans = lazy(() => import("./Admin/admin_installment_plans"));
+const AdminAnalytics = lazy(() => import("./Admin/admin_analytics"));
+const AdminAnomalyReview = lazy(() => import("./Admin/admin_anomaly_review"));
+const DepartmentManagement = lazy(() => import("./Admin/department_management"));
+const ApplicationCreate = lazy(() => import("./Officer/Application_create/application_create"));
 
 /*
   Summary: import the necessary components for officer routes
 */
-import VerifiedRecords from "./Officer/verified_record";
-import PendingReviews from "./Officer/pending_reviews";
-import Profile from "./Officer/profile";
-import ApplicationsList from "./Officer/applications";
-import ApplicationPreview from "./Officer/application_preview";
-import VerificationWorkspace from "./Officer/VerificationWorkspace";
-import BulkVerification from "./Officer/BulkVerification";
-import RejectionCodes from "./Officer/RejectionCodes";
-import OfficerAuditLogs from "./Officer/officer_audit_logs";
-import ServiceCatalogManager from "./Admin/Service_Catalog/service_catalog_manager";
-import EligibilityRuleBuilder from "./Admin/Service_Catalog/eligibility_rule_builder";
-import ServiceConfigurationTabs from "./Admin/Service_Catalog/service_configuration_tabs";
-import EligibilitySimulator from "./Admin/Service_Catalog/eligibility_simulator";
-import FinanceDashboard from "./Finance/finance_dashboard";
-import FinanceLedger from "./Finance/finance_ledger";
-import FinanceOnlinePayments from "./Finance/finance_online_payments";
-import FinanceProfile from "./Finance/finance_profile";
-import FinanceRefunds from "./Finance/finance_refunds";
-import ManageCollectionSlots from "./Admin/manage_collection_slots";
+const VerifiedRecords = lazy(() => import("./Officer/verified_record"));
+const PendingReviews = lazy(() => import("./Officer/pending_reviews"));
+const Profile = lazy(() => import("./Officer/profile"));
+const ApplicationsList = lazy(() => import("./Officer/applications"));
+const ApplicationPreview = lazy(() => import("./Officer/application_preview"));
+const VerificationWorkspace = lazy(() => import("./Officer/VerificationWorkspace"));
+const BulkVerification = lazy(() => import("./Officer/BulkVerification"));
+const RejectionCodes = lazy(() => import("./Officer/RejectionCodes"));
+const OfficerAuditLogs = lazy(() => import("./Officer/officer_audit_logs"));
+const ServiceCatalogManager = lazy(() => import("./Admin/Service_Catalog/service_catalog_manager"));
+const EligibilityRuleBuilder = lazy(() => import("./Admin/Service_Catalog/eligibility_rule_builder"));
+const ServiceConfigurationTabs = lazy(() => import("./Admin/Service_Catalog/service_configuration_tabs"));
+const EligibilitySimulator = lazy(() => import("./Admin/Service_Catalog/eligibility_simulator"));
+const FinanceDashboard = lazy(() => import("./Finance/finance_dashboard"));
+const FinanceLedger = lazy(() => import("./Finance/finance_ledger"));
+const FinanceOnlinePayments = lazy(() => import("./Finance/finance_online_payments"));
+const FinanceProfile = lazy(() => import("./Finance/finance_profile"));
+const FinanceRefunds = lazy(() => import("./Finance/finance_refunds"));
+const ManageCollectionSlots = lazy(() => import("./Admin/manage_collection_slots"));
 
 
 
@@ -41,6 +45,7 @@ import ManageCollectionSlots from "./Admin/manage_collection_slots";
 export default function App() {
   return (
     <BrowserRouter>
+      <Suspense fallback={null}>
       <Routes>
         {/* admin routes */}
         <Route path="/" element={<Navigate to="/officer/login" replace />} />
@@ -107,6 +112,7 @@ export default function App() {
         <Route path="/finance/refunds" element={<FinanceRefunds />} />
         <Route path="/finance/profile" element={<FinanceProfile />} />
       </Routes>
+      </Suspense>
     </BrowserRouter>
   );
 }

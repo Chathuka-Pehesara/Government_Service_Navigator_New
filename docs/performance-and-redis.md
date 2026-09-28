@@ -2,7 +2,7 @@
 
 This guide explains why the mobile app and web dashboard load slowly now that the system has **1000+ users every day**, and the step-by-step fix: less polling, database indexes, pagination, push updates with SignalR, and a Redis cache layer. It is written for the current codebase (ASP.NET Core on .NET 10, PostgreSQL on Neon, Flutter mobile, React web).
 
-> **Status:** proposed. Nothing in this guide is implemented yet (checked on 2026-09-29). Each phase is a separate, independently shippable PR. Do them in order: each phase lowers the load before the next one adds infrastructure.
+> **Status:** implemented on 2026-09-29 (all five phases). The sections below explain the reasoning; [section 10](#10-what-was-built) lists exactly what was built, where it differs from the original plan, and what still needs a real-traffic check.
 
 ## The short answer
 
@@ -36,6 +36,7 @@ Phases 1 and 2 need no new infrastructure and fix most of the slowness. Redis (p
 7. [Phase 5 - Neon and HTTP settings](#7-phase-5---neon-and-http-settings)
 8. [Measuring the result](#8-measuring-the-result)
 9. [Troubleshooting](#9-troubleshooting)
+10. [What was built](#10-what-was-built)
 
 ---
 
@@ -286,6 +287,8 @@ Only the download endpoint for a single file should read `Content`. The long-ter
 
 ### 4.7 Rate limiting
 
+> **As built:** the default is 120 requests per minute (one officer dashboard load fires several calls at once), configurable with `RATE_LIMIT_PER_MINUTE`. Hub connections are not counted.
+
 Add the built-in ASP.NET Core rate limiter so an old app build or a buggy client cannot overload the API:
 
 ```csharp
@@ -348,6 +351,8 @@ if (!string.IsNullOrEmpty(hubToken) && path.StartsWithSegments("/hubs"))
 
 ### 5.2 Notify on every write that changes what a citizen sees
 
+> **As built:** instead of calling a helper from each write path, an EF Core interceptor (`Data/Interceptors/CitizenChangeInterceptor.cs`) sees every `SaveChanges` and does the invalidation and push after commit. See [10.3](#103-deviations-from-the-plan).
+
 After the transaction commits, notify the citizen. For example, in `VerificationService.RecordDecisionAsync`:
 
 ```csharp
@@ -389,6 +394,8 @@ await hub.start();
 Stop the connection on sign-out and when the app goes to the background. The 30 s fallback poll from phase 1 covers missed messages.
 
 ### 5.4 Web (officers)
+
+> **As built:** all staff join one `officers` group and receive `queueUpdated`. Department names are matched loosely in this codebase, so exact per-department groups would miss officers. The browser debounces the message and refetches only the page on screen.
 
 The officer queues can use the same pattern with `@microsoft/signalr`, with a group per department (`Groups.AddToGroupAsync(connectionId, $"dept:{department}")`) so a new submission updates that department's queue without polling. On the message, call `queryClient.invalidateQueries({ queryKey: ['tasks'] })` so only the current page of the table is refetched (see 3.5).
 
@@ -702,3 +709,57 @@ Use these as the "done" check for each PR:
 | Officer dashboard still slow after indexes | A list endpoint still returns the whole table, or loads file `Content` | Paginate (4.5) and project without blobs (4.6) |
 | Users get `429 Too Many Requests` | An old app build still polls every 2-4 s | Force an app update, or temporarily raise `PermitLimit` (4.7) |
 | `EXPLAIN` still shows `Seq Scan` | Index missing, or the table is tiny and Postgres chose a scan | Check `\di` in the Neon SQL editor. Small tables scanning is normal |
+| Every request takes about 200-350 ms locally even on a cache hit | `REDIS_URL` points to a hosted Redis far from your machine | Use local Redis (`docker-compose.redis.yml`) or leave `REDIS_URL` empty for development (10.5) |
+| k6 run shows many `429` | All virtual users share one token, so one rate limit bucket | Start the API with `RATE_LIMIT_PER_MINUTE=100000` for the load test |
+
+---
+
+## 10. What was built
+
+### 10.1 By phase
+
+| Phase | Change | Files |
+|---|---|---|
+| 1 | One 30 s fallback poll, only while the app is in the foreground. Screen timers removed. Refund poll 60 s. Timeout 15 s | `mobile/lib/providers/application_providers.dart`, `refund_providers.dart`, `applications_tab.dart`, `verification_detail_screen.dart`, `verification_api_service.dart` |
+| 1 | TanStack Query client, `VITE_API_URL` base, paged helpers | `web/src/main.tsx`, `web/src/utils/queryClient.ts`, `web/src/utils/api.ts`, `web/src/utils/useDebouncedValue.ts` |
+| 1 | Route-level code splitting: first load 1.46 MB down to 286 KB (88 KB gzipped) | `web/src/App.tsx` |
+| 2 | 11 indexes created on startup and mirrored in the model | `backend/src/Program.cs`, `AppDbContext.cs` |
+| 2 | Writes removed from GET endpoints; the repairs run in a background job at startup and every 10 minutes | `Services/DataRepairService.cs`, `VerificationService.cs`, `VerificationController.cs` |
+| 2 | `my-applications` moved to a read-only, projected service with a typed DTO | `Services/CitizenApplicationsService.cs`, `DTOs/Responses/MyApplicationDto.cs` |
+| 2 | Pagination and search for `tasks/pending`, `tasks/verified`, `audit-logs/all`; new `tasks/summary` and `audit-logs/summary` | `VerificationService.cs`, `VerificationController.cs`, `DTOs/Responses/PagedResult.cs` |
+| 2 | Server paging on Verified Records and both Audit Log pages; the department dashboard loads only the newest 100 | `web/src/Officer/verified_record.tsx`, `officer_audit_logs.tsx`, `web/src/Admin/audit_logs.tsx`, `department_admin_dashboard.tsx` |
+| 2 | Payment lists no longer load uploaded file bytes | `Controllers/PaymentsController.cs` |
+| 2 | Rate limiter | `Program.cs` |
+| 3 | SignalR hub, NIC user routing, token from `access_token` | `Hubs/ApplicationHub.cs`, `Hubs/NicUserIdProvider.cs`, `Program.cs` |
+| 3 | Change interceptor: invalidate the cache, then push, after commit | `Data/Interceptors/CitizenChangeInterceptor.cs`, `Services/CitizenChangeNotifier.cs` |
+| 3 | Mobile realtime connection (stops in the background, catches up on resume) | `mobile/lib/providers/realtime_provider.dart`, `mobile/lib/main.dart` |
+| 3 | Web realtime bridge; queue pages refresh live | `web/src/utils/realtime.tsx`, `officer_dashboard.tsx`, `pending_reviews.tsx` |
+| 4 | Optional Redis: HybridCache L2 and SignalR backplane | `Program.cs`, `docker-compose.redis.yml` |
+| 4 | Revocation check off the database (Redis, or a 30 s local cache without Redis) | `Services/TokenRevocationStore.cs`, `AuthService.cs` |
+| 4 | Cached: service catalog (tag `catalog`) and each citizen's applications (tag `citizen:{nic}`) | `ServicesController.cs`, `CitizenApplicationsService.cs`, `Services/CacheKeys.cs` |
+| 5 | Npgsql pool cap and keep-alive, Brotli/gzip compression, k6 script, new env settings | `Program.cs`, `load/my-applications.js`, `backend/src/.env.example` |
+
+### 10.2 API contract for list endpoints
+
+- With `?page=` the response is `{ items, total, page, pageSize, totalPages }`. `pageSize` is capped at 100.
+- Without `?page=` the response is still a plain array (the shape older pages and app builds expect), capped to the newest 200 rows.
+- For tasks, `search` matches an application id (`APP-123` or `123`) or part of a NIC. For audit logs it also matches the action, officer and remarks. `audit-logs/all` also takes `action` (`DELETED`, `APPROVED`, `REJECTED`) and `applicationIds` (comma separated).
+
+### 10.3 Deviations from the plan
+
+- **Interceptor instead of a hand-called helper.** Any `SaveChanges` that touches `VerificationTask`, `ApplicationSubmission`, `Payment`, `InstallmentPlan`, `Installment`, `CitizenNotification` or `RefundRequest` resolves the affected citizens (plan, then payment, then application, then NIC), clears `citizen:{nic}`, then sends `applicationsChanged` (and `refundUpdated` for refunds). Catalog entities clear the `catalog` tag. Inside a transaction it waits for the commit and drops everything on rollback. Raw SQL and `ExecuteUpdate` bypass it.
+- **Message names.** Citizens receive `applicationsChanged` (no payload) and `refundUpdated` (refund ids). Staff receive `queueUpdated`.
+- **Revocation without Redis** uses a 30 s in-process cache of "not revoked" answers. A logout on the same instance applies immediately. This assumes a single API instance when Redis is off.
+- **Department dashboard** keeps its client-side filters but loads only the newest 100 verified tasks, with totals from `tasks/summary`. Its finance transactions are still hard-coded sample data.
+
+### 10.4 Bug fixed on the way
+
+The schema block in `Program.cs` contained a C# comment (`// ---> NEW BOOKING TIME SLOTS TABLE <---`) inside the SQL string. PostgreSQL rejected the whole batch (`42601: syntax error at or near "//"`) on every startup since commit `5e73577`. The column additions, department seeding and orphan-task cleanup after it never ran. It is now a SQL comment (`--`).
+
+### 10.5 Verified, and still to check
+
+Checked against the real database on 2026-09-29: all indexes are created, the paged endpoints and summaries return correct envelopes, and `my-applications` returns the same JSON fields as before. Brotli shrinks that response by about 60%, and a cache hit is served without the database. Citizens and staff connect to the hub over WebSockets, and a bad token is rejected.
+
+Not checked live, because it needs a real write: the push after an officer decision. To confirm it, open an application in the citizen app, approve its task on the web, and the status should change within about a second without pull-to-refresh.
+
+**Local development note:** the `REDIS_URL` in the current `.env` points to a hosted Upstash instance about 180 ms away from a local machine, so every cache read and revocation check pays that round trip. For local work, run `docker compose -f docker-compose.redis.yml up -d` and use `REDIS_URL=localhost:6379`, or leave it empty. In production, keep Redis in the same region as the API.

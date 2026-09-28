@@ -30,7 +30,7 @@ class VerificationApiService {
 
       final response = await http
           .get(Uri.parse('$baseUrl/my-applications'), headers: headers)
-          .timeout(const Duration(seconds: 4));
+          .timeout(const Duration(seconds: 15));
 
       List<dynamic> backendTasks = [];
 

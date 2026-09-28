@@ -11,9 +11,12 @@ namespace Government_Service_Navigator.Backend.Services.Interfaces
         Task<bool> DeleteTaskAsync(int taskId, string officerId, string? reason = null);
         Task<bool> BulkVerifyAsync(BulkVerifyRequest request, string officerId);
         Task<List<AuditLog>> GetAuditLogsAsync(int applicationId);
-        Task<List<AuditLog>> GetAllAuditLogsAsync();
-        Task<List<VerificationTask>> GetPendingTasksAsync(string? department = null);
-        Task<List<VerificationTask>> GetVerifiedTasksAsync(string? department = null);
+        // Newest first; page is null for the capped, unpaged list (Paging.UnpagedLimit rows)
+        Task<PagedResult<AuditLog>> GetAllAuditLogsAsync(AuditLogQuery query, int? page, int pageSize);
+        Task<AuditLogSummaryDto> GetAuditLogSummaryAsync();
+        Task<PagedResult<VerificationTask>> GetPendingTasksAsync(string? department, int? page, int pageSize, string? search = null);
+        Task<PagedResult<VerificationTask>> GetVerifiedTasksAsync(string? department, int? page, int pageSize, string? search = null, string? status = null);
+        Task<TaskSummaryDto> GetTaskSummaryAsync(string? department);
         Task<List<VerificationTask>> GetTasksForCitizenAsync(string citizenNic);
         Task<OfficerStatsDto> GetOfficerStatsAsync(string officerId);
         Task<List<RejectionReason>> GetRejectionReasonsAsync();

@@ -1,4 +1,5 @@
 import 'dart:async';
+import 'package:flutter/widgets.dart';
 import 'package:riverpod_annotation/riverpod_annotation.dart';
 import '../models/verification_models.dart';
 import '../services/notification_api_service.dart';
@@ -10,14 +11,18 @@ part 'application_providers.g.dart';
 
 /// The signed-in citizen's applications. Shared by the home and applications tabs,
 /// so refreshing one (`ref.invalidate(myApplicationsProvider)`) updates both.
-/// Automatically polls in the background so officer decisions reflect in real time.
+/// Officer decisions arrive instantly through the realtime hub (see realtime_provider.dart);
+/// this slow poll is only a fallback for missed messages, and it skips while the app is in
+/// the background. Screens must not add their own timers on top of this one.
 @Riverpod(keepAlive: true)
 Future<List<ApplicationItemModel>> myApplications(Ref ref) async {
   final token = ref.watch(authTokenProvider);
   if (token.isEmpty) return const [];
 
-  final timer = Timer.periodic(const Duration(seconds: 4), (_) {
-    ref.invalidateSelf();
+  final timer = Timer.periodic(const Duration(seconds: 30), (_) {
+    if (WidgetsBinding.instance.lifecycleState == AppLifecycleState.resumed) {
+      ref.invalidateSelf();
+    }
   });
   ref.onDispose(timer.cancel);
 

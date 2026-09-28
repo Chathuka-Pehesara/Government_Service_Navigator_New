@@ -50,18 +50,18 @@ final class MyRefundsProvider
 
 String _$myRefundsHash() => r'92e2dc0265a03edc23abca3155c7f98a5ab4f043';
 
-/// One refund request, polled every 15 seconds while a screen is watching it so the
-/// tracker moves on its own as staff approve and process the refund.
+/// One refund request. Staff decisions arrive through the realtime hub; this slow poll only
+/// covers missed messages and skips while the app is in the background.
 
 @ProviderFor(RefundDetail)
 final refundDetailProvider = RefundDetailFamily._();
 
-/// One refund request, polled every 15 seconds while a screen is watching it so the
-/// tracker moves on its own as staff approve and process the refund.
+/// One refund request. Staff decisions arrive through the realtime hub; this slow poll only
+/// covers missed messages and skips while the app is in the background.
 final class RefundDetailProvider
     extends $AsyncNotifierProvider<RefundDetail, RefundRequest> {
-  /// One refund request, polled every 15 seconds while a screen is watching it so the
-  /// tracker moves on its own as staff approve and process the refund.
+  /// One refund request. Staff decisions arrive through the realtime hub; this slow poll only
+  /// covers missed messages and skips while the app is in the background.
   RefundDetailProvider._({
     required RefundDetailFamily super.from,
     required String super.argument,
@@ -98,10 +98,10 @@ final class RefundDetailProvider
   }
 }
 
-String _$refundDetailHash() => r'5cb5c509b89b2186487a875dcc624d85dedf0a70';
+String _$refundDetailHash() => r'f81492b32a49661f5ee9419fcde3f1f613acb51d';
 
-/// One refund request, polled every 15 seconds while a screen is watching it so the
-/// tracker moves on its own as staff approve and process the refund.
+/// One refund request. Staff decisions arrive through the realtime hub; this slow poll only
+/// covers missed messages and skips while the app is in the background.
 
 final class RefundDetailFamily extends $Family
     with
@@ -121,8 +121,8 @@ final class RefundDetailFamily extends $Family
         isAutoDispose: true,
       );
 
-  /// One refund request, polled every 15 seconds while a screen is watching it so the
-  /// tracker moves on its own as staff approve and process the refund.
+  /// One refund request. Staff decisions arrive through the realtime hub; this slow poll only
+  /// covers missed messages and skips while the app is in the background.
 
   RefundDetailProvider call(String refundId) =>
       RefundDetailProvider._(argument: refundId, from: this);
@@ -131,8 +131,8 @@ final class RefundDetailFamily extends $Family
   String toString() => r'refundDetailProvider';
 }
 
-/// One refund request, polled every 15 seconds while a screen is watching it so the
-/// tracker moves on its own as staff approve and process the refund.
+/// One refund request. Staff decisions arrive through the realtime hub; this slow poll only
+/// covers missed messages and skips while the app is in the background.
 
 abstract class _$RefundDetail extends $AsyncNotifier<RefundRequest> {
   late final _$args = ref.$arg as String;

@@ -1,5 +1,9 @@
 import "@carbon/styles/css/styles.css"; // This fixes the unstyled layout![cite: 5]
-import { useState, useEffect } from "react";
+import { useState } from "react";
+import { keepPreviousData, useQuery } from "@tanstack/react-query";
+import { apiFetch, toQuery, type Paged } from "../utils/api";
+import { queryKeys } from "../utils/queryClient";
+import { useDebouncedValue } from "../utils/useDebouncedValue";
 import CurrentUserBadge from "../components/CurrentUserBadge";
 import {
   getStoredUser,
@@ -86,10 +90,10 @@ function deriveStatus(action: string): string {
 }
 
 export default function AuditLogs() {
-  const [rows, setRows] = useState<AuditLogRow[]>([]);
-  const [isLoading, setIsLoading] = useState(true);
   const [page, setPage] = useState<number>(1);
   const [pageSize, setPageSize] = useState<number>(10);
+  const [searchText, setSearchText] = useState("");
+  const search = useDebouncedValue(searchText.trim());
   const [currentUser] = useState(getStoredUser);
   const isSysAdmin = canManageServices(currentUser);
   const deptSlug = currentUser?.department
@@ -97,45 +101,23 @@ export default function AuditLogs() {
     : null;
   const [overviewHref] = useState(() => getAdminOverviewHref(currentUser));
 
-  useEffect(() => {
-    const fetchAuditLogs = async () => {
-      try {
-        const token = localStorage.getItem("officerToken");
-        const response = await fetch(
-          "http://localhost:5119/api/verification/audit-logs/all",
-          {
-            headers: { Authorization: `Bearer ${token}` },
-          },
-        );
-        if (response.ok) {
-          const data: {
-            id: number;
-            applicationId: number;
-            action: string;
-            performedBy: string;
-            timestamp: string;
-          }[] = await response.json();
-          setRows(
-            data.map((log) => ({
-              id: log.id.toString(),
-              time: new Date(log.timestamp).toLocaleString(),
-              officer: log.performedBy || "Unknown",
-              action: log.action,
-              target: `APP-${log.applicationId}`,
-              status: deriveStatus(log.action),
-            })),
-          );
-        } else {
-          console.error("Failed to fetch audit logs");
-        }
-      } catch (error) {
-        console.error("Error fetching audit logs:", error);
-      } finally {
-        setIsLoading(false);
-      }
-    };
-    fetchAuditLogs();
-  }, []);
+  // Only the page on screen is downloaded; the audit table grows with every action
+  const { data: logsPage, isLoading } = useQuery({
+    queryKey: [...queryKeys.auditLogs, { page, pageSize, search }],
+    queryFn: () =>
+      apiFetch<Paged<{ id: number; applicationId: number; action: string; performedBy: string; timestamp: string }>>(
+        `/api/verification/audit-logs/all${toQuery({ page, pageSize, search })}`,
+      ),
+    placeholderData: keepPreviousData,
+  });
+  const rows: AuditLogRow[] = (logsPage?.items ?? []).map((log) => ({
+    id: log.id.toString(),
+    time: new Date(log.timestamp).toLocaleString(),
+    officer: log.performedBy || "Unknown",
+    action: log.action,
+    target: `APP-${log.applicationId}`,
+    status: deriveStatus(log.action),
+  }));
 
   const handleLogout = async () => {
     const token = localStorage.getItem("officerToken");
@@ -320,15 +302,17 @@ export default function AuditLogs() {
                   getTableProps,
                   getHeaderProps,
                   getRowProps,
-                  onInputChange,
                 }) => (
                   <TableContainer>
                     <TableToolbar>
                       <TableToolbarContent>
                         <TableToolbarSearch
-                          onChange={onInputChange}
+                          onChange={(e) => {
+                            setSearchText(typeof e === "string" ? e : e?.target?.value ?? "");
+                            setPage(1);
+                          }}
                           persistent
-                          placeholder="Filter by officer, action, or target..."
+                          placeholder="Search by officer, action, or APP-id..."
                         />
                         <Button
                           kind="ghost"
@@ -365,7 +349,6 @@ export default function AuditLogs() {
                           </TableRow>
                         ) : (
                           rows
-                            .slice((page - 1) * pageSize, page * pageSize)
                             .map((row) => (
                               <TableRow {...getRowProps({ row })} key={row.id}>
                                 {row.cells.map((cell) => {
@@ -417,7 +400,7 @@ export default function AuditLogs() {
                       page={page}
                       pageSize={pageSize}
                       pageSizes={[10, 20, 50]}
-                      totalItems={rows.length}
+                      totalItems={logsPage?.total ?? 0}
                       onChange={({ page, pageSize }) => {
                         if (page) setPage(page);
                         if (pageSize) setPageSize(pageSize);

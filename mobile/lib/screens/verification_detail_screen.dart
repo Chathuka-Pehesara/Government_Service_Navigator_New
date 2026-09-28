@@ -1,4 +1,3 @@
-import 'dart:async';
 import 'package:flutter/cupertino.dart';
 import 'package:flutter/material.dart';
 import '../models/verification_models.dart';
@@ -24,26 +23,12 @@ class VerificationDetailScreen extends ConsumerStatefulWidget {
 }
 
 class _VerificationDetailScreenState extends ConsumerState<VerificationDetailScreen> {
-  Timer? _pollingTimer;
-
   @override
   void initState() {
     super.initState();
     WidgetsBinding.instance.addPostFrameCallback((_) {
       if (mounted) _refresh();
     });
-    // Active polling every 2 seconds while citizen watches this application's progress
-    _pollingTimer = Timer.periodic(const Duration(seconds: 2), (_) {
-      if (mounted) {
-        ref.invalidate(myApplicationsProvider);
-      }
-    });
-  }
-
-  @override
-  void dispose() {
-    _pollingTimer?.cancel();
-    super.dispose();
   }
 
   /// Safe in callbacks; [build] watches the provider so the screen still updates.

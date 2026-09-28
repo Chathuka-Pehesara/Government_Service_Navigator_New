@@ -1,5 +1,9 @@
 import '@carbon/styles/css/styles.css';
-import { useState, useEffect, useCallback } from 'react';
+import { useState } from 'react';
+import { keepPreviousData, useQuery, useQueryClient } from '@tanstack/react-query';
+import { apiFetch, toQuery, type Paged } from '../utils/api';
+import { queryKeys } from '../utils/queryClient';
+import { useDebouncedValue } from '../utils/useDebouncedValue';
 import {
   Header,
   HeaderContainer,
@@ -24,6 +28,7 @@ import {
   TableToolbar,
   TableToolbarContent,
   TableToolbarSearch,
+  Pagination,
   Tag,
   Search,
   Button,
@@ -91,8 +96,38 @@ interface VerifiedRecordRow {
   [key: string]: unknown;
 }
 
+interface TaskSummary {
+  pending: number;
+  approved: number;
+  rejected: number;
+  suspended: number;
+  verified: number;
+}
+
+function toRow(t: TaskData): VerifiedRecordRow {
+  const rawDate = (t.verifiedDate || t.createdDate) as string;
+  const parsedDate = new Date(rawDate);
+  const formattedDate = !isNaN(parsedDate.getTime())
+    ? parsedDate.toLocaleDateString(undefined, { year: 'numeric', month: 'short', day: 'numeric' })
+    : rawDate;
+  const formattedTime = !isNaN(parsedDate.getTime())
+    ? parsedDate.toLocaleTimeString(undefined, { hour: '2-digit', minute: '2-digit' })
+    : '';
+
+  return {
+    id: t.id.toString(),
+    appId: t.referenceNumber ?? `APP-${t.applicationId}`,
+    citizen: t.citizenName || t.citizenNic || 'Unknown citizen',
+    service: t.serviceName ? `${t.serviceName}${t.stageNumber ? ` (Stage ${t.stageNumber})` : ''}` : 'General Service',
+    dateVerified: formattedTime ? `${formattedDate}, ${formattedTime}` : formattedDate,
+    rawDate: rawDate,
+    status: t.status,
+    comments: (t.comments as string) || ''
+  };
+}
+
 export default function VerifiedRecords() {
-  const [rows, setRows] = useState<VerifiedRecordRow[]>([]);
+  const queryClient = useQueryClient();
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   const [editingRecord, setEditingRecord] = useState<any>(null);
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
@@ -100,69 +135,24 @@ export default function VerifiedRecords() {
   const [editStatus, setEditStatus] = useState('Approved');
   const [editComments, setEditComments] = useState('');
   const [isSaving, setIsSaving] = useState(false);
+  const [page, setPage] = useState(1);
+  const [pageSize, setPageSize] = useState(25);
+  const [searchText, setSearchText] = useState('');
+  const search = useDebouncedValue(searchText.trim());
 
-  const fetchVerifiedTasks = useCallback(async () => {
-    const token = localStorage.getItem('officerToken');
-    try {
-      const response = await fetch(`http://localhost:5119/api/Verification/tasks/verified`, {
-        headers: { ...(token ? { Authorization: `Bearer ${token}` } : {}) }
-      });
-      if (response.ok) {
-        const data = await response.json();
+  // One page at a time, newest first; the server scopes it to the officer's department
+  const { data: tasksPage } = useQuery({
+    queryKey: [...queryKeys.tasks, 'verified', { page, pageSize, search }],
+    queryFn: () => apiFetch<Paged<TaskData>>(`/api/verification/tasks/verified${toQuery({ page, pageSize, search })}`),
+    placeholderData: keepPreviousData,
+  });
+  const rows: VerifiedRecordRow[] = (tasksPage?.items ?? []).map(toRow);
 
-        // 1. Department match: strictly show records corresponding to this officer's department
-        const officerUser = JSON.parse(localStorage.getItem('officerUser') || '{}');
-        const officerDept = (officerUser.department || '').trim().toLowerCase();
-
-        const deptFiltered = data.filter((t: TaskData) => {
-          if (!officerDept) return true;
-          const taskDept = ((t.department as string) || (t.currentDepartment as string) || '').trim().toLowerCase();
-          if (!taskDept) return true;
-          return taskDept === officerDept || taskDept.includes(officerDept) || officerDept.includes(taskDept);
-        });
-
-        // 2. Sort order: latest records first (descending by verifiedDate/createdDate, then id)
-        deptFiltered.sort((a: TaskData, b: TaskData) => {
-          const dateA = new Date((a.verifiedDate || a.createdDate) as string).getTime();
-          const dateB = new Date((b.verifiedDate || b.createdDate) as string).getTime();
-          if (dateB !== dateA) return dateB - dateA;
-          return Number(b.id) - Number(a.id);
-        });
-
-        const mappedRows = deptFiltered.map((t: TaskData) => {
-          const rawDate = (t.verifiedDate || t.createdDate) as string;
-          const parsedDate = new Date(rawDate);
-          const formattedDate = !isNaN(parsedDate.getTime())
-            ? parsedDate.toLocaleDateString(undefined, { year: 'numeric', month: 'short', day: 'numeric' })
-            : rawDate;
-          const formattedTime = !isNaN(parsedDate.getTime())
-            ? parsedDate.toLocaleTimeString(undefined, { hour: '2-digit', minute: '2-digit' })
-            : '';
-
-          return {
-            id: t.id.toString(),
-            appId: t.referenceNumber ?? `APP-${t.applicationId}`,
-            citizen: t.citizenName || t.citizenNic || 'Unknown citizen',
-            service: t.serviceName ? `${t.serviceName}${t.stageNumber ? ` (Stage ${t.stageNumber})` : ''}` : 'General Service',
-            dateVerified: formattedTime ? `${formattedDate}, ${formattedTime}` : formattedDate,
-            rawDate: rawDate,
-            status: t.status,
-            comments: (t.comments as string) || ''
-          };
-        });
-        setRows(mappedRows);
-      }
-    } catch (e) {
-      console.error(e);
-    }
-  }, []);
-
-  useEffect(() => {
-    const timer = setTimeout(() => {
-      fetchVerifiedTasks();
-    }, 0);
-    return () => clearTimeout(timer);
-  }, [fetchVerifiedTasks]);
+  // Stat cards come from server-side counts, not from downloading every record
+  const { data: summary } = useQuery({
+    queryKey: [...queryKeys.tasks, 'summary'],
+    queryFn: () => apiFetch<TaskSummary>('/api/verification/tasks/summary'),
+  });
 
   const handleSaveEdit = async () => {
     if (!editingRecord) return;
@@ -181,7 +171,7 @@ export default function VerifiedRecords() {
         })
       });
       if (response.ok) {
-        await fetchVerifiedTasks();
+        await queryClient.invalidateQueries({ queryKey: queryKeys.tasks });
         setEditingRecord(null);
       } else {
         console.error('Failed to update');
@@ -213,7 +203,7 @@ export default function VerifiedRecords() {
     const url = window.URL.createObjectURL(blob);
     const a = document.createElement('a');
     a.setAttribute('href', url);
-    a.setAttribute('download', 'verified_records.csv');
+    a.setAttribute('download', `verified_records_page_${page}.csv`);
     a.click();
   };
   const handleLogout = async () => {
@@ -308,9 +298,9 @@ export default function VerifiedRecords() {
 
             {/* Stat Cards for Historical Context[cite: 6] */}
             {(() => {
-              const totalProcessed = rows.length;
-              const totalApproved = rows.filter(r => r.status === 'Approved').length;
-              const totalRejectedOrSuspended = rows.filter(r => r.status === 'Rejected' || r.status === 'Suspended').length;
+              const totalProcessed = summary?.verified ?? 0;
+              const totalApproved = summary?.approved ?? 0;
+              const totalRejectedOrSuspended = (summary?.rejected ?? 0) + (summary?.suspended ?? 0);
               const approvalRate = totalProcessed > 0 ? Math.round((totalApproved / totalProcessed) * 100) : 100;
               const rejectionRate = totalProcessed > 0 ? Math.round((totalRejectedOrSuspended / totalProcessed) * 100) : 0;
               return (
@@ -351,17 +341,20 @@ export default function VerifiedRecords() {
 
             {/* Data Table for Verified Records[cite: 6] */}
             <DataTable rows={rows} headers={headers}>
-              {({ rows, headers, getTableProps, getHeaderProps, getRowProps, onInputChange }) => (
+              {({ rows, headers, getTableProps, getHeaderProps, getRowProps }) => (
                 <TableContainer 
                   title="Record Archive" 
                   description="Complete history of all decisions made by you."
                 >
                   <TableToolbar>
                     <TableToolbarContent>
-                      <TableToolbarSearch 
-                        onChange={onInputChange} 
-                        persistent 
-                        placeholder="Filter by App ID, Citizen, or Date..." 
+                      <TableToolbarSearch
+                        onChange={(e) => {
+                          setSearchText(typeof e === 'string' ? e : e?.target?.value ?? '');
+                          setPage(1);
+                        }}
+                        persistent
+                        placeholder="Search by App ID or NIC..."
                       />
                       <Button 
                         kind="ghost" 
@@ -455,6 +448,16 @@ export default function VerifiedRecords() {
                     </TableBody>
                   </Table>
                   </div>
+                  <Pagination
+                    page={page}
+                    pageSize={pageSize}
+                    pageSizes={[10, 25, 50, 100]}
+                    totalItems={tasksPage?.total ?? 0}
+                    onChange={({ page: nextPage, pageSize: nextSize }: { page: number; pageSize: number }) => {
+                      setPage(nextPage);
+                      setPageSize(nextSize);
+                    }}
+                  />
                 </TableContainer>
               )}
             </DataTable>
