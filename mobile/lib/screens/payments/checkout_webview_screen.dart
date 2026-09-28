@@ -2,8 +2,9 @@ import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/cupertino.dart';
 import 'package:webview_flutter/webview_flutter.dart';
-// Conditional import for web window.open
-import 'dart:html' as html;
+// dart:html is web-only, so pick the implementation per platform
+import 'web_window_opener_stub.dart'
+    if (dart.library.html) 'web_window_opener_web.dart';
 import '../../theme/app_colors.dart';
 
 class CheckoutWebViewScreen extends StatefulWidget {
@@ -58,7 +59,7 @@ class _CheckoutWebViewScreenState extends State<CheckoutWebViewScreen> {
 
   void _openWebCheckout() {
     try {
-      html.window.open(widget.checkoutUrl, '_blank');
+      openInNewTab(widget.checkoutUrl);
     } catch (_) {}
   }
 
