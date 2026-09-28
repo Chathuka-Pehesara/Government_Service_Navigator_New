@@ -350,7 +350,7 @@ export default function OfficerDashboard() {
               <Loading description="Loading verification queue" withOverlay={false} />
             ) : (
               <DataTable rows={rows} headers={headers}>
-                {({ rows, headers, getTableProps, getHeaderProps, getRowProps }) => (
+                {({ rows: tableRows, headers: tableHeaders, getTableProps, getHeaderProps, getRowProps }) => (
                   <TableContainer
                     title="Active Verification Queue"
                     description="Pending verification tasks waiting for departmental review and timestamping."
@@ -359,7 +359,7 @@ export default function OfficerDashboard() {
                     <Table {...getTableProps()}>
                       <TableHead>
                         <TableRow>
-                          {headers.map((header) => (
+                          {tableHeaders.map((header) => (
                             <TableHeader {...getHeaderProps({ header })} key={header.key}>
                               {header.header}
                             </TableHeader>
@@ -367,14 +367,14 @@ export default function OfficerDashboard() {
                         </TableRow>
                       </TableHead>
                       <TableBody>
-                        {rows.length === 0 ? (
+                        {tableRows.length === 0 ? (
                           <TableRow>
-                            <TableCell colSpan={headers.length} style={{ textAlign: 'center', padding: '2rem' }}>
+                            <TableCell colSpan={tableHeaders.length} style={{ textAlign: 'center', padding: '2rem' }}>
                               No pending applications in the queue.
                             </TableCell>
                           </TableRow>
                         ) : (
-                          rows.map((row) => (
+                          tableRows.map((row) => (
                             <TableRow {...getRowProps({ row })} key={row.id}>
                               {row.cells.map((cell) => {
                                 if (cell.info.header === 'status') {

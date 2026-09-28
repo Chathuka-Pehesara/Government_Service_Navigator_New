@@ -2,6 +2,7 @@ import 'dart:convert';
 import 'dart:io' show Platform;
 import 'package:flutter/foundation.dart';
 import 'package:http/http.dart' as http;
+import '../config/app_config.dart';
 import '../models/verification_models.dart';
 
 class VerificationApiService {
@@ -87,6 +88,9 @@ class VerificationApiService {
       currentDepartment: json['currentDepartment']?.toString(),
       workflowDepartments: workflowDepts,
       serviceProcedureId: (json['serviceProcedureId'] as num?)?.toInt() ?? 0,
+      paymentStatus: json['paymentStatus']?.toString(),
+      isPaymentVerified: json['isPaymentVerified'] == true,
+      isStagePaymentRequired: json['isStagePaymentRequired'] == true,
     );
   }
 
@@ -119,5 +123,38 @@ class VerificationApiService {
     required String documentAttachmentName,
   }) async {
     return false;
+  }
+
+  /// Citizen raises concern or requests customer support when an application review fails or is rejected
+  static Future<Map<String, dynamic>?> raiseConcern(
+    int applicationId, {
+    required String subject,
+    required String message,
+    String? contactPhone,
+    String? token,
+  }) async {
+    try {
+      final headers = <String, String>{
+        'Content-Type': 'application/json',
+        if (token != null && token.isNotEmpty) 'Authorization': 'Bearer $token',
+      };
+      final response = await http.post(
+        Uri.parse('${AppConfig.baseUrl}/applications/$applicationId/raise-concern'),
+        headers: headers,
+        body: jsonEncode({
+          'subject': subject,
+          'message': message,
+          'contactPhone': contactPhone,
+        }),
+      );
+      if (response.statusCode == 200 || response.statusCode == 201) {
+        return jsonDecode(response.body) as Map<String, dynamic>;
+      }
+    } catch (e) {
+      if (kDebugMode) {
+        print('raiseConcern failed: $e');
+      }
+    }
+    return null;
   }
 }

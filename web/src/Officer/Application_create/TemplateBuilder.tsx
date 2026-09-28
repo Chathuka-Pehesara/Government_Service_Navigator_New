@@ -21,20 +21,16 @@ import {
   Tile,
   Loading,
   Pagination,
-  OverflowMenu,
-  OverflowMenuItem,
 } from "@carbon/react";
 import {
   TrashCan,
   UpToTop,
   DownToBottom,
   ArrowLeft,
-  Information,
   Add,
   Edit,
   Catalog,
   Renew,
-  Document,
 } from "@carbon/icons-react";
 import { getStoredUser } from "../../utils/currentUser";
 import { getCategoryForDepartment } from "../../constants/departments";
@@ -622,7 +618,7 @@ export default function TemplateBuilder() {
         );
 
       case 'payment': {
-        let paymentConfig = { feeType: "Statutory Processing Fee", amount: 5000, methods: "Online Card, Manual Bank Deposit Slip" };
+        let paymentConfig = { feeType: "Statutory Stage Processing Fee", amount: 5000, methods: "Online Card, Manual Bank Deposit Slip" };
         if (field.options) {
           try {
             paymentConfig = { ...paymentConfig, ...JSON.parse(field.options) };
@@ -631,41 +627,109 @@ export default function TemplateBuilder() {
           }
         }
         return (
-          <div style={{ margin: '1.25rem 0', border: '2px solid #0043ce', borderRadius: '4px', backgroundColor: '#f0f5ff', padding: '1.25rem' }}>
-            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', borderBottom: '1px solid #d0e2ff', paddingBottom: '0.75rem', marginBottom: '1rem' }}>
-              <div>
-                <span style={{ fontSize: '0.75rem', textTransform: 'uppercase', letterSpacing: '0.5px', color: '#0043ce', fontWeight: 'bold' }}>
-                  Statutory Government Fee
+          <div style={{ margin: '1.5rem 0', border: '2px solid #0043ce', borderRadius: '8px', backgroundColor: '#f0f5ff', overflow: 'hidden', boxShadow: '0 2px 6px rgba(0,67,206,0.08)' }}>
+            {/* Action Card Top Bar */}
+            <div style={{ backgroundColor: '#0043ce', color: '#ffffff', padding: '0.625rem 1rem', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+              <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
+                <span style={{ fontSize: '1rem' }}>💳</span>
+                <span style={{ fontSize: '0.75rem', fontWeight: 700, letterSpacing: '0.5px', textTransform: 'uppercase' }}>
+                  Statutory Stage Payment Action
                 </span>
-                <h4 style={{ margin: '0.25rem 0 0 0', fontWeight: 'bold', fontSize: '1.1rem', color: '#161616' }}>
-                  {field.label || paymentConfig.feeType}
-                </h4>
               </div>
-              <div style={{ textAlign: 'right' }}>
-                <span style={{ fontSize: '0.75rem', color: '#525252' }}>Payable Amount</span>
-                <div style={{ fontSize: '1.25rem', fontWeight: 'bold', color: '#0043ce' }}>
-                  Rs. {Number(paymentConfig.amount).toLocaleString()}
+              <div style={{ display: 'flex', gap: '0.5rem', alignItems: 'center' }}>
+                <span style={{ fontSize: '0.7rem', backgroundColor: 'rgba(255,255,255,0.2)', padding: '2px 8px', borderRadius: '10px', fontWeight: 600 }}>
+                  STAGE {stageOrder} REQUIRED
+                </span>
+                <span style={{ fontSize: '0.7rem', backgroundColor: '#ffffff', color: '#0043ce', padding: '2px 8px', borderRadius: '10px', fontWeight: 700 }}>
+                  {department}
+                </span>
+              </div>
+            </div>
+
+            {/* Action Card Content */}
+            <div style={{ padding: '1.25rem' }}>
+              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', marginBottom: '1rem' }}>
+                <div>
+                  <h4 style={{ margin: 0, fontWeight: 700, fontSize: '1.15rem', color: '#161616' }}>
+                    {field.label || paymentConfig.feeType}
+                  </h4>
+                  <p style={{ margin: '0.25rem 0 0 0', fontSize: '0.8125rem', color: '#525252' }}>
+                    Official statutory fee for <strong>{department}</strong> processing. Payment routes to the Financial Officer for audit clearance.
+                  </p>
+                </div>
+                <div style={{ textAlign: 'right', backgroundColor: '#ffffff', padding: '0.5rem 1rem', borderRadius: '6px', border: '1px solid #d0e2ff' }}>
+                  <div style={{ fontSize: '0.7rem', textTransform: 'uppercase', color: '#525252', fontWeight: 600 }}>Payable Amount</div>
+                  <div style={{ fontSize: '1.35rem', fontWeight: 800, color: '#0043ce' }}>
+                    Rs. {Number(paymentConfig.amount).toLocaleString()}
+                  </div>
                 </div>
               </div>
-            </div>
 
-            <div style={{ fontSize: '0.85rem', color: '#393939', marginBottom: '0.75rem' }}>
-              <strong>Payment Options Accepted:</strong> {paymentConfig.methods}
-            </div>
-
-            <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '0.75rem', backgroundColor: '#fff', padding: '0.75rem', border: '1px solid #d0e2ff', borderRadius: '4px' }}>
-              <div>
-                <span style={{ fontSize: '0.75rem', color: '#666', display: 'block' }}>Option 1: Online Payment</span>
-                <span style={{ fontSize: '0.85rem', fontWeight: 600 }}>{"Credit / Debit Card (Instant Clearance)"}</span>
+              {/* Stage Payment Action Button Preview */}
+              <div style={{ backgroundColor: '#ffffff', padding: '1rem', borderRadius: '6px', border: '1px solid #d0e2ff', marginBottom: '1rem' }}>
+                <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', flexWrap: 'wrap', gap: '0.75rem' }}>
+                  <div style={{ display: 'flex', alignItems: 'center', gap: '0.75rem' }}>
+                    <button
+                      type="button"
+                      disabled
+                      style={{
+                        backgroundColor: '#0043ce',
+                        color: '#ffffff',
+                        border: 'none',
+                        borderRadius: '4px',
+                        padding: '0.625rem 1.25rem',
+                        fontSize: '0.875rem',
+                        fontWeight: 600,
+                        cursor: 'default',
+                        display: 'flex',
+                        alignItems: 'center',
+                        gap: '0.5rem',
+                        boxShadow: '0 2px 4px rgba(0,67,206,0.2)'
+                      }}
+                    >
+                      <span>💳</span> Make Stage Payment
+                    </button>
+                    <span style={{ fontSize: '0.75rem', color: '#525252' }}>
+                      Auto-redirects citizen to Payments Hub with <strong>{department}</strong> and Service pre-selected
+                    </span>
+                  </div>
+                  <span style={{ fontSize: '0.75rem', color: '#0f62fe', fontWeight: 600 }}>
+                    Accepted: {paymentConfig.methods}
+                  </span>
+                </div>
               </div>
-              <div>
-                <span style={{ fontSize: '0.75rem', color: '#666', display: 'block' }}>Option 2: Bank Deposit Slip</span>
-                <span style={{ fontSize: '0.85rem', fontWeight: 600 }}>{"Upload stamped deposit slip and reference number"}</span>
-              </div>
-            </div>
 
-            <div style={{ marginTop: '0.75rem', fontSize: '0.75rem', color: '#525252', fontStyle: 'italic' }}>
-              {"Payments are automatically routed to the Department Finance Officer for statutory ledger auditing."}
+              {/* Dual-Step Workflow Review Preview */}
+              <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '0.75rem', marginBottom: '0.75rem' }}>
+                <div style={{ backgroundColor: '#edf5ff', border: '1px solid #a6c8ff', padding: '0.625rem 0.875rem', borderRadius: '4px' }}>
+                  <div style={{ fontSize: '0.7rem', fontWeight: 700, color: '#0043ce', textTransform: 'uppercase' }}>
+                    Step 1 • Financial Officer
+                  </div>
+                  <div style={{ fontSize: '0.8125rem', fontWeight: 600, color: '#161616', marginTop: '2px' }}>
+                    Payment Verification & Ledger Audit
+                  </div>
+                  <div style={{ fontSize: '0.75rem', color: '#525252', marginTop: '2px' }}>
+                    Clears online Stripe receipt or bank transfer slip
+                  </div>
+                </div>
+
+                <div style={{ backgroundColor: '#fff8f0', border: '1px solid #fed29f', padding: '0.625rem 0.875rem', borderRadius: '4px' }}>
+                  <div style={{ fontSize: '0.7rem', fontWeight: 700, color: '#b24c00', textTransform: 'uppercase' }}>
+                    Step 2 • Verification Officer
+                  </div>
+                  <div style={{ fontSize: '0.8125rem', fontWeight: 600, color: '#161616', marginTop: '2px' }}>
+                    Application Documents Review
+                  </div>
+                  <div style={{ fontSize: '0.75rem', color: '#b24c00', fontWeight: 600, marginTop: '2px' }}>
+                    🔒 Approval locked until Step 1 payment is cleared
+                  </div>
+                </div>
+              </div>
+
+              {/* Policy note */}
+              <div style={{ fontSize: '0.75rem', color: '#525252', fontStyle: 'italic', display: 'flex', alignItems: 'center', gap: '0.35rem' }}>
+                <span>ℹ️</span> The citizen sees real-time dual status in their mobile tracker: <strong>Payment Verifying</strong> and <strong>Application Under Review</strong>.
+              </div>
             </div>
           </div>
         );
@@ -1007,7 +1071,8 @@ export default function TemplateBuilder() {
               </div>
             ) : (
               <>
-                <Table className="template-catalog-table" style={{ width: '100%' }}>
+                <div style={{ width: '100%', overflowX: 'auto' }}>
+                  <Table className="template-catalog-table">
                   <TableHead style={{ backgroundColor: '#e0e0e0' }}>
                     <TableRow style={{ backgroundColor: '#e0e0e0', borderBottom: '2px solid #525252' }}>
                       <TableHeader style={{ backgroundColor: '#e0e0e0', color: '#161616', fontWeight: 700 }}>Form Identifier</TableHeader>
@@ -1126,6 +1191,7 @@ export default function TemplateBuilder() {
                     ))}
                   </TableBody>
                 </Table>
+              </div>
                 <Pagination
                   backwardText="Previous page"
                   forwardText="Next page"

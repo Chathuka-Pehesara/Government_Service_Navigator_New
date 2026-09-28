@@ -1,7 +1,7 @@
 import "@carbon/styles/css/styles.css";
-import React, { useState, useEffect, useCallback } from "react";
+import { useState, useEffect, useCallback } from "react";
 import CurrentUserBadge from "../components/CurrentUserBadge";
-import { getAdminOverviewHref, isSystemAdmin, getStoredUser } from "../utils/currentUser";
+import { getAdminOverviewHref, getStoredUser } from "../utils/currentUser";
 import {
   Header,
   HeaderContainer,
@@ -19,9 +19,6 @@ import {
   TableHeader,
   TableBody,
   TableCell,
-  TableToolbar,
-  TableToolbarContent,
-  TableToolbarSearch,
   Button,
   Tag,
   OverflowMenu,
@@ -221,7 +218,7 @@ export default function DepartmentManagement() {
 
               <HeaderGlobalBar>
                 <CurrentUserBadge />
-                <HeaderGlobalAction aria-label="Notifications" onClick={() => {}}>
+                <HeaderGlobalAction aria-label="Notifications" onClick={() => { }}>
                   <Notification size={20} />
                 </HeaderGlobalAction>
               </HeaderGlobalBar>
@@ -450,165 +447,165 @@ export default function DepartmentManagement() {
                   title="Registered State Departments"
                   description="Authoritative registry of participating government departments in Sri Lanka"
                 >
-                {/* Highly Responsive & Clear Filter Control Bar */}
-                <div
-                  style={{
-                    backgroundColor: "#ffffff",
-                    padding: "1rem 1.25rem",
-                    borderBottom: "1px solid #e0e0e0",
-                    display: "flex",
-                    flexDirection: "column",
-                    gap: "0.875rem",
-                  }}
-                >
-                  {/* Top Row: Search and Status Quick-Filter Pills */}
+                  {/* Highly Responsive & Clear Filter Control Bar */}
                   <div
                     style={{
+                      backgroundColor: "#ffffff",
+                      padding: "1rem 1.25rem",
+                      borderBottom: "1px solid #e0e0e0",
                       display: "flex",
-                      alignItems: "center",
-                      justifyContent: "space-between",
-                      flexWrap: "wrap",
-                      gap: "1rem",
+                      flexDirection: "column",
+                      gap: "0.875rem",
                     }}
                   >
-                    {/* Search Bar with generous responsive width */}
-                    <div style={{ flex: "1 1 280px", maxWidth: "460px" }}>
-                      <Search
-                        size="md"
-                        id="search-departments"
-                        labelText="Search registry"
-                        placeholder="Search by name, ID (DEP-XXX), phone, or email..."
-                        value={searchTerm}
-                        onChange={(e: any) => setSearchTerm(e.target.value)}
-                        onClear={() => setSearchTerm("")}
-                      />
-                    </div>
-
-                    {/* Clear Quick Status Pills */}
-                    <div style={{ display: "flex", alignItems: "center", gap: "0.5rem", flexWrap: "wrap" }}>
-                      <span style={{ fontSize: "0.825rem", fontWeight: 600, color: "#525252", marginRight: "0.25rem" }}>
-                        Status:
-                      </span>
-                      <button
-                        type="button"
-                        onClick={() => setStatusFilter("All")}
-                        style={{
-                          padding: "0.35rem 0.85rem",
-                          borderRadius: "16px",
-                          border: statusFilter === "All" ? "2px solid #0f62fe" : "1px solid #d0d0d0",
-                          backgroundColor: statusFilter === "All" ? "#edf5ff" : "#ffffff",
-                          color: statusFilter === "All" ? "#0043ce" : "#525252",
-                          fontWeight: statusFilter === "All" ? 700 : 500,
-                          fontSize: "0.825rem",
-                          cursor: "pointer",
-                          transition: "all 0.15s ease",
-                        }}
-                      >
-                        All ({totalCount})
-                      </button>
-                      <button
-                        type="button"
-                        onClick={() => setStatusFilter("Active")}
-                        style={{
-                          padding: "0.35rem 0.85rem",
-                          borderRadius: "16px",
-                          border: statusFilter === "Active" ? "2px solid #24a148" : "1px solid #d0d0d0",
-                          backgroundColor: statusFilter === "Active" ? "#defbe6" : "#ffffff",
-                          color: statusFilter === "Active" ? "#0e6027" : "#525252",
-                          fontWeight: statusFilter === "Active" ? 700 : 500,
-                          fontSize: "0.825rem",
-                          cursor: "pointer",
-                          transition: "all 0.15s ease",
-                        }}
-                      >
-                        Active ({activeCount})
-                      </button>
-                      <button
-                        type="button"
-                        onClick={() => setStatusFilter("Inactive")}
-                        style={{
-                          padding: "0.35rem 0.85rem",
-                          borderRadius: "16px",
-                          border: statusFilter === "Inactive" ? "2px solid #da1e28" : "1px solid #d0d0d0",
-                          backgroundColor: statusFilter === "Inactive" ? "#fff1f1" : "#ffffff",
-                          color: statusFilter === "Inactive" ? "#a2191f" : "#525252",
-                          fontWeight: statusFilter === "Inactive" ? 700 : 500,
-                          fontSize: "0.825rem",
-                          cursor: "pointer",
-                          transition: "all 0.15s ease",
-                        }}
-                      >
-                        Inactive ({totalCount - activeCount})
-                      </button>
-                    </div>
-                  </div>
-
-                  {/* Bottom Row: Sector / Category Dropdown with Full Label and Results Summary */}
-                  <div
-                    style={{
-                      display: "flex",
-                      alignItems: "center",
-                      justifyContent: "space-between",
-                      flexWrap: "wrap",
-                      gap: "1rem",
-                      paddingTop: "0.75rem",
-                      borderTop: "1px solid #f0f0f0",
-                    }}
-                  >
-                    <div style={{ display: "flex", alignItems: "center", gap: "0.75rem", flexWrap: "wrap" }}>
-                      <label
-                        htmlFor="filter-category"
-                        style={{ fontSize: "0.825rem", fontWeight: 600, color: "#161616", whiteSpace: "nowrap" }}
-                      >
-                        Sector / Category:
-                      </label>
-                      <div style={{ width: "260px", minWidth: "220px" }}>
-                        <Select
-                          id="filter-category"
-                          labelText=""
-                          hideLabel
+                    {/* Top Row: Search and Status Quick-Filter Pills */}
+                    <div
+                      style={{
+                        display: "flex",
+                        alignItems: "center",
+                        justifyContent: "space-between",
+                        flexWrap: "wrap",
+                        gap: "1rem",
+                      }}
+                    >
+                      {/* Search Bar with generous responsive width */}
+                      <div style={{ flex: "1 1 280px", maxWidth: "460px" }}>
+                        <Search
                           size="md"
-                          value={categoryFilter}
-                          onChange={(e) => setCategoryFilter(e.target.value)}
-                        >
-                          <SelectItem value="All" text="All Sectors & Categories" />
-                          {CATEGORIES.map((cat) => (
-                            <SelectItem key={cat} value={cat} text={cat} />
-                          ))}
-                        </Select>
+                          id="search-departments"
+                          labelText="Search registry"
+                          placeholder="Search by name, ID (DEP-XXX), phone, or email..."
+                          value={searchTerm}
+                          onChange={(e: any) => setSearchTerm(e.target.value)}
+                          onClear={() => setSearchTerm("")}
+                        />
                       </div>
 
-                      {(categoryFilter !== "All" || statusFilter !== "All" || searchTerm.trim()) && (
+                      {/* Clear Quick Status Pills */}
+                      <div style={{ display: "flex", alignItems: "center", gap: "0.5rem", flexWrap: "wrap" }}>
+                        <span style={{ fontSize: "0.825rem", fontWeight: 600, color: "#525252", marginRight: "0.25rem" }}>
+                          Status:
+                        </span>
+                        <button
+                          type="button"
+                          onClick={() => setStatusFilter("All")}
+                          style={{
+                            padding: "0.35rem 0.85rem",
+                            borderRadius: "16px",
+                            border: statusFilter === "All" ? "2px solid #0f62fe" : "1px solid #d0d0d0",
+                            backgroundColor: statusFilter === "All" ? "#edf5ff" : "#ffffff",
+                            color: statusFilter === "All" ? "#0043ce" : "#525252",
+                            fontWeight: statusFilter === "All" ? 700 : 500,
+                            fontSize: "0.825rem",
+                            cursor: "pointer",
+                            transition: "all 0.15s ease",
+                          }}
+                        >
+                          All ({totalCount})
+                        </button>
+                        <button
+                          type="button"
+                          onClick={() => setStatusFilter("Active")}
+                          style={{
+                            padding: "0.35rem 0.85rem",
+                            borderRadius: "16px",
+                            border: statusFilter === "Active" ? "2px solid #24a148" : "1px solid #d0d0d0",
+                            backgroundColor: statusFilter === "Active" ? "#defbe6" : "#ffffff",
+                            color: statusFilter === "Active" ? "#0e6027" : "#525252",
+                            fontWeight: statusFilter === "Active" ? 700 : 500,
+                            fontSize: "0.825rem",
+                            cursor: "pointer",
+                            transition: "all 0.15s ease",
+                          }}
+                        >
+                          Active ({activeCount})
+                        </button>
+                        <button
+                          type="button"
+                          onClick={() => setStatusFilter("Inactive")}
+                          style={{
+                            padding: "0.35rem 0.85rem",
+                            borderRadius: "16px",
+                            border: statusFilter === "Inactive" ? "2px solid #da1e28" : "1px solid #d0d0d0",
+                            backgroundColor: statusFilter === "Inactive" ? "#fff1f1" : "#ffffff",
+                            color: statusFilter === "Inactive" ? "#a2191f" : "#525252",
+                            fontWeight: statusFilter === "Inactive" ? 700 : 500,
+                            fontSize: "0.825rem",
+                            cursor: "pointer",
+                            transition: "all 0.15s ease",
+                          }}
+                        >
+                          Inactive ({totalCount - activeCount})
+                        </button>
+                      </div>
+                    </div>
+
+                    {/* Bottom Row: Sector / Category Dropdown with Full Label and Results Summary */}
+                    <div
+                      style={{
+                        display: "flex",
+                        alignItems: "center",
+                        justifyContent: "space-between",
+                        flexWrap: "wrap",
+                        gap: "1rem",
+                        paddingTop: "0.75rem",
+                        borderTop: "1px solid #f0f0f0",
+                      }}
+                    >
+                      <div style={{ display: "flex", alignItems: "center", gap: "0.75rem", flexWrap: "wrap" }}>
+                        <label
+                          htmlFor="filter-category"
+                          style={{ fontSize: "0.825rem", fontWeight: 600, color: "#161616", whiteSpace: "nowrap" }}
+                        >
+                          Sector / Category:
+                        </label>
+                        <div style={{ width: "260px", minWidth: "220px" }}>
+                          <Select
+                            id="filter-category"
+                            labelText=""
+                            hideLabel
+                            size="md"
+                            value={categoryFilter}
+                            onChange={(e) => setCategoryFilter(e.target.value)}
+                          >
+                            <SelectItem value="All" text="All Sectors & Categories" />
+                            {CATEGORIES.map((cat) => (
+                              <SelectItem key={cat} value={cat} text={cat} />
+                            ))}
+                          </Select>
+                        </div>
+
+                        {(categoryFilter !== "All" || statusFilter !== "All" || searchTerm.trim()) && (
+                          <Button
+                            kind="ghost"
+                            size="sm"
+                            onClick={() => {
+                              setSearchTerm("");
+                              setCategoryFilter("All");
+                              setStatusFilter("All");
+                            }}
+                            style={{ color: "#da1e28", fontWeight: 600 }}
+                          >
+                            Reset Filters
+                          </Button>
+                        )}
+                      </div>
+
+                      <div style={{ display: "flex", alignItems: "center", gap: "0.75rem" }}>
+                        <span style={{ fontSize: "0.825rem", color: "#6f6f6f" }}>
+                          Showing <strong>{filteredDepartments.length}</strong> of <strong>{totalCount}</strong> departments
+                        </span>
                         <Button
                           kind="ghost"
                           size="sm"
-                          onClick={() => {
-                            setSearchTerm("");
-                            setCategoryFilter("All");
-                            setStatusFilter("All");
-                          }}
-                          style={{ color: "#da1e28", fontWeight: 600 }}
-                        >
-                          Reset Filters
-                        </Button>
-                      )}
-                    </div>
-
-                    <div style={{ display: "flex", alignItems: "center", gap: "0.75rem" }}>
-                      <span style={{ fontSize: "0.825rem", color: "#6f6f6f" }}>
-                        Showing <strong>{filteredDepartments.length}</strong> of <strong>{totalCount}</strong> departments
-                      </span>
-                      <Button
-                        kind="ghost"
-                        size="sm"
-                        hasIconOnly
-                        renderIcon={Renew}
-                        iconDescription="Refresh List"
-                        onClick={fetchDepartments}
-                      />
+                          hasIconOnly
+                          renderIcon={Renew}
+                          iconDescription="Refresh List"
+                          onClick={fetchDepartments}
+                        />
+                      </div>
                     </div>
                   </div>
-                </div>
 
                   {isLoading ? (
                     <div style={{ padding: "4rem", display: "flex", justifyContent: "center" }}>
@@ -630,200 +627,200 @@ export default function DepartmentManagement() {
                   ) : (
                     <>
                       <Table>
-                      <TableHead>
-                        <TableRow>
-                          {headers.map((header) => (
-                            <TableHeader key={header.key}>{header.header}</TableHeader>
-                          ))}
-                        </TableRow>
-                      </TableHead>
-                      <TableBody>
-                        {filteredDepartments
-                          .slice((page - 1) * pageSize, page * pageSize)
-                          .map((dept) => (
-                          <TableRow key={dept.id}>
-                            {/* Logo and Name */}
-                            <TableCell>
-                              <div style={{ display: "flex", alignItems: "center", gap: "0.875rem" }}>
-                                <div
-                                  style={{
-                                    width: "44px",
-                                    height: "44px",
-                                    borderRadius: "6px",
-                                    backgroundColor: "#f4f4f4",
-                                    display: "flex",
-                                    alignItems: "center",
-                                    justifyContent: "center",
-                                    overflow: "hidden",
-                                    flexShrink: 0,
-                                    border: "1px solid #e0e0e0",
-                                  }}
-                                >
-                                  {dept.logoUrl ? (
-                                    <img
-                                      src={dept.logoUrl}
-                                      alt={dept.name}
-                                      style={{ width: "100%", height: "100%", objectFit: "cover" }}
-                                      onError={(e) => {
-                                        (e.target as HTMLImageElement).style.display = "none";
-                                      }}
-                                    />
-                                  ) : (
-                                    <div
-                                      style={{ fontWeight: 700, fontSize: "0.95rem", color: "#0f62fe" }}
-                                    >
-                                      {dept.name.substring(0, 2).toUpperCase()}
-                                    </div>
-                                  )}
-                                </div>
-                                <div>
-                                  <div
-                                    style={{ fontWeight: 600, color: "#161616", fontSize: "0.925rem" }}
-                                  >
-                                    {dept.name}
-                                  </div>
-                                  {dept.description && (
+                        <TableHead>
+                          <TableRow>
+                            {headers.map((header) => (
+                              <TableHeader key={header.key}>{header.header}</TableHeader>
+                            ))}
+                          </TableRow>
+                        </TableHead>
+                        <TableBody>
+                          {filteredDepartments
+                            .slice((page - 1) * pageSize, page * pageSize)
+                            .map((dept) => (
+                              <TableRow key={dept.id}>
+                                {/* Logo and Name */}
+                                <TableCell>
+                                  <div style={{ display: "flex", alignItems: "center", gap: "0.875rem" }}>
                                     <div
                                       style={{
-                                        fontSize: "0.78rem",
-                                        color: "#6f6f6f",
-                                        maxWidth: "260px",
+                                        width: "44px",
+                                        height: "44px",
+                                        borderRadius: "6px",
+                                        backgroundColor: "#f4f4f4",
+                                        display: "flex",
+                                        alignItems: "center",
+                                        justifyContent: "center",
                                         overflow: "hidden",
-                                        textOverflow: "ellipsis",
-                                        whiteSpace: "nowrap",
+                                        flexShrink: 0,
+                                        border: "1px solid #e0e0e0",
                                       }}
-                                      title={dept.description}
                                     >
-                                      {dept.description}
+                                      {dept.logoUrl ? (
+                                        <img
+                                          src={dept.logoUrl}
+                                          alt={dept.name}
+                                          style={{ width: "100%", height: "100%", objectFit: "cover" }}
+                                          onError={(e) => {
+                                            (e.target as HTMLImageElement).style.display = "none";
+                                          }}
+                                        />
+                                      ) : (
+                                        <div
+                                          style={{ fontWeight: 700, fontSize: "0.95rem", color: "#0f62fe" }}
+                                        >
+                                          {dept.name.substring(0, 2).toUpperCase()}
+                                        </div>
+                                      )}
                                     </div>
-                                  )}
-                                </div>
-                              </div>
-                            </TableCell>
-
-                            {/* Department ID Code */}
-                            <TableCell>
-                              <Tag type="blue" style={{ fontWeight: 600, letterSpacing: "0.5px" }}>
-                                {dept.departmentCode}
-                              </Tag>
-                            </TableCell>
-
-                            {/* Category */}
-                            <TableCell>
-                              <Tag type="purple">{dept.category || "General"}</Tag>
-                            </TableCell>
-
-                            {/* Contact Info */}
-                            <TableCell>
-                              <div style={{ fontSize: "0.825rem", lineHeight: "1.4" }}>
-                                {dept.contactNumber ? (
-                                  <div
-                                    style={{
-                                      display: "flex",
-                                      alignItems: "center",
-                                      gap: "0.35rem",
-                                      color: "#161616",
-                                    }}
-                                  >
-                                    <Phone size={14} style={{ fill: "#0f62fe" }} />
-                                    <span>{dept.contactNumber}</span>
+                                    <div>
+                                      <div
+                                        style={{ fontWeight: 600, color: "#161616", fontSize: "0.925rem" }}
+                                      >
+                                        {dept.name}
+                                      </div>
+                                      {dept.description && (
+                                        <div
+                                          style={{
+                                            fontSize: "0.78rem",
+                                            color: "#6f6f6f",
+                                            maxWidth: "260px",
+                                            overflow: "hidden",
+                                            textOverflow: "ellipsis",
+                                            whiteSpace: "nowrap",
+                                          }}
+                                          title={dept.description}
+                                        >
+                                          {dept.description}
+                                        </div>
+                                      )}
+                                    </div>
                                   </div>
-                                ) : (
-                                  <span style={{ color: "#a8a8a8" }}>No phone</span>
-                                )}
-                                {dept.email && (
-                                  <div
-                                    style={{
-                                      display: "flex",
-                                      alignItems: "center",
-                                      gap: "0.35rem",
-                                      color: "#525252",
-                                      marginTop: "2px",
-                                    }}
-                                  >
-                                    <Email size={14} style={{ fill: "#8d8d8d" }} />
-                                    <span style={{ fontSize: "0.775rem" }}>{dept.email}</span>
+                                </TableCell>
+
+                                {/* Department ID Code */}
+                                <TableCell>
+                                  <Tag type="blue" style={{ fontWeight: 600, letterSpacing: "0.5px" }}>
+                                    {dept.departmentCode}
+                                  </Tag>
+                                </TableCell>
+
+                                {/* Category */}
+                                <TableCell>
+                                  <Tag type="purple">{dept.category || "General"}</Tag>
+                                </TableCell>
+
+                                {/* Contact Info */}
+                                <TableCell>
+                                  <div style={{ fontSize: "0.825rem", lineHeight: "1.4" }}>
+                                    {dept.contactNumber ? (
+                                      <div
+                                        style={{
+                                          display: "flex",
+                                          alignItems: "center",
+                                          gap: "0.35rem",
+                                          color: "#161616",
+                                        }}
+                                      >
+                                        <Phone size={14} style={{ fill: "#0f62fe" }} />
+                                        <span>{dept.contactNumber}</span>
+                                      </div>
+                                    ) : (
+                                      <span style={{ color: "#a8a8a8" }}>No phone</span>
+                                    )}
+                                    {dept.email && (
+                                      <div
+                                        style={{
+                                          display: "flex",
+                                          alignItems: "center",
+                                          gap: "0.35rem",
+                                          color: "#525252",
+                                          marginTop: "2px",
+                                        }}
+                                      >
+                                        <Email size={14} style={{ fill: "#8d8d8d" }} />
+                                        <span style={{ fontSize: "0.775rem" }}>{dept.email}</span>
+                                      </div>
+                                    )}
                                   </div>
-                                )}
-                              </div>
-                            </TableCell>
+                                </TableCell>
 
-                            {/* Officers */}
-                            <TableCell>
-                              <Tag type="cyan">
-                                {dept.officerCount ?? 0}{" "}
-                                {dept.officerCount === 1 ? "Officer" : "Officers"}
-                              </Tag>
-                            </TableCell>
+                                {/* Officers */}
+                                <TableCell>
+                                  <Tag type="cyan">
+                                    {dept.officerCount ?? 0}{" "}
+                                    {dept.officerCount === 1 ? "Officer" : "Officers"}
+                                  </Tag>
+                                </TableCell>
 
-                            {/* Status */}
-                            <TableCell>
-                              <Tag type={dept.status === "Active" ? "green" : "red"}>
-                                {dept.status}
-                              </Tag>
-                            </TableCell>
+                                {/* Status */}
+                                <TableCell>
+                                  <Tag type={dept.status === "Active" ? "green" : "red"}>
+                                    {dept.status}
+                                  </Tag>
+                                </TableCell>
 
-                            {/* Actions */}
-                            <TableCell>
-                              <div style={{ display: "flex", alignItems: "center", gap: "0.25rem" }}>
-                                <Button
-                                  hasIconOnly
-                                  renderIcon={Information}
-                                  iconDescription="View Details"
-                                  kind="ghost"
-                                  size="sm"
-                                  onClick={() => setViewingDept(dept)}
-                                />
-                                <Button
-                                  hasIconOnly
-                                  renderIcon={Edit}
-                                  iconDescription="Edit Department"
-                                  kind="ghost"
-                                  size="sm"
-                                  onClick={() => setEditingDept(dept)}
-                                />
-                                <OverflowMenu flipped size="sm">
-                                  <OverflowMenuItem
-                                    itemText={
-                                      dept.status === "Active"
-                                        ? "Deactivate Department"
-                                        : "Activate Department"
-                                    }
-                                    onClick={() => handleToggleStatus(dept)}
-                                  />
-                                  {dept.website && (
-                                    <OverflowMenuItem
-                                      itemText="Visit Department Portal"
-                                      onClick={() => window.open(dept.website, "_blank")}
+                                {/* Actions */}
+                                <TableCell>
+                                  <div style={{ display: "flex", alignItems: "center", gap: "0.25rem" }}>
+                                    <Button
+                                      hasIconOnly
+                                      renderIcon={Information}
+                                      iconDescription="View Details"
+                                      kind="ghost"
+                                      size="sm"
+                                      onClick={() => setViewingDept(dept)}
                                     />
-                                  )}
-                                  <OverflowMenuItem
-                                    hasDivider
-                                    isDelete
-                                    itemText="Delete Department"
-                                    onClick={() => setDeletingDept(dept)}
-                                  />
-                                </OverflowMenu>
-                              </div>
-                            </TableCell>
-                          </TableRow>
-                        ))}
-                      </TableBody>
-                    </Table>
-                    <Pagination
-                      backwardText="Previous page"
-                      forwardText="Next page"
-                      itemsPerPageText="Rows per page:"
-                      page={page}
-                      pageSize={pageSize}
-                      pageSizes={[10, 20, 50]}
-                      totalItems={filteredDepartments.length}
-                      onChange={({ page, pageSize }) => {
-                        if (page) setPage(page);
-                        if (pageSize) setPageSize(pageSize);
-                      }}
-                    />
-                  </>
+                                    <Button
+                                      hasIconOnly
+                                      renderIcon={Edit}
+                                      iconDescription="Edit Department"
+                                      kind="ghost"
+                                      size="sm"
+                                      onClick={() => setEditingDept(dept)}
+                                    />
+                                    <OverflowMenu flipped size="sm">
+                                      <OverflowMenuItem
+                                        itemText={
+                                          dept.status === "Active"
+                                            ? "Deactivate Department"
+                                            : "Activate Department"
+                                        }
+                                        onClick={() => handleToggleStatus(dept)}
+                                      />
+                                      {dept.website && (
+                                        <OverflowMenuItem
+                                          itemText="Visit Department Portal"
+                                          onClick={() => window.open(dept.website, "_blank")}
+                                        />
+                                      )}
+                                      <OverflowMenuItem
+                                        hasDivider
+                                        isDelete
+                                        itemText="Delete Department"
+                                        onClick={() => setDeletingDept(dept)}
+                                      />
+                                    </OverflowMenu>
+                                  </div>
+                                </TableCell>
+                              </TableRow>
+                            ))}
+                        </TableBody>
+                      </Table>
+                      <Pagination
+                        backwardText="Previous page"
+                        forwardText="Next page"
+                        itemsPerPageText="Rows per page:"
+                        page={page}
+                        pageSize={pageSize}
+                        pageSizes={[10, 20, 50]}
+                        totalItems={filteredDepartments.length}
+                        onChange={({ page, pageSize }) => {
+                          if (page) setPage(page);
+                          if (pageSize) setPageSize(pageSize);
+                        }}
+                      />
+                    </>
                   )}
                 </TableContainer>
               </div>

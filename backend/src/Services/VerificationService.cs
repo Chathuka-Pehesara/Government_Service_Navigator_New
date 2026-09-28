@@ -275,16 +275,45 @@ namespace Government_Service_Navigator.Backend.Services
 
         public async Task<List<VerificationTask>> GetVerifiedTasksAsync(string? department = null)
         {
+            // Auto-heal tasks where a stage milestone was approved or decision was recorded
+            var approvedAuditAppIds = await _context.AuditLogs
+                .Where(a => a.Action.Contains("Milestone Approved") || a.Action.Contains("Decision: Approved"))
+                .Select(a => a.ApplicationId)
+                .Distinct()
+                .ToListAsync();
+
+            var pendingApprovedTasks = await _context.VerificationTasks
+                .Where(t => t.Status == "Pending" && approvedAuditAppIds.Contains(t.ApplicationId))
+                .ToListAsync();
+
+            if (pendingApprovedTasks.Any())
+            {
+                foreach (var pt in pendingApprovedTasks)
+                {
+                    pt.Status = "Approved";
+                }
+                await _context.SaveChangesAsync();
+            }
+
             var query = _context.VerificationTasks
-                .Where(t => t.ApplicationId > 0 && (t.Status == "Approved" || t.Status == "Rejected"));
+                .Include(t => t.Reviews)
+                .Where(t => t.ApplicationId > 0 && 
+                           (t.Status == "Approved" || t.Status == "Rejected" || t.Status == "Suspended" || t.Status == "Revised" || t.Reviews.Any()));
 
             if (!string.IsNullOrEmpty(department))
             {
-                var deptAppIds = _context.ApplicationSubmissions
-                    .Where(s => s.CurrentDepartment == department)
-                    .Select(s => s.Id);
+                var deptLower = department.Trim().ToLower();
 
-                query = query.Where(t => t.Department == department || (t.Department == null && deptAppIds.Contains(t.ApplicationId)));
+                var deptAppIds = await _context.ApplicationSubmissions
+                    .Where(s => (s.CurrentDepartment != null && s.CurrentDepartment.ToLower().Contains(deptLower)) ||
+                                (s.DepartmentHistoryJson != null && s.DepartmentHistoryJson.ToLower().Contains(deptLower)))
+                    .Select(s => s.Id)
+                    .ToListAsync();
+
+                query = query.Where(t => 
+                    (t.Department != null && (t.Department.ToLower() == deptLower || t.Department.ToLower().Contains(deptLower) || deptLower.Contains(t.Department.ToLower()))) ||
+                    deptAppIds.Contains(t.ApplicationId) ||
+                    t.Reviews.Any(r => r.OfficerId.ToLower().Contains(deptLower)));
             }
 
             return await query.OrderByDescending(t => t.CreatedDate).ToListAsync();
