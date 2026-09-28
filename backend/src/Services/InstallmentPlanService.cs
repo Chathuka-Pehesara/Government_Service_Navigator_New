@@ -208,18 +208,24 @@ namespace Government_Service_Navigator.Backend.Services
         public async Task<string> CreateOnlineCheckoutAsync(int installmentId)
         {
             var installment = await PayableInstallmentAsync(installmentId);
+            var userEmail = await _context.Payments
+                .Where(p => p.Id == installment.InstallmentPlan!.PaymentId)
+                .Select(p => p.UserEmail)
+                .FirstOrDefaultAsync();
 
             var session = await new SessionService().CreateAsync(new SessionCreateOptions
             {
                 PaymentMethodTypes = new List<string> { "card" },
+                // Pre-fills the email field on the Stripe page with the payment owner's email
+                CustomerEmail = System.Net.Mail.MailAddress.TryCreate(userEmail, out var address) && address.Host.Contains('.') ? userEmail : null,
                 LineItems = new List<SessionLineItemOptions>
                 {
                     new SessionLineItemOptions
                     {
                         PriceData = new SessionLineItemPriceDataOptions
                         {
-                            UnitAmount = (long)Math.Round(installment.Amount * 100), // smallest currency unit
-                            Currency = "usd", // same sandbox currency as PaymentService.CreateStripeCheckoutAsync
+                            UnitAmount = (long)Math.Round(installment.Amount * 100), // LKR is two-decimal, so this is cents
+                            Currency = "lkr",
                             ProductData = new SessionLineItemPriceDataProductDataOptions
                             {
                                 Name = $"Installment #{installment.InstallmentNumber} (plan {installment.InstallmentPlanId})"

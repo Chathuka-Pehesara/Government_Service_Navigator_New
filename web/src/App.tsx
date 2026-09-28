@@ -30,6 +30,7 @@ import ServiceConfigurationTabs from "./Admin/Service_Catalog/service_configurat
 import EligibilitySimulator from "./Admin/Service_Catalog/eligibility_simulator";
 import FinanceDashboard from "./Finance/finance_dashboard";
 import FinanceLedger from "./Finance/finance_ledger";
+import FinanceOnlinePayments from "./Finance/finance_online_payments";
 import FinanceProfile from "./Finance/finance_profile";
 import FinanceRefunds from "./Finance/finance_refunds";
 import ManageCollectionSlots from "./Admin/manage_collection_slots";
@@ -101,6 +102,7 @@ export default function App() {
 
         {/* finance officer routes */}
         <Route path="/finance/dashboard" element={<FinanceDashboard />} />
+        <Route path="/finance/online-payments" element={<FinanceOnlinePayments />} />
         <Route path="/finance/ledger" element={<FinanceLedger />} />
         <Route path="/finance/refunds" element={<FinanceRefunds />} />
         <Route path="/finance/profile" element={<FinanceProfile />} />

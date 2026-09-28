@@ -240,6 +240,7 @@ class _PaymentsDashboardTabState extends ConsumerState<PaymentsDashboardTab> {
       // For Online Payment: Open Stripe Checkout in WebView
       if (_selectedMethod == 'Online' && checkoutUrl != null && checkoutUrl.isNotEmpty) {
         setState(() => _isSubmitting = false);
+        if (!mounted) return;
         final webviewSuccess = await Navigator.of(context).push<bool>(
           CupertinoPageRoute(
             builder: (_) => CheckoutWebViewScreen(checkoutUrl: checkoutUrl),
@@ -250,15 +251,28 @@ class _PaymentsDashboardTabState extends ConsumerState<PaymentsDashboardTab> {
 
         if (webviewSuccess == true && paymentId != null) {
           setState(() => _isSubmitting = true);
+          // Stripe is the source of truth: only a confirmed session counts as Paid (this also emails the receipt)
+          String? confirmError;
+          String status = 'Pending';
           try {
-            await paymentService.confirmPayment(paymentId);
-          } catch (_) {}
+            final confirmed = await paymentService.confirmPayment(paymentId);
+            status = confirmed.status ?? 'Pending';
+          } catch (e) {
+            confirmError = e.toString().replaceAll('Exception: ', '');
+          }
           ref.invalidate(myPaymentsProvider);
           ref.invalidate(myApplicationsProvider);
-          if (mounted) {
+          if (!mounted) return;
+          if (status.toLowerCase() == 'paid') {
             setState(() => _isSubmitting = false);
             result['status'] = 'Paid';
             _showSuccessReceiptDialog(result);
+          } else {
+            setState(() {
+              _isSubmitting = false;
+              _errorMessage = confirmError ??
+                  'Stripe has not confirmed this payment yet (status: $status). If you were charged, it will appear under My Payments shortly.';
+            });
           }
         } else if (webviewSuccess == false) {
           setState(() {
@@ -302,6 +316,8 @@ class _PaymentsDashboardTabState extends ConsumerState<PaymentsDashboardTab> {
     final status = result['status']?.toString() ?? (_selectedMethod == 'Online' ? 'Paid' : 'PendingVerification');
     final method = result['method']?.toString() ?? _selectedMethod;
     final nic = result['citizenNic']?.toString() ?? _nicController.text;
+    final paymentId = result['paymentId']?.toString() ?? '-';
+    final receiptEmail = result['userEmail']?.toString() ?? ref.read(sessionProvider).email;
 
     showCupertinoModalPopup(
       context: context,
@@ -378,7 +394,9 @@ class _PaymentsDashboardTabState extends ConsumerState<PaymentsDashboardTab> {
                 ),
                 child: Column(
                   children: [
-                    _buildReceiptRow('Payment Ref', refId, isHighlight: true),
+                    _buildReceiptRow('Payment ID', '#$paymentId', isHighlight: true),
+                    const SizedBox(height: 8),
+                    _buildReceiptRow('Payment Ref', refId),
                     const SizedBox(height: 8),
                     _buildReceiptRow('Department', dept),
                     const SizedBox(height: 8),
@@ -399,6 +417,10 @@ class _PaymentsDashboardTabState extends ConsumerState<PaymentsDashboardTab> {
                       status == 'Paid' ? 'VERIFIED & PAID' : 'PENDING VERIFICATION',
                       valueColor: status == 'Paid' ? AppColors.success : AppColors.warning,
                     ),
+                    if (status == 'Paid' && receiptEmail.isNotEmpty) ...[
+                      const SizedBox(height: 8),
+                      _buildReceiptRow('Receipt Emailed To', receiptEmail),
+                    ],
                   ],
                 ),
               ),

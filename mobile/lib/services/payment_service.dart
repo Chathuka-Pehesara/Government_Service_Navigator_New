@@ -14,6 +14,15 @@ class PaymentService {
         if (_token.isNotEmpty) 'Authorization': 'Bearer $_token',
       };
 
+  /// Prefers the `message` the API sends back over a bare status code.
+  String _errorDetail(http.Response response) {
+    try {
+      final body = jsonDecode(response.body);
+      if (body is Map && body['message'] != null) return body['message'].toString();
+    } catch (_) {}
+    return 'HTTP ${response.statusCode}';
+  }
+
   int _cleanIntId(String rawId) {
     final parsed = int.tryParse(rawId);
     if (parsed != null) return parsed;
@@ -41,7 +50,7 @@ class PaymentService {
       return CheckoutResponse.fromJson(
           jsonDecode(response.body) as Map<String, dynamic>);
     }
-    throw Exception('Checkout failed (${response.statusCode})');
+    throw Exception('Checkout failed: ${_errorDetail(response)}');
   }
 
   /// GET /api/payments/{id}
@@ -69,7 +78,7 @@ class PaymentService {
       return Payment.fromJson(
           jsonDecode(response.body) as Map<String, dynamic>);
     }
-    throw Exception('Failed to confirm payment (${response.statusCode})');
+    throw Exception('Could not confirm payment: ${_errorDetail(response)}');
   }
 
   /// GET /api/payments/mine
@@ -181,7 +190,7 @@ class PaymentService {
     if (response.statusCode == 200 || response.statusCode == 201) {
       return jsonDecode(response.body) as Map<String, dynamic>;
     }
-    throw Exception('Department payment failed (${response.statusCode}): ${response.body}');
+    throw Exception('Department payment failed: ${_errorDetail(response)}');
   }
 }
 

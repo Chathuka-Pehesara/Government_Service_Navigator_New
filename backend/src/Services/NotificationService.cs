@@ -1,5 +1,7 @@
 using System.Net;
 using System.Net.Mail;
+using System.Text;
+using Government_Service_Navigator.Backend.DTOs.Responses;
 using Government_Service_Navigator.Backend.Services.Interfaces;
 
 namespace Government_Service_Navigator.Backend.Services
@@ -70,6 +72,36 @@ namespace Government_Service_Navigator.Backend.Services
                 "Refunded" => $"Your payment #{paymentId} has been refunded.",
                 _ => $"Your payment #{paymentId} status has changed to {status}."
             };
+
+            await SendEmailAsync(toEmail, subject, body);
+        }
+
+        public async Task NotifyOnlinePaymentSuccessAsync(string toEmail, OnlinePaymentReceiptDto receipt)
+        {
+            var subject = $"Payment Successful - Payment #{receipt.PaymentId} ({receipt.Currency} {receipt.Amount:N2})";
+            var stage = receipt.MaxStages > 1
+                ? $"Stage {receipt.StageNumber} of {receipt.MaxStages}"
+                : $"Stage {receipt.StageNumber}";
+
+            var body = new StringBuilder()
+                .AppendLine("Dear Citizen,")
+                .AppendLine()
+                .AppendLine("Your online card payment was successful. Please keep this email as your receipt.")
+                .AppendLine()
+                .AppendLine($"Payment ID:        #{receipt.PaymentId}")
+                .AppendLine($"Stripe Reference:  {(string.IsNullOrEmpty(receipt.StripeReference) ? "-" : receipt.StripeReference)}")
+                .AppendLine($"Application ID:    APP-{receipt.ApplicationId}")
+                .AppendLine($"Service:           {receipt.ServiceName}")
+                .AppendLine($"Service Stage:     {stage}")
+                .AppendLine($"Department:        {(string.IsNullOrEmpty(receipt.Department) ? "-" : receipt.Department)}")
+                .AppendLine($"NIC Number:        {(string.IsNullOrEmpty(receipt.CitizenNic) ? "-" : receipt.CitizenNic)}")
+                .AppendLine($"Amount Paid:       {receipt.Currency} {receipt.Amount:N2}")
+                .AppendLine($"Paid On (UTC):     {receipt.PaidDate:yyyy-MM-dd HH:mm}")
+                .AppendLine()
+                .AppendLine("The department's Finance Officer can now see this payment and your application will continue to the next step.")
+                .AppendLine()
+                .AppendLine("Government Service Navigator")
+                .ToString();
 
             await SendEmailAsync(toEmail, subject, body);
         }

@@ -2279,17 +2279,29 @@ class _StagePaymentModalState extends ConsumerState<_StagePaymentModal> {
 
         if (!mounted) return;
 
-        if (webviewSuccess == true) {
-          if (paymentId != null) {
-            try {
-              await paymentService.confirmPayment(paymentId);
-            } catch (_) {}
+        if (webviewSuccess == true && paymentId != null) {
+          setState(() => _isProcessing = true);
+          // Only a session Stripe reports as paid completes the stage (confirm also emails the receipt)
+          String? confirmError;
+          String status = 'Pending';
+          try {
+            final confirmed = await paymentService.confirmPayment(paymentId);
+            status = confirmed.status ?? 'Pending';
+          } catch (e) {
+            confirmError = e.toString().replaceAll('Exception: ', '');
           }
           ref.invalidate(myPaymentsProvider);
           ref.invalidate(myApplicationsProvider);
-          widget.onPaymentCompleted(paymentRef, 'online');
-          if (mounted) {
+          if (!mounted) return;
+          if (status.toLowerCase() == 'paid') {
+            widget.onPaymentCompleted(paymentRef, 'online');
             Navigator.of(context).pop();
+          } else {
+            setState(() {
+              _isProcessing = false;
+              _errorMessage = confirmError ??
+                  'Stripe has not confirmed this payment yet (status: $status). Please try again in a moment.';
+            });
           }
         } else {
           setState(() {

@@ -5,6 +5,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import '../../providers/payment_providers.dart';
 import '../../providers/service_providers.dart';
 import '../../providers/session_provider.dart';
+import 'checkout_webview_screen.dart';
 import 'payment_confirm_screen.dart';
 
 class CheckoutScreen extends ConsumerStatefulWidget {
@@ -59,12 +60,23 @@ class _CheckoutScreenState extends ConsumerState<CheckoutScreen> {
       );
       if (!mounted) return;
       ref.invalidate(myPaymentsProvider);
-      Navigator.of(context).push(
+      setState(() => _isLoading = false);
+
+      final completed = await Navigator.of(context).push<bool>(
         CupertinoPageRoute(
-          builder: (_) => PaymentConfirmScreen(
-            paymentId: result.paymentId,
-            checkoutUrl: result.checkoutUrl,
-          ),
+          builder: (_) => CheckoutWebViewScreen(checkoutUrl: result.checkoutUrl),
+        ),
+      );
+      if (!mounted) return;
+      if (completed != true) {
+        setState(() => _errorMessage = 'Stripe checkout was not completed. Tap Proceed to Payment to try again.');
+        return;
+      }
+
+      // The confirmation screen asks the API to verify the session with Stripe (which also emails the receipt)
+      Navigator.of(context).pushReplacement(
+        CupertinoPageRoute(
+          builder: (_) => PaymentConfirmScreen(paymentId: result.paymentId),
         ),
       );
     } catch (e) {
@@ -177,13 +189,14 @@ class _CheckoutScreenState extends ConsumerState<CheckoutScreen> {
                 ),
                 const SizedBox(height: 16),
 
-                _buildLabel('Email'),
+                _buildLabel('Receipt Email (your login email)'),
                 const SizedBox(height: 8),
                 _buildField(
                   controller: _emailController,
                   hint: 'your@email.com',
                   icon: CupertinoIcons.mail,
                   keyboardType: TextInputType.emailAddress,
+                  readOnly: true,
                   validator: (v) {
                     if (v == null || v.trim().isEmpty) return 'Required';
                     if (!v.contains('@')) return 'Enter a valid email';
@@ -239,6 +252,7 @@ class _CheckoutScreenState extends ConsumerState<CheckoutScreen> {
     required IconData icon,
     TextInputType keyboardType = TextInputType.text,
     String? Function(String?)? validator,
+    bool readOnly = false,
   }) {
     return Container(
       decoration: BoxDecoration(
@@ -251,6 +265,7 @@ class _CheckoutScreenState extends ConsumerState<CheckoutScreen> {
         child: TextFormField(
           controller: controller,
           keyboardType: keyboardType,
+          readOnly: readOnly,
           style: const TextStyle(fontSize: 16, color: AppColors.dark),
           decoration: InputDecoration(
             hintText: hint,

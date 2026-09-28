@@ -22,6 +22,8 @@ class CheckoutWebViewScreen extends StatefulWidget {
 class _CheckoutWebViewScreenState extends State<CheckoutWebViewScreen> {
   WebViewController? _controller;
   bool _isLoading = true;
+  // The redirect is seen by several navigation callbacks; only close the screen once
+  bool _closed = false;
 
   @override
   void initState() {
@@ -64,17 +66,20 @@ class _CheckoutWebViewScreenState extends State<CheckoutWebViewScreen> {
   }
 
   bool _checkRedirect(String url) {
+    if (_closed) return true;
     final lowerUrl = url.toLowerCase();
     if (lowerUrl.contains('/success') ||
         lowerUrl.contains('success=true') ||
         lowerUrl.contains('status=success') ||
         lowerUrl.contains('checkout/success')) {
+      _closed = true;
       if (mounted) Navigator.of(context).pop(true);
       return true;
     } else if (lowerUrl.contains('/cancel') ||
         lowerUrl.contains('cancel=true') ||
         lowerUrl.contains('status=cancel') ||
         lowerUrl.contains('checkout/cancel')) {
+      _closed = true;
       if (mounted) Navigator.of(context).pop(false);
       return true;
     }
