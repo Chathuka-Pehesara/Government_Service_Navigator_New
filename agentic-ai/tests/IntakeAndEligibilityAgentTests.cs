@@ -151,5 +151,42 @@ namespace Government_Service_Navigator.AgenticAi.Tests
             Assert.Empty(result.MissingDocuments);
             Assert.Equal(100, result.MatchPercentage);
         }
+
+        [Fact]
+        public async Task Eligibility_WithLlmService_ReturnsAiSynthesizedEvaluation()
+        {
+            _retriever.Chunks.Add(PassportChunk);
+            var stubLlm = new StubLlmService
+            {
+                ResponseToReturn = """
+                {
+                    "isEligible": true,
+                    "matchPercentage": 85,
+                    "missingCriteria": [],
+                    "requiredDocuments": ["National Identity Card", "Old Passport", "Birth Certificate"],
+                    "missingDocuments": ["Birth Certificate"],
+                    "reasoning": "The applicant meets age and citizenship requirements. Valid NIC and Old Passport uploaded. Birth Certificate is still required."
+                }
+                """
+            };
+
+            var agent = new EligibilityDocumentAgent(
+                _retriever, 
+                new StubEmbeddingService(), 
+                new CheckEligibilityRulesTool(), 
+                new GetDocumentRequirementsTool(new StubDocumentRepository()),
+                stubLlm);
+
+            var result = await agent.EvaluateEligibilityAsync(new EligibilityPlanRequest(
+                "Passport Renewal & Application",
+                ServiceId: 1,
+                Profile: new CitizenProfile { Age = 28, CitizenshipStatus = "Citizen", ProvidedDocuments = new() { "nic_scan.pdf", "old_passport.pdf" } }));
+
+            Assert.True(result.IsEligible);
+            Assert.Equal(85, result.MatchPercentage);
+            Assert.Empty(result.MissingCriteria);
+            Assert.Contains("Birth Certificate", result.MissingDocuments);
+            Assert.Contains("meets age and citizenship requirements", result.Reasoning);
+        }
     }
 }

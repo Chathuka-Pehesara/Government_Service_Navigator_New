@@ -5,6 +5,7 @@ using System.Text.Json;
 using System.Threading;
 using System.Threading.Tasks;
 using AgenticAi.Agents.IntakePlanningAgent;
+using AgenticAi.Services;
 using Government_Service_Navigator.AgenticAi.Agents.ActionToolAgent.DTOs;
 using Government_Service_Navigator.AgenticAi.Agents.ActionToolAgent.Retrieval;
 using Government_Service_Navigator.AgenticAi.Schemas;
@@ -16,10 +17,10 @@ using Pgvector;
 namespace Government_Service_Navigator.AgenticAi.Agents.ActionToolAgent;
 
 /// <summary>
-/// Agent 3 — turns an eligibility result into a draft application object.
-/// Fee, appointment slot and form values come from deterministic, allow-listed tools;
-/// the vector DB supplies the official fee / form / appointment context for the Verifying Officer.
-/// No external LLM is called.
+/// Agent 3 (Action & Application Tool Agent) — executes deterministic tools
+/// (prefill application, calculate fee, find appointment slot) and synthesizes
+/// official regulatory context using Groq Cloud AI LLM to produce verified draft
+/// applications, administrative reasoning, and notes for the verifying officer.
 /// </summary>
 public class ActionToolAgent : IActionToolAgent
 {
@@ -28,19 +29,22 @@ public class ActionToolAgent : IActionToolAgent
     private readonly ICalculateFeeTool _feeTool;
     private readonly IFindAppointmentSlotTool _slotTool;
     private readonly IPrefillApplicationTool _prefillTool;
+    private readonly ILlmService? _llmService;
 
     public ActionToolAgent(
         IActionVectorRetriever retriever,
         IEmbeddingService embeddingService,
         ICalculateFeeTool feeTool,
         IFindAppointmentSlotTool slotTool,
-        IPrefillApplicationTool prefillTool)
+        IPrefillApplicationTool prefillTool,
+        ILlmService? llmService = null)
     {
         _retriever = retriever;
         _embeddingService = embeddingService;
         _feeTool = feeTool;
         _slotTool = slotTool;
         _prefillTool = prefillTool;
+        _llmService = llmService;
     }
 
     public async Task<ActionDraftResponse> PrepareDraftAsync(
@@ -119,6 +123,20 @@ public class ActionToolAgent : IActionToolAgent
         if (eligibility.MissingDocuments.Count > 0)
             notes.Add($"Documents still outstanding per Agent 2: {string.Join(", ", eligibility.MissingDocuments)}.");
 
+        // Cognitive synthesis via Groq Cloud AI LLM
+        if (_llmService != null && _llmService.IsConfigured)
+        {
+            var (aiReasoning, aiNotes) = await TrySynthesizeWithAiAsync(request, fee, slot, prefill, retrievedSnippets, cancellationToken);
+            if (!string.IsNullOrWhiteSpace(aiReasoning))
+            {
+                reasoning = aiReasoning;
+            }
+            if (aiNotes != null && aiNotes.Count > 0)
+            {
+                notes.AddRange(aiNotes);
+            }
+        }
+
         // 5. Assemble the draft application (schema shared with Agent 4)
         var draft = new DraftApplication
         {
@@ -150,6 +168,77 @@ public class ActionToolAgent : IActionToolAgent
             Reasoning: reasoning,
             ToolCalls: toolCalls,
             RetrievedContextSnippets: retrievedSnippets);
+    }
+
+    private async Task<(string? reasoning, List<string>? notes)> TrySynthesizeWithAiAsync(
+        ActionDraftRequest request,
+        FeeCalculationResult fee,
+        AppointmentSlotResult slot,
+        PrefillResult prefill,
+        List<string> retrievedSnippets,
+        CancellationToken cancellationToken)
+    {
+        try
+        {
+            const string systemPrompt = 
+                "You are Agent 3 (Action & Application Tool Agent) of the Sri Lanka Government Service Navigator platform.\n" +
+                "Your objective is to review the execution results of deterministic tool calls (application form prefilling, fee calculation, and appointment scheduling) along with official statutory regulations retrieved from the vector knowledge base, and synthesize high-clarity administrative reasoning and operational notes for the verifying officer.\n\n" +
+                "GUIDELINES:\n" +
+                "1. Ground all notes and reasoning strictly on the provided tool results and official regulatory context.\n" +
+                "2. In 'notesForOfficer': provide concise, actionable observations for the processing officer (e.g., biometric capture requirements, original document verification at counter, fee breakdown details, appointment instructions).\n" +
+                "3. In 'reasoning': generate a professional administrative narrative explaining the draft application status, statutory fee basis, appointment time, and any required citizen action items.\n" +
+                "4. Output ONLY a valid JSON object matching this schema:\n" +
+                "{\n" +
+                "  \"notesForOfficer\": [\"string\"],\n" +
+                "  \"reasoning\": \"string\"\n" +
+                "}";
+
+            var userPrompt = 
+                $"SERVICE: {request.ServiceName} (ID: {request.ServiceProcedureId})\n" +
+                $"STAGE: {(request.Stage.HasValue ? $"Stage {request.Stage}" : "Standard Intake")}\n" +
+                $"APPLICANT: {request.Applicant.FullName} (Age: {request.Applicant.Age}, Citizenship: {request.Applicant.CitizenshipStatus})\n\n" +
+                $"TOOL EXECUTION RESULTS:\n" +
+                $"- Fee Calculated: {fee.Currency} {fee.TotalAmount:N2} (Notes: {string.Join("; ", fee.Notes)})\n" +
+                $"- Appointment Slot: {(slot.IsSlotFound ? slot.LocalDisplay : slot.Message)}\n" +
+                $"- Prefilled Form Fields: {string.Join(", ", prefill.FormFields.Keys)}\n" +
+                $"- Unfilled Required Fields: {(prefill.UnfilledRequiredFields.Count > 0 ? string.Join(", ", prefill.UnfilledRequiredFields) : "None")}\n" +
+                $"- Unfilled Optional Fields: {(prefill.UnfilledOptionalFields.Count > 0 ? string.Join(", ", prefill.UnfilledOptionalFields) : "None")}\n" +
+                $"- Provided Documents: {(request.ProvidedDocuments?.Count > 0 ? string.Join(", ", request.ProvidedDocuments) : "None")}\n\n" +
+                $"STATUTORY POLICY CONTEXT (Retrieved from Neon pgvector):\n" +
+                (retrievedSnippets.Count > 0 ? string.Join("\n---\n", retrievedSnippets) : "No specific regulatory context retrieved.") + "\n\n" +
+                "Synthesize the officer notes and administrative reasoning JSON.";
+
+            var jsonResult = await _llmService!.GenerateChatCompletionAsync(
+                systemPrompt,
+                userPrompt,
+                jsonMode: true,
+                cancellationToken: cancellationToken);
+
+            if (string.IsNullOrWhiteSpace(jsonResult))
+            {
+                return (null, null);
+            }
+
+            using var doc = JsonDocument.Parse(jsonResult);
+            var root = doc.RootElement;
+
+            var reasoning = root.TryGetProperty("reasoning", out var reasonElem) ? reasonElem.GetString() : null;
+            var notes = new List<string>();
+            if (root.TryGetProperty("notesForOfficer", out var notesElem) && notesElem.ValueKind == JsonValueKind.Array)
+            {
+                foreach (var item in notesElem.EnumerateArray())
+                {
+                    var n = item.GetString();
+                    if (!string.IsNullOrWhiteSpace(n)) notes.Add(n);
+                }
+            }
+
+            return (reasoning, notes.Count > 0 ? notes : null);
+        }
+        catch
+        {
+            return (null, null);
+        }
     }
 
     private static string DeterministicReasoning(
