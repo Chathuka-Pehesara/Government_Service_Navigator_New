@@ -1,7 +1,8 @@
 import "@carbon/styles/css/styles.css";
 import { useState, useEffect, useCallback } from "react";
+import { Navigate } from "react-router-dom";
 import CurrentUserBadge from "../components/CurrentUserBadge";
-import { getAdminOverviewHref, getStoredUser } from "../utils/currentUser";
+import { getAdminOverviewHref, getStoredUser, isSystemAdmin } from "../utils/currentUser";
 import {
   Header,
   HeaderContainer,
@@ -88,6 +89,12 @@ export default function DepartmentManagement() {
   const [isDeleteSubmitting, setIsDeleteSubmitting] = useState<boolean>(false);
 
   const storedUser = getStoredUser();
+  const sysAdmin = isSystemAdmin(storedUser);
+
+  // Department Management is restricted to System Administrators only.
+  if (storedUser && !sysAdmin) {
+    return <Navigate to={getAdminOverviewHref(storedUser)} replace />;
+  }
 
   // Fetch all departments
   const fetchDepartments = useCallback(async () => {
@@ -113,12 +120,21 @@ export default function DepartmentManagement() {
   const handleToggleStatus = async (dept: Department) => {
     try {
       const newStatus = dept.status === "Active" ? "Inactive" : "Active";
+      if (newStatus === "Active" && !dept.hasRequiredOfficers) {
+        setNotification({
+          type: "error",
+          message: `Cannot activate '${dept.name}'. A department requires at least one Verifying Officer and one Finance Officer assigned before activation (Currently assigned: ${dept.verifyingOfficerCount ?? 0} Verifying, ${dept.financeOfficerCount ?? 0} Finance).`,
+        });
+        return;
+      }
+
       const res = await fetch(`http://localhost:5119/api/departments/${dept.id}/status`, {
         method: "PATCH",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ status: newStatus }),
       });
-      if (!res.ok) throw new Error("Failed to change department status.");
+      const data = await res.json();
+      if (!res.ok) throw new Error(data.message || "Failed to change department status.");
 
       setNotification({
         type: "success",
@@ -747,10 +763,21 @@ export default function DepartmentManagement() {
 
                                 {/* Officers */}
                                 <TableCell>
-                                  <Tag type="cyan">
-                                    {dept.officerCount ?? 0}{" "}
-                                    {dept.officerCount === 1 ? "Officer" : "Officers"}
-                                  </Tag>
+                                  <div style={{ display: "flex", flexDirection: "column", gap: "0.25rem" }}>
+                                    <div style={{ display: "flex", alignItems: "center", gap: "0.25rem", flexWrap: "wrap" }}>
+                                      <Tag type={dept.verifyingOfficerCount ? "teal" : "gray"} size="sm">
+                                        {dept.verifyingOfficerCount ?? 0} Verifying
+                                      </Tag>
+                                      <Tag type={dept.financeOfficerCount ? "purple" : "gray"} size="sm">
+                                        {dept.financeOfficerCount ?? 0} Finance
+                                      </Tag>
+                                    </div>
+                                    {!dept.hasRequiredOfficers && (
+                                      <span style={{ fontSize: "0.68rem", color: "#da1e28", fontWeight: 600 }}>
+                                        ⚠ Needs both roles
+                                      </span>
+                                    )}
+                                  </div>
                                 </TableCell>
 
                                 {/* Status */}

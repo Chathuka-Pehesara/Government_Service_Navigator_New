@@ -279,14 +279,20 @@ namespace Government_Service_Navigator.Backend.Services
 
             if (!string.IsNullOrEmpty(department))
             {
+                var deptLower = department.Trim().ToLower();
                 var deptAppIds = _context.ApplicationSubmissions
-                    .Where(s => s.CurrentDepartment == department)
+                    .Where(s => s.CurrentDepartment != null && 
+                               (s.CurrentDepartment.ToLower() == deptLower || 
+                                s.CurrentDepartment.ToLower().Contains(deptLower) || 
+                                deptLower.Contains(s.CurrentDepartment.ToLower())))
                     .Select(s => s.Id);
 
-                query = query.Where(t => t.Department == department || (t.Department == null && deptAppIds.Contains(t.ApplicationId)));
+                query = query.Where(t => 
+                    (t.Department != null && (t.Department.ToLower() == deptLower || t.Department.ToLower().Contains(deptLower) || deptLower.Contains(t.Department.ToLower()))) ||
+                    (t.Department == null && deptAppIds.Contains(t.ApplicationId)));
             }
 
-            return await query.OrderBy(t => t.CreatedDate).ToListAsync();
+            return await query.OrderByDescending(t => t.CreatedDate).ThenByDescending(t => t.Id).ToListAsync();
         }
 
         public async Task<List<VerificationTask>> GetVerifiedTasksAsync(string? department = null)
@@ -300,19 +306,26 @@ namespace Government_Service_Navigator.Backend.Services
             {
                 var deptLower = department.Trim().ToLower();
 
-                var deptAppIds = await _context.ApplicationSubmissions
-                    .Where(s => (s.CurrentDepartment != null && s.CurrentDepartment.ToLower().Contains(deptLower)) ||
-                                (s.DepartmentHistoryJson != null && s.DepartmentHistoryJson.ToLower().Contains(deptLower)))
+                var currentDeptAppIds = await _context.ApplicationSubmissions
+                    .Where(s => s.CurrentDepartment != null && 
+                                (s.CurrentDepartment.ToLower() == deptLower || 
+                                 s.CurrentDepartment.ToLower().Contains(deptLower) || 
+                                 deptLower.Contains(s.CurrentDepartment.ToLower())))
                     .Select(s => s.Id)
                     .ToListAsync();
 
                 query = query.Where(t => 
-                    (t.Department != null && (t.Department.ToLower() == deptLower || t.Department.ToLower().Contains(deptLower) || deptLower.Contains(t.Department.ToLower()))) ||
-                    deptAppIds.Contains(t.ApplicationId) ||
+                    // 1. Task explicitly belongs to this officer's department
+                    (t.Department != null && (t.Department.ToLower() == deptLower || 
+                                              t.Department.ToLower().Contains(deptLower) || 
+                                              deptLower.Contains(t.Department.ToLower()))) ||
+                    // 2. OR task has no department set, but the submission was for this department
+                    (t.Department == null && currentDeptAppIds.Contains(t.ApplicationId)) ||
+                    // 3. OR an officer of this department reviewed this task
                     t.Reviews.Any(r => r.OfficerId.ToLower().Contains(deptLower)));
             }
 
-            return await query.OrderByDescending(t => t.CreatedDate).ToListAsync();
+            return await query.OrderByDescending(t => t.CreatedDate).ThenByDescending(t => t.Id).ToListAsync();
         }
 
         public async Task<List<VerificationTask>> GetTasksForCitizenAsync(string citizenNic)

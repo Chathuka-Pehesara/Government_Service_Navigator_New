@@ -60,12 +60,16 @@ interface TaskData {
   id: number;
   applicationId: number;
   createdDate: string;
+  verifiedDate?: string;
   status: string;
   comments?: string;
   referenceNumber?: string;
   citizenName?: string | null;
   citizenNic?: string | null;
   serviceName?: string | null;
+  department?: string | null;
+  currentDepartment?: string | null;
+  stageNumber?: number;
   [key: string]: unknown;
 }
 
@@ -80,6 +84,7 @@ interface VerifiedRecordRow {
   citizen: string;
   service: string;
   dateVerified: string;
+  rawDate?: string;
   status: string;
   comments: string;
   cells?: DataCell[];
@@ -104,13 +109,43 @@ export default function VerifiedRecords() {
       });
       if (response.ok) {
         const data = await response.json();
-        const mappedRows = data.map((t: TaskData) => {
+
+        // 1. Department match: strictly show records corresponding to this officer's department
+        const officerUser = JSON.parse(localStorage.getItem('officerUser') || '{}');
+        const officerDept = (officerUser.department || '').trim().toLowerCase();
+
+        const deptFiltered = data.filter((t: TaskData) => {
+          if (!officerDept) return true;
+          const taskDept = ((t.department as string) || (t.currentDepartment as string) || '').trim().toLowerCase();
+          if (!taskDept) return true;
+          return taskDept === officerDept || taskDept.includes(officerDept) || officerDept.includes(taskDept);
+        });
+
+        // 2. Sort order: latest records first (descending by verifiedDate/createdDate, then id)
+        deptFiltered.sort((a: TaskData, b: TaskData) => {
+          const dateA = new Date((a.verifiedDate || a.createdDate) as string).getTime();
+          const dateB = new Date((b.verifiedDate || b.createdDate) as string).getTime();
+          if (dateB !== dateA) return dateB - dateA;
+          return Number(b.id) - Number(a.id);
+        });
+
+        const mappedRows = deptFiltered.map((t: TaskData) => {
+          const rawDate = (t.verifiedDate || t.createdDate) as string;
+          const parsedDate = new Date(rawDate);
+          const formattedDate = !isNaN(parsedDate.getTime())
+            ? parsedDate.toLocaleDateString(undefined, { year: 'numeric', month: 'short', day: 'numeric' })
+            : rawDate;
+          const formattedTime = !isNaN(parsedDate.getTime())
+            ? parsedDate.toLocaleTimeString(undefined, { hour: '2-digit', minute: '2-digit' })
+            : '';
+
           return {
             id: t.id.toString(),
             appId: t.referenceNumber ?? `APP-${t.applicationId}`,
             citizen: t.citizenName || t.citizenNic || 'Unknown citizen',
             service: t.serviceName ? `${t.serviceName}${t.stageNumber ? ` (Stage ${t.stageNumber})` : ''}` : 'General Service',
-            dateVerified: new Date(t.createdDate).toISOString().split('T')[0],
+            dateVerified: formattedTime ? `${formattedDate}, ${formattedTime}` : formattedDate,
+            rawDate: rawDate,
             status: t.status,
             comments: (t.comments as string) || ''
           };
@@ -354,6 +389,20 @@ export default function VerifiedRecords() {
                         <TableRow {...getRowProps({ row })} key={row.id}>
                           {row.cells.map((cell) => {
                             
+                            // Format Date Verified with clock icon and clear typography
+                            if (cell.info.header === 'dateVerified') {
+                              return (
+                                <TableCell key={cell.id}>
+                                  <div style={{ display: 'inline-flex', alignItems: 'center', gap: '0.4rem' }}>
+                                    <Time size={14} style={{ fill: '#0f62fe', flexShrink: 0 }} />
+                                    <span style={{ fontSize: '0.85rem', fontWeight: 500, color: '#161616' }}>
+                                      {cell.value}
+                                    </span>
+                                  </div>
+                                </TableCell>
+                              );
+                            }
+
                             // Format Status with Carbon Tags[cite: 6]
                             if (cell.info.header === 'status') {
                               const s = cell.value;

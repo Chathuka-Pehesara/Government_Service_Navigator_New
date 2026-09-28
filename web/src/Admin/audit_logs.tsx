@@ -212,12 +212,14 @@ export default function AuditLogs() {
                   </>
                 )}
 
-                <SideNavLink
-                  renderIcon={Categories}
-                  href="/admin/departments"
-                >
-                  Department Management
-                </SideNavLink>
+                {isSysAdmin && (
+                  <SideNavLink
+                    renderIcon={Categories}
+                    href="/admin/departments"
+                  >
+                    Department Management
+                  </SideNavLink>
+                )}
 
                 <SideNavLink
                   renderIcon={UserMultiple}

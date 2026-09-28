@@ -11,6 +11,7 @@ using Government_Service_Navigator.Backend.Services;
 using Government_Service_Navigator.Backend.Services.Interfaces;
 using Government_Service_Navigator.AgenticAi.Agents.ValidationSafety;
 using Government_Service_Navigator.AgenticAi.Schemas;
+using Government_Service_Navigator.AgenticAi.Tools.CheckDuplicateApplication;
 
 namespace Government_Service_Navigator.Backend.Controllers
 {
@@ -41,13 +42,15 @@ namespace Government_Service_Navigator.Backend.Controllers
         private readonly IVerificationService _verificationService;
         private readonly ICalculateFeeTool _feeTool;
         private readonly IValidationSafetyAgent _safetyAgent;
+        private readonly IDuplicateCheckTool _duplicateTool;
 
-        public ApplicationsController(AppDbContext context, IVerificationService verificationService, ICalculateFeeTool feeTool, IValidationSafetyAgent safetyAgent)
+        public ApplicationsController(AppDbContext context, IVerificationService verificationService, ICalculateFeeTool feeTool, IValidationSafetyAgent safetyAgent, IDuplicateCheckTool duplicateTool)
         {
             _context = context;
             _verificationService = verificationService;
             _feeTool = feeTool;
             _safetyAgent = safetyAgent;
+            _duplicateTool = duplicateTool;
         }
 
         // Active application template linked to the service, or 404 if the admin hasn't built one.
@@ -354,6 +357,8 @@ namespace Government_Service_Navigator.Backend.Controllers
 
             _context.ApplicationSubmissions.Add(submission);
             await _context.SaveChangesAsync();
+
+            _duplicateTool.RegisterApplication(nic, service.Id, $"APP-2026-{submission.Id}");
 
             foreach (var (label, id) in request.Documents)
             {
@@ -739,6 +744,7 @@ namespace Government_Service_Navigator.Backend.Controllers
             }, User.FindFirstValue(ClaimTypes.NameIdentifier) ?? "Citizen");
 
             await _context.SaveChangesAsync();
+            _duplicateTool.RegisterApplication(nic, submission.ServiceProcedureId, $"APP-2026-{submission.Id}");
 
             // Check if THIS sequential stage has a payment field
             if (stagePaymentField != null && stageAmt > 0)

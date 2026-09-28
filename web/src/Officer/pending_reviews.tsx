@@ -2,7 +2,6 @@ import '@carbon/styles/css/styles.css';
 import { useState, useEffect, useCallback } from 'react';
 import {
   Header,
-  HeaderContainer,
   HeaderName,
   HeaderGlobalBar,
   HeaderGlobalAction,
@@ -72,6 +71,8 @@ interface PendingTaskItem {
   citizenName?: string | null;
   citizenNic?: string | null;
   serviceName?: string | null;
+  department?: string | null;
+  currentDepartment?: string | null;
   [key: string]: unknown;
 }
 
@@ -83,6 +84,40 @@ interface TableRowItem {
   reason: string;
   days: string;
   status: string;
+  rawCreatedDate?: string;
+}
+
+export function formatTimePending(dateStr: string): { display: string; detail: string; tagType: "cool-gray" | "warm-gray" | "red" } {
+  if (!dateStr) return { display: "N/A", detail: "", tagType: "cool-gray" };
+  const created = new Date(dateStr);
+  const now = Date.now();
+  const diffMs = now - created.getTime();
+  
+  if (isNaN(diffMs) || diffMs < 0) {
+    return { display: "Just now", detail: `Submitted: ${created.toLocaleString()}`, tagType: "cool-gray" };
+  }
+
+  const diffMins = Math.floor(diffMs / 60000);
+  const diffHours = Math.floor(diffMs / 3600000);
+  const diffDays = Math.floor(diffMs / 86400000);
+
+  let display: string;
+  let tagType: "cool-gray" | "warm-gray" | "red" = "cool-gray";
+
+  if (diffMins < 1) {
+    display = "< 1 min";
+  } else if (diffMins < 60) {
+    display = `${diffMins} min${diffMins === 1 ? "" : "s"} ago`;
+  } else if (diffHours < 24) {
+    display = `${diffHours} hour${diffHours === 1 ? "" : "s"} ago`;
+    tagType = diffHours >= 12 ? "warm-gray" : "cool-gray";
+  } else {
+    display = `${diffDays} day${diffDays === 1 ? "" : "s"} ago`;
+    tagType = diffDays >= 2 ? "red" : "warm-gray";
+  }
+
+  const detail = `Submitted: ${created.toLocaleString()}`;
+  return { display, detail, tagType };
 }
 
 export default function PendingReviews() {
@@ -141,16 +176,37 @@ export default function PendingReviews() {
       });
       if (response.ok) {
         const data = await response.json();
-        const mappedRows = data.map((t: PendingTaskItem) => {
-          const ageDays = Math.floor((Date.now() - new Date(t.createdDate).getTime()) / (1000 * 3600 * 24));
+
+        // 1. Department match: only show records belonging to this officer's department
+        const officerUser = JSON.parse(localStorage.getItem("officerUser") || "{}");
+        const officerDept = (officerUser.department || "").trim().toLowerCase();
+
+        const deptFiltered = data.filter((t: PendingTaskItem) => {
+          if (!officerDept) return true;
+          const taskDept = ((t.department as string) || (t.currentDepartment as string) || "").trim().toLowerCase();
+          if (!taskDept) return true;
+          return taskDept === officerDept || taskDept.includes(officerDept) || officerDept.includes(taskDept);
+        });
+
+        // 2. Sort order: latest records first (descending by createdDate, then id)
+        deptFiltered.sort((a: PendingTaskItem, b: PendingTaskItem) => {
+          const timeA = new Date(a.createdDate).getTime();
+          const timeB = new Date(b.createdDate).getTime();
+          if (timeB !== timeA) return timeB - timeA;
+          return Number(b.id) - Number(a.id);
+        });
+
+        const mappedRows = deptFiltered.map((t: PendingTaskItem) => {
+          const timeInfo = formatTimePending(t.createdDate);
           return {
             id: t.id.toString(),
             appId: t.referenceNumber ?? `APP-${t.applicationId}`,
             citizen: t.citizenName || t.citizenNic || "Unknown citizen",
             service: t.serviceName || "Unknown service",
             reason: t.status === "Pending" ? "Awaiting Review" : t.status,
-            days: `${ageDays} Days`,
-            status: t.status === "Pending" ? "Action Required" : t.status
+            days: timeInfo.display,
+            status: t.status === "Pending" ? "Action Required" : t.status,
+            rawCreatedDate: t.createdDate,
           };
         });
         setRows(mappedRows);
@@ -186,17 +242,18 @@ export default function PendingReviews() {
     }
   };
 
+  const [isSideNavExpanded, setIsSideNavExpanded] = useState(false);
+  const onClickSideNavExpand = () => setIsSideNavExpanded(prev => !prev);
+
   return (
-    <HeaderContainer
-      render={({ isSideNavExpanded, onClickSideNavExpand }) => (
-        <>
-          <Header aria-label="Registry Portal System">
-            <HeaderMenuButton
-              aria-label={isSideNavExpanded ? "Close menu" : "Open menu"}
-              onClick={onClickSideNavExpand}
-              isActive={isSideNavExpanded}
-              isCollapsible
-            />
+    <>
+      <Header aria-label="Registry Portal System">
+        <HeaderMenuButton
+          aria-label={isSideNavExpanded ? "Close menu" : "Open menu"}
+          onClick={onClickSideNavExpand}
+          isActive={isSideNavExpanded}
+          isCollapsible
+        />
             <HeaderName href="#" prefix="GSN">
               Registry Portal
             </HeaderName>
@@ -333,6 +390,26 @@ export default function PendingReviews() {
                         <TableRow {...getRowProps({ row })} key={row.id}>
                           {row.cells.map((cell) => {
                             
+                            // Format Time Pending with clear badge and timestamp detail
+                            if (cell.info.header === 'days') {
+                              const tableRow = rows.find(r => r.id === row.id);
+                              const timeInfo = formatTimePending(tableRow?.rawCreatedDate || '');
+                              return (
+                                <TableCell key={cell.id}>
+                                  <div title={timeInfo.detail} style={{ display: 'inline-flex', flexDirection: 'column' }}>
+                                    <Tag type={timeInfo.tagType} size="sm">
+                                      {timeInfo.display}
+                                    </Tag>
+                                    {tableRow?.rawCreatedDate && (
+                                      <span style={{ fontSize: '0.72rem', color: '#6f6f6f', marginTop: '2px' }}>
+                                        {new Date(tableRow.rawCreatedDate).toLocaleDateString(undefined, { month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit' })}
+                                      </span>
+                                    )}
+                                  </div>
+                                </TableCell>
+                              );
+                            }
+
                             // Format Status with Carbon Tags based on state severity
                             if (cell.info.header === 'status') {
                               let tagColor: 'blue' | 'purple' | 'red' | 'gray' = 'blue';
@@ -440,8 +517,6 @@ export default function PendingReviews() {
             </Modal>
 
           </main>
-        </>
-      )}
-    />
+    </>
   );
 }

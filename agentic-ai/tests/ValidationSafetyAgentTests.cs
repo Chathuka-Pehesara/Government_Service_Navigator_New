@@ -185,5 +185,35 @@ namespace Government_Service_Navigator.AgenticAi.Tests
             Assert.True(updatedState.ValidationResult!.IsValid);
         }
 
+        [Fact]
+        public async Task SequentialStage_SameApplication_PassesDuplicateCheck()
+        {
+            // Arrange: Application already has an active reference registered from Stage 1
+            string citizenNic = "199423401928";
+            int serviceId = 1;
+            int existingAppId = 8841;
+            _duplicateTool.RegisterApplication(citizenNic, serviceId, $"APP-2026-{existingAppId}");
+
+            // Act: Citizen submits Stage 2 for the same ApplicationId
+            var stage2Draft = new DraftApplication
+            {
+                ApplicationId = existingAppId,
+                ServiceProcedureId = serviceId,
+                ServiceName = "Small Business Registration",
+                CitizenNic = citizenNic,
+                CitizenName = "Kamal Perera",
+                CitizenAge = 32,
+                CitizenIncome = 120000m,
+                CalculatedFee = 1500m,
+                AttachedDocumentNames = new List<string> { "Identity Document.pdf" },
+                Stage = 2
+            };
+
+            var result = await _agent.ValidateAndEnqueueAsync(stage2Draft, new List<string> { "Identity Document" });
+
+            // Assert: Should NOT be blocked by DUP-001
+            Assert.True(result.IsValid);
+            Assert.Empty(result.RejectionReasons);
+        }
     }
 }

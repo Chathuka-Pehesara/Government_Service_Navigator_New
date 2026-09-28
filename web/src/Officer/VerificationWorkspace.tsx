@@ -3,7 +3,6 @@ import { useState, useEffect, useMemo } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
 import {
   Header,
-  HeaderContainer,
   HeaderName,
   HeaderGlobalBar,
   Button,
@@ -18,7 +17,7 @@ import {
   Toggle,
   Modal
 } from "@carbon/react";
-import { Checkmark, Close, Document, ChevronLeft, ArrowRight, Warning, Money, TrashCan, Launch, Edit } from "@carbon/icons-react";
+import { Checkmark, Close, Document, ChevronLeft, ArrowRight, Warning, Money, TrashCan, Launch } from "@carbon/icons-react";
 import AgentDraftPanel from "./AgentDraftPanel";
 import DocumentPreview from "./DocumentPreview";
 import { getAgentDraft, generateAgentDraft, type AgentDraftView } from "./agentDraftApi";
@@ -86,10 +85,6 @@ export default function VerificationWorkspace() {
   const [rejectionReasons, setRejectionReasons] = useState<{id: number, code: string, description: string}[]>([]);
   const [detail, setDetail] = useState<TaskDetail | null>(null);
   const [detailError, setDetailError] = useState("");
-  const [showPaymentModal, setShowPaymentModal] = useState(false);
-  const [editPaymentStatus, setEditPaymentStatus] = useState("Paid");
-  const [paymentNotes, setPaymentNotes] = useState("");
-  const [isUpdatingPayment, setIsUpdatingPayment] = useState(false);
   const [agentDraft, setAgentDraft] = useState<AgentDraftView | null>(null);
   const [agentLoading, setAgentLoading] = useState(true);
   const [agentError, setAgentError] = useState("");
@@ -212,44 +207,6 @@ export default function VerificationWorkspace() {
     });
   };
 
-  const handleSavePaymentStatus = async () => {
-    if (!detail?.payment?.id) return;
-    setIsUpdatingPayment(true);
-    try {
-      const token = localStorage.getItem("officerToken");
-      const res = await fetch(`http://localhost:5119/api/payments/${detail.payment.id}/status`, {
-        method: "PUT",
-        headers: {
-          "Content-Type": "application/json",
-          ...(token ? { Authorization: `Bearer ${token}` } : {})
-        },
-        body: JSON.stringify({
-          status: editPaymentStatus,
-          note: paymentNotes || "Updated from Verification Workspace"
-        })
-      });
-      if (res.ok) {
-        const isCleared = editPaymentStatus === "Paid" || editPaymentStatus === "Verified";
-        setDetail(prev => prev ? {
-          ...prev,
-          payment: prev.payment ? {
-            ...prev.payment,
-            status: editPaymentStatus,
-            isVerified: isCleared
-          } : null
-        } : null);
-        setShowPaymentModal(false);
-      } else {
-        alert("Failed to update payment status.");
-      }
-    } catch (err) {
-      console.error("Failed to update payment status", err);
-      alert("Error updating payment status.");
-    } finally {
-      setIsUpdatingPayment(false);
-    }
-  };
-
   const handleDecision = async (status: string) => {
     if (status === "Approved" && detail?.payment && !detail.payment.isVerified) {
       alert("Cannot complete stage as verified: Statutory payment has not been verified by the Department Finance Officer.");
@@ -340,10 +297,8 @@ export default function VerificationWorkspace() {
   };
 
   return (
-    <HeaderContainer
-      render={() => (
-        <>
-          <Header aria-label="Registry Portal System">
+    <>
+      <Header aria-label="Registry Portal System">
             <HeaderName href="#" prefix="GSN">
               Workspace
             </HeaderName>
@@ -530,20 +485,6 @@ export default function VerificationWorkspace() {
                           View Deposit Slip
                         </Button>
                       )}
-                      {detail.payment.id && (
-                        <Button
-                          size="sm"
-                          kind="ghost"
-                          renderIcon={Edit}
-                          onClick={() => {
-                            setEditPaymentStatus(detail.payment?.isVerified ? "Paid" : (detail.payment?.status || "Paid"));
-                            setPaymentNotes("");
-                            setShowPaymentModal(true);
-                          }}
-                        >
-                          Edit Payment Status
-                        </Button>
-                      )}
                       <Tag
                         type={
                           detail.payment.isVerified
@@ -668,6 +609,7 @@ export default function VerificationWorkspace() {
                          </Select>
 
                         <TextArea 
+                           id="workspace-rejection-comments"
                            labelText="Additional Comments (Visible to Citizen)" 
                            placeholder="Explain exactly what needs to be fixed..."
                            value={comments}
@@ -749,48 +691,8 @@ export default function VerificationWorkspace() {
                 onChange={(e) => setDeleteNotes(e.target.value)}
               />
             </Modal>
-
-            {/* Modal for editing statutory payment status */}
-            <Modal
-              open={showPaymentModal}
-              modalHeading="Update Statutory Payment Status"
-              primaryButtonText={isUpdatingPayment ? "Saving..." : "Save Payment Status"}
-              secondaryButtonText="Cancel"
-              primaryButtonDisabled={isUpdatingPayment}
-              onRequestSubmit={handleSavePaymentStatus}
-              onRequestClose={() => setShowPaymentModal(false)}
-              size="sm"
-            >
-              <div style={{ marginBottom: '1rem' }}>
-                <p style={{ color: '#525252', fontSize: '0.875rem', marginBottom: '1rem' }}>
-                  Update fee status for <strong>Stage {detail?.task.currentStage}</strong> (Amount: LKR {detail?.payment?.amount?.toLocaleString()}).
-                  Saving as "Paid / Verified" will verify the statutory fee and unlock the stage for final approval.
-                </p>
-                <Select
-                  id="workspace-payment-status-select"
-                  labelText="Payment Verification Status"
-                  value={editPaymentStatus}
-                  onChange={(e) => setEditPaymentStatus(e.target.value)}
-                  style={{ marginBottom: '1rem' }}
-                >
-                  <SelectItem value="Paid" text="Paid / Verified (Statutory fee cleared and verified)" />
-                  <SelectItem value="PendingVerification" text="Pending Finance Verification (Slip under review)" />
-                  <SelectItem value="Failed" text="Rejected / Failed (Fee unpaid or invalid slip)" />
-                </Select>
-                <TextArea
-                  id="workspace-payment-notes"
-                  labelText="Verification Notes / Audit Reason"
-                  placeholder="e.g., Deposit receipt confirmed with bank records / audited by officer..."
-                  value={paymentNotes}
-                  onChange={(e) => setPaymentNotes(e.target.value)}
-                  rows={3}
-                />
-              </div>
-            </Modal>
           </main>
-        </>
-      )}
-    />
+    </>
   );
 }
 

@@ -290,12 +290,14 @@ export default function ManageOfficers() {
                   </>
                 )}
 
-                <SideNavLink
-                  renderIcon={Categories}
-                  href="/admin/departments"
-                >
-                  Department Management
-                </SideNavLink>
+                {isSysAdmin && (
+                  <SideNavLink
+                    renderIcon={Categories}
+                    href="/admin/departments"
+                  >
+                    Department Management
+                  </SideNavLink>
+                )}
 
                 <SideNavLink
                   renderIcon={UserMultiple}

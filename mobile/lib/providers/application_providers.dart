@@ -1,3 +1,4 @@
+import 'dart:async';
 import 'package:riverpod_annotation/riverpod_annotation.dart';
 import '../models/verification_models.dart';
 import '../services/notification_api_service.dart';
@@ -9,9 +10,19 @@ part 'application_providers.g.dart';
 
 /// The signed-in citizen's applications. Shared by the home and applications tabs,
 /// so refreshing one (`ref.invalidate(myApplicationsProvider)`) updates both.
+/// Automatically polls in the background so officer decisions reflect in real time.
 @Riverpod(keepAlive: true)
-Future<List<ApplicationItemModel>> myApplications(Ref ref) =>
-    VerificationApiService.fetchApplications(token: ref.watch(authTokenProvider));
+Future<List<ApplicationItemModel>> myApplications(Ref ref) async {
+  final token = ref.watch(authTokenProvider);
+  if (token.isEmpty) return const [];
+
+  final timer = Timer.periodic(const Duration(seconds: 4), (_) {
+    ref.invalidateSelf();
+  });
+  ref.onDispose(timer.cancel);
+
+  return VerificationApiService.fetchApplications(token: token);
+}
 
 @riverpod
 Future<List<AuditLogModel>> auditLogs(Ref ref, int applicationId) =>

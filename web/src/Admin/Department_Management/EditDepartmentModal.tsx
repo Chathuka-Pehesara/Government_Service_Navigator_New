@@ -82,6 +82,13 @@ export default function EditDepartmentModal({
       return;
     }
 
+    if (status === "Active" && !department.hasRequiredOfficers) {
+      setFormError(
+        `Cannot activate department '${name.trim()}': It requires at least one Verifying Officer and one Finance Officer assigned before activation (Currently assigned: ${department.verifyingOfficerCount ?? 0} Verifying, ${department.financeOfficerCount ?? 0} Finance).`
+      );
+      return;
+    }
+
     try {
       setIsSubmitting(true);
       setFormError(null);
@@ -151,16 +158,38 @@ export default function EditDepartmentModal({
             display: "flex",
             alignItems: "center",
             justifyContent: "space-between",
+            flexWrap: "wrap",
+            gap: "0.5rem",
           }}
         >
-          <div>
-            <span style={{ fontSize: "0.75rem", color: "#525252" }}>Department Code: </span>
-            <Tag type="blue" style={{ fontWeight: 600 }}>
-              {department.departmentCode}
-            </Tag>
+          <div style={{ display: "flex", alignItems: "center", gap: "0.75rem", flexWrap: "wrap" }}>
+            <div>
+              <span style={{ fontSize: "0.75rem", color: "#525252" }}>Department Code: </span>
+              <Tag type="blue" style={{ fontWeight: 600 }}>
+                {department.departmentCode}
+              </Tag>
+            </div>
+            <div style={{ display: "flex", alignItems: "center", gap: "0.35rem" }}>
+              <Tag type={department.verifyingOfficerCount ? "teal" : "gray"} size="sm">
+                {department.verifyingOfficerCount ?? 0} Verifying
+              </Tag>
+              <Tag type={department.financeOfficerCount ? "purple" : "gray"} size="sm">
+                {department.financeOfficerCount ?? 0} Finance
+              </Tag>
+            </div>
           </div>
           <Tag type={status === "Active" ? "green" : "red"}>{status}</Tag>
         </div>
+
+        {!department.hasRequiredOfficers && (
+          <InlineNotification
+            kind="warning"
+            title="Activation Requirement Notice"
+            subtitle={`This department currently has ${department.verifyingOfficerCount ?? 0} Verifying Officer(s) and ${department.financeOfficerCount ?? 0} Finance Officer(s). It cannot be activated until at least one officer of each role is assigned.`}
+            lowContrast
+            hideCloseButton
+          />
+        )}
 
         <TextInput
           id="edit-dept-name"
@@ -318,9 +347,22 @@ export default function EditDepartmentModal({
           value={status}
           onChange={(e) => setStatus(e.target.value)}
           disabled={isSubmitting}
+          helperText={
+            !department.hasRequiredOfficers
+              ? "Active status is locked: requires at least 1 Verifying Officer and 1 Finance Officer assigned."
+              : "Set department operational status."
+          }
         >
-          <SelectItem value="Active" text="Active" />
-          <SelectItem value="Inactive" text="Inactive" />
+          <SelectItem
+            value="Active"
+            text={
+              department.hasRequiredOfficers
+                ? "Active (Receiving Applications)"
+                : "Active (Locked - Requires Verifying & Finance Officers)"
+            }
+            disabled={!department.hasRequiredOfficers}
+          />
+          <SelectItem value="Inactive" text="Inactive (Deactivated)" />
         </Select>
       </Stack>
     </Modal>
