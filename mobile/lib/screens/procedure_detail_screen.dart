@@ -9,7 +9,7 @@ import '../providers/session_provider.dart';
 import '../theme/app_colors.dart';
 import '../widgets/service_roadmap_tracker.dart';
 import 'application_form_screen.dart';
-import 'eligibility_self_check_screen.dart';
+import 'agent2_statutory_auditor_screen.dart';
 import 'payments/payment_screen.dart';
 import 'verification_detail_screen.dart';
 
@@ -407,7 +407,7 @@ class _ProcedureDetailScreenState extends ConsumerState<ProcedureDetailScreen> {
               width: double.infinity,
               child: ElevatedButton.icon(
                 icon: const Icon(Icons.check_circle_outline),
-                label: const Text('Run Eligibility Self-Check', style: TextStyle(fontSize: 14, fontWeight: FontWeight.w600)),
+                label: const Text('Agent 2: Statutory Eligibility Audit', style: TextStyle(fontSize: 14, fontWeight: FontWeight.w600)),
                 style: ElevatedButton.styleFrom(
                   minimumSize: const Size.fromHeight(48),
                   shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
@@ -416,7 +416,7 @@ class _ProcedureDetailScreenState extends ConsumerState<ProcedureDetailScreen> {
                   Navigator.push(
                     context,
                     MaterialPageRoute(
-                      builder: (context) => EligibilitySelfCheckScreen(
+                      builder: (context) => Agent2StatutoryAuditorScreen(
                         serviceId: serviceId,
                         serviceName: serviceDetails['name'] ?? 'Government Service',
                       ),

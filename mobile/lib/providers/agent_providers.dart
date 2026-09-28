@@ -30,7 +30,7 @@ class EligibilityCheckController extends _$EligibilityCheckController {
   @override
   FutureOr<EligibilityAgentResponse?> build() => null;
 
-  Future<void> evaluate({
+  Future<EligibilityAgentResponse?> evaluate({
     required String serviceName,
     required int serviceId,
     required int age,
@@ -40,15 +40,26 @@ class EligibilityCheckController extends _$EligibilityCheckController {
     required List<String> providedDocuments,
   }) async {
     state = const AsyncLoading();
-    state = await AsyncValue.guard(() => EligibilityAgentService.evaluateEligibility(
-          serviceName: serviceName,
-          serviceId: serviceId,
-          age: age,
-          citizenshipStatus: citizenshipStatus,
-          annualIncome: annualIncome,
-          employmentStatus: employmentStatus,
-          providedDocuments: providedDocuments,
-        ));
+    try {
+      final res = await EligibilityAgentService.evaluateEligibility(
+        serviceName: serviceName,
+        serviceId: serviceId,
+        age: age,
+        citizenshipStatus: citizenshipStatus,
+        annualIncome: annualIncome,
+        employmentStatus: employmentStatus,
+        providedDocuments: providedDocuments,
+      );
+      if (ref.mounted) {
+        state = AsyncData(res);
+      }
+      return res;
+    } catch (e, st) {
+      if (ref.mounted) {
+        state = AsyncError(e, st);
+      }
+      return null;
+    }
   }
 }
 

@@ -8,7 +8,7 @@ import '../../models/verification_models.dart';
 import '../../screens/procedure_detail_screen.dart';
 import '../../screens/describe_need_screen.dart';
 import '../../screens/service_discovery_screen.dart';
-import '../../screens/eligibility_self_check_screen.dart';
+import '../../screens/agent2_statutory_auditor_screen.dart';
 
 
 class HomeDashboardTab extends ConsumerStatefulWidget {
@@ -301,28 +301,31 @@ class _HomeDashboardTabState extends ConsumerState<HomeDashboardTab> {
               Expanded(
                 child: SizedBox(
                   height: 44,
-                  child: OutlinedButton(
-                    style: OutlinedButton.styleFrom(
+                  child: ElevatedButton.icon(
+                    style: ElevatedButton.styleFrom(
+                      backgroundColor: Colors.white.withValues(alpha: 0.18),
                       foregroundColor: Colors.white,
-                      side: const BorderSide(color: Colors.white, width: 1.5),
+                      elevation: 0,
+                      side: const BorderSide(color: Colors.white, width: 1.2),
                       shape: RoundedRectangleBorder(
                         borderRadius: BorderRadius.circular(12),
                       ),
                     ),
+                    icon: const Icon(Icons.policy_outlined, size: 16),
                     onPressed: () {
                       Navigator.push(
                         context,
                         MaterialPageRoute(
-                          builder: (context) => const EligibilitySelfCheckScreen(
+                          builder: (context) => const Agent2StatutoryAuditorScreen(
                             serviceId: 24,
                             serviceName: 'National Identity Card (NIC) Issuance & Replacement',
                           ),
                         ),
                       );
                     },
-                    child: const Text(
-                      'Eligibility Check',
-                      style: TextStyle(fontWeight: FontWeight.w600, fontSize: 14),
+                    label: const Text(
+                      'Agent 2 Check',
+                      style: TextStyle(fontWeight: FontWeight.w600, fontSize: 13),
                     ),
                   ),
                 ),
