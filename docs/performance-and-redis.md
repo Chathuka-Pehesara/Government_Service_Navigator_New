@@ -1,8 +1,29 @@
 # Performance and Redis Caching Guide
 
-This guide explains why the mobile app and web dashboard sometimes load slowly, and the step-by-step fix: less polling, database indexes, push updates with SignalR, and a Redis cache layer. It is written for the current codebase (ASP.NET Core on .NET 10, PostgreSQL on Neon, Flutter mobile, React web) and a target of **1000+ concurrent citizens and officers**.
+This guide explains why the mobile app and web dashboard load slowly now that the system has **1000+ users every day**, and the step-by-step fix: less polling, database indexes, pagination, push updates with SignalR, and a Redis cache layer. It is written for the current codebase (ASP.NET Core on .NET 10, PostgreSQL on Neon, Flutter mobile, React web).
 
-> **Status:** proposed. Nothing in this guide is implemented yet. Each phase is a separate, independently shippable PR. Do them in order: each phase lowers the load before the next one adds infrastructure.
+> **Status:** proposed. Nothing in this guide is implemented yet (checked on 2026-09-29). Each phase is a separate, independently shippable PR. Do them in order: each phase lowers the load before the next one adds infrastructure.
+
+## The short answer
+
+The system is not slow because 1000 users is a lot. It is slow because every user generates far more work than they need to:
+
+1. **The mobile app asks the server for the same data about once per second**, even when nothing changed (three timers stacked on top of each other).
+2. **Each of those requests runs about 7 database queries** over the internet to Neon, on columns that have **no index**, and one of them even **writes** to the database.
+3. **The web dashboard downloads whole tables** (all pending tasks, all verified tasks, all audit logs) on every page load, with no pagination.
+4. **Nothing is cached** and nothing is compressed, so reference data (services, templates, fees, departments) is re-read from the database on almost every screen.
+
+The solution, in order of impact:
+
+| Order | Solution | Why it helps |
+|---|---|---|
+| 1 | Replace the 2-4 s polling with one 30 s fallback poll (phase 1) | Removes around 90% of all API traffic on its own |
+| 2 | Add indexes, remove writes from GET endpoints, paginate every list (phase 2) | Each remaining request becomes several times faster, and stays fast as tables grow |
+| 3 | Push changes with SignalR instead of polling (phase 3) | Users see updates instantly while the server does almost no work between changes |
+| 4 | Add Redis for token checks, reference data and per-citizen results (phase 4) | Most requests are answered without touching the database, and you can run more than one API instance |
+| 5 | Neon pooler, same region, no autosuspend, response compression (phase 5) | Removes cold starts and cuts network time, especially on mobile data |
+
+Phases 1 and 2 need no new infrastructure and fix most of the slowness. Redis (phase 4) is what keeps it fast as the user count keeps growing.
 
 ## Contents
 
@@ -54,14 +75,52 @@ The citizen lookups filter on `CitizenNic`, but `VerificationTasks.CitizenNic` a
 
 Every round trip goes over the internet to Neon. With about 7 sequential queries at 30-150 ms each, one request can take up to about a second before any load is added. Neon's autosuspend also adds a cold start of up to a few seconds after an idle period.
 
+### 1.5 Refund screens poll as well
+
+`mobile/lib/providers/refund_providers.dart:21` polls the refund record every 15 s while a refund screen is open, and the first load calls two endpoints (`getRefund` and `getRefundStatus`). This is smaller than 1.1 but adds up, and it should move to the same push model.
+
+### 1.6 The web dashboard downloads whole tables
+
+`web/src/Admin/department_admin_dashboard.tsx:245-247` loads three lists in parallel every time the page opens:
+
+| Endpoint | Controller | Problem |
+|---|---|---|
+| `GET /api/verification/tasks/verified` | `VerificationController.cs:360` | Every verified task, no paging, plus `WithApplicationDetailsAsync` for each |
+| `GET /api/verification/tasks/pending` | `VerificationController.cs:348` | Every pending task, no paging |
+| `GET /api/verification/audit-logs/all` | `VerificationController.cs:567` | The **entire** audit log table, which grows with every action every user takes |
+
+These responses grow every day. With 1000+ daily users the audit log alone gains thousands of rows per day, so this page gets slower every week even if nothing else changes. `AuditLogsController.GetRecent` already has correct pagination (`page`, `pageSize` capped at 100), so the pattern exists and only needs to be applied to the other lists.
+
+The web app also has no client-side cache: each page calls `fetch` directly, so moving between pages refetches the same data (for example `GET /api/services` in both the rule builder and the simulator).
+
+### 1.7 File content lives in entity tables
+
+`SubmissionDocument.Content` and `PaymentReceipt.Content` are `byte[]` columns ([ADR-0010](adr/0010-uploaded-files-stored-in-database.md)). Any query that loads these entities without a projection pulls every file into memory and over the network from Neon. List endpoints must never load them.
+
+### 1.8 No compression, no rate limiting
+
+`Program.cs` has no `UseResponseCompression`, no output caching and no rate limiter. JSON lists are sent uncompressed over mobile networks, and one misbehaving client (or an old app version still polling every 2 s) can use as much capacity as hundreds of normal users.
+
+### 1.9 What this adds up to
+
+Rough numbers for 1000 daily users, assuming about 20% (200) are active at the busiest moment:
+
+| | Today | After phase 1 | After phases 1-4 |
+|---|---|---|---|
+| Requests per active citizen | about 1 per second | 1 per 30 s | 1 per 30 s, mostly from cache |
+| API requests per second at peak | about 200 | about 7 | about 7 |
+| Database queries per second at peak | about 1400 (7 per request) | about 50 | under 10 |
+
+This is why the system feels slow at a user count that is small for the hardware: the database is doing roughly 100 times more work than necessary.
+
 ---
 
 ## 2. Fix plan at a glance
 
 | Phase | Change | Expected effect | Needs new infra? |
 |---|---|---|---|
-| 1 | One polling timer, slower, only when visible and in the foreground | Around 80-90% fewer requests | No |
-| 2 | Indexes on hot columns, no writes in GETs, `AsNoTracking` | Each request becomes several times faster and stays fast as data grows | No |
+| 1 | One polling timer, slower, only when visible and in the foreground. Web: shared cached fetch client | Around 80-90% fewer requests | No |
+| 2 | Indexes on hot columns, no writes in GETs, `AsNoTracking`, pagination on every list, never load file blobs in lists | Each request becomes several times faster and stays fast as data grows | No |
 | 3 | SignalR push when an officer decides | Instant updates, and polling becomes a slow fallback | No |
 | 4 | Redis: token revocation, reference data cache, per-citizen cache, SignalR backplane | Fewer DB round trips per request, and horizontal scaling becomes possible | **Yes, Redis** |
 | 5 | Neon pooler, region, autosuspend, response compression | Lower latency, no cold starts | Config only |
@@ -103,6 +162,38 @@ Screens should render `ref.watch(myApplicationsProvider).value` (the previous da
 ### 3.3 Timeouts
 
 `fetchApplications` uses a 4 s timeout. When the server is under load this makes requests fail and retry, which adds load. Raise it to 10-15 s once polling is slower.
+
+### 3.4 Refund polling
+
+Change `_pollInterval` in `refund_providers.dart` to 60 s and skip the tick when the app is not in the foreground (same check as 3.1). In phase 3 the refund decision paths send a push, so this becomes a fallback only.
+
+### 3.5 Web: one shared, cached fetch client
+
+Add [TanStack Query](https://tanstack.com/query) (`@tanstack/react-query`) and route every GET through it:
+
+```tsx
+// web/src/main.tsx
+const queryClient = new QueryClient({
+  defaultOptions: {
+    queries: {
+      staleTime: 60_000,           // reuse data for 1 minute across pages
+      refetchOnWindowFocus: false, // no refetch storm when switching tabs
+      retry: 1,
+    },
+  },
+});
+```
+
+```tsx
+// Example: the service list is fetched once and shared by every page that needs it
+const { data: services } = useQuery({
+  queryKey: ['services'],
+  queryFn: () => api.get('/api/services').then(r => r.data),
+  staleTime: 10 * 60_000, // reference data changes rarely
+});
+```
+
+While doing this, replace the hard-coded `http://localhost:5119` in each page with one `axios` instance (`baseURL` from `import.meta.env.VITE_API_BASE`) that adds the `Authorization` header. This makes caching, timeouts and retries consistent across the whole dashboard.
 
 ---
 
@@ -150,6 +241,68 @@ Add `.AsNoTracking()` to every query in `GetMyApplications` and the other list e
 ### 4.4 Load only what the response uses
 
 `GetMyApplications` loads full templates with all `Fields`, and full `FeeSchedules`, for every poll. Project to the fields the mobile card actually shows with `.Select(...)` instead of `.Include(...)`. The template and fee data is reference data, so it moves to Redis in phase 4.
+
+### 4.5 Paginate every list endpoint
+
+Apply the pattern from `AuditLogsController.GetRecent` to `tasks/pending`, `tasks/verified`, `audit-logs/all` and any other endpoint that returns a whole table:
+
+```csharp
+[HttpGet("tasks/pending")]
+public async Task<IActionResult> GetPendingTasks([FromQuery] int page = 1, [FromQuery] int pageSize = 25)
+{
+    if (page < 1) page = 1;
+    if (pageSize < 1 || pageSize > 100) pageSize = 25;
+
+    var query = _context.VerificationTasks.AsNoTracking()
+        .Where(t => t.Status == "Pending" && (deptScope == null || t.Department == deptScope));
+
+    var total = await query.CountAsync();
+    var items = await query
+        .OrderByDescending(t => t.CreatedDate)
+        .Skip((page - 1) * pageSize)
+        .Take(pageSize)
+        .Select(t => new TaskListItemDto { /* only the columns the table shows */ })
+        .ToListAsync();
+
+    return Ok(new { items, total, page, pageSize });
+}
+```
+
+- The dashboard summary cards need **counts**, not rows. Add a small `GET /api/verification/tasks/summary` that returns `COUNT(*)` grouped by status, instead of downloading every task to count them in the browser.
+- `WithApplicationDetailsAsync` should run one query for the whole page (`WHERE "ApplicationId" IN (...)`), not one per task.
+- For very large tables such as audit logs, keyset pagination (`WHERE "Id" < @lastId ORDER BY "Id" DESC LIMIT 50`) stays fast on page 500 where `Skip` does not.
+
+The web tables then pass `page` and `pageSize` and show a pager, which Carbon's `DataTable` and `Pagination` components already support.
+
+### 4.6 Never load file content in lists
+
+Any query that returns documents or receipts in a list must project without `Content`:
+
+```csharp
+.Select(d => new { d.Id, d.FileName, d.ContentType, d.UploadedAt })
+```
+
+Only the download endpoint for a single file should read `Content`. The long-term fix is to move files to object storage (S3, Azure Blob, Cloudflare R2) and keep only a key in PostgreSQL, as noted in ADR-0010.
+
+### 4.7 Rate limiting
+
+Add the built-in ASP.NET Core rate limiter so an old app build or a buggy client cannot overload the API:
+
+```csharp
+builder.Services.AddRateLimiter(o =>
+{
+    o.RejectionStatusCode = StatusCodes.Status429TooManyRequests;
+    o.GlobalLimiter = PartitionedRateLimiter.Create<HttpContext, string>(ctx =>
+        RateLimitPartition.GetFixedWindowLimiter(
+            ctx.User.FindFirst("nicNumber")?.Value
+                ?? ctx.Connection.RemoteIpAddress?.ToString() ?? "anon",
+            _ => new FixedWindowRateLimiterOptions { PermitLimit = 60, Window = TimeSpan.FromMinutes(1) }));
+});
+...
+app.UseRateLimiter(); // after UseAuthentication
+```
+
+60 requests per minute per user is far above normal use after phase 1 and well below what the current 1-per-second polling sends.
 
 ---
 
@@ -237,7 +390,7 @@ Stop the connection on sign-out and when the app goes to the background. The 30 
 
 ### 5.4 Web (officers)
 
-The officer queues can use the same pattern with `@microsoft/signalr`, with a group per department (`Groups.AddToGroupAsync(connectionId, $"dept:{department}")`) so a new submission updates that department's queue without polling.
+The officer queues can use the same pattern with `@microsoft/signalr`, with a group per department (`Groups.AddToGroupAsync(connectionId, $"dept:{department}")`) so a new submission updates that department's queue without polling. On the message, call `queryClient.invalidateQueries({ queryKey: ['tasks'] })` so only the current page of the table is refetched (see 3.5).
 
 ---
 
@@ -521,6 +674,18 @@ k6 run -e CITIZEN_TOKEN=eyJ... load/my-applications.js
 
 **Target:** p95 under 500 ms at 1000 virtual users. Run it against a Neon **branch**, never the production database.
 
+### 8.5 Targets per phase
+
+Use these as the "done" check for each PR:
+
+| Metric | Today (expected) | Target |
+|---|---|---|
+| `my-applications` p95 latency | 1-3 s under load | under 300 ms (under 50 ms from cache) |
+| Officer dashboard first load | several seconds, grows over time | under 1 s, constant as data grows |
+| DB queries per `my-applications` call | about 7 | 0 on a cache hit, 3-4 on a miss |
+| Largest list response | whole table | 100 rows max |
+| Status update visible to citizen | up to 4 s (polling) | under 1 s (push) |
+
 ---
 
 ## 9. Troubleshooting
@@ -534,4 +699,6 @@ k6 run -e CITIZEN_TOKEN=eyJ... load/my-applications.js
 | Push works on one API instance but not another | No SignalR backplane | Configure `AddStackExchangeRedis` (6.5) |
 | Logged-out token still works after the Redis switch | Existing `RevokedTokens` rows were not copied into Redis | Run the one-off copy step in 6.6 |
 | First request after a quiet period takes seconds | Neon autosuspend cold start | Disable autosuspend on production (7.1) |
+| Officer dashboard still slow after indexes | A list endpoint still returns the whole table, or loads file `Content` | Paginate (4.5) and project without blobs (4.6) |
+| Users get `429 Too Many Requests` | An old app build still polls every 2-4 s | Force an app update, or temporarily raise `PermitLimit` (4.7) |
 | `EXPLAIN` still shows `Seq Scan` | Index missing, or the table is tiny and Postgres chose a scan | Check `\di` in the Neon SQL editor. Small tables scanning is normal |
