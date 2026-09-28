@@ -313,7 +313,10 @@ class _HomeDashboardTabState extends ConsumerState<HomeDashboardTab> {
                       Navigator.push(
                         context,
                         MaterialPageRoute(
-                          builder: (context) => const EligibilitySelfCheckScreen(serviceId: 1),
+                          builder: (context) => const EligibilitySelfCheckScreen(
+                            serviceId: 24,
+                            serviceName: 'National Identity Card (NIC) Issuance & Replacement',
+                          ),
                         ),
                       );
                     },
