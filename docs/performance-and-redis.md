@@ -747,6 +747,8 @@ Use these as the "done" check for each PR:
 
 ### 10.3 Deviations from the plan
 
+The decisions behind these are recorded as [ADR-0012](adr/0012-realtime-push-via-change-interceptor.md) (realtime push), [ADR-0013](adr/0013-hybridcache-with-optional-redis.md) (caching and revocation) and [ADR-0014](adr/0014-paged-list-endpoints-with-capped-fallback.md) (paging). ADR-0001, 0004, 0005 and 0010 carry amendments.
+
 - **Interceptor instead of a hand-called helper.** Any `SaveChanges` that touches `VerificationTask`, `ApplicationSubmission`, `Payment`, `InstallmentPlan`, `Installment`, `CitizenNotification` or `RefundRequest` resolves the affected citizens (plan, then payment, then application, then NIC), clears `citizen:{nic}`, then sends `applicationsChanged` (and `refundUpdated` for refunds). Catalog entities clear the `catalog` tag. Inside a transaction it waits for the commit and drops everything on rollback. Raw SQL and `ExecuteUpdate` bypass it.
 - **Message names.** Citizens receive `applicationsChanged` (no payload) and `refundUpdated` (refund ids). Staff receive `queueUpdated`.
 - **Revocation without Redis** uses a 30 s in-process cache of "not revoked" answers. A logout on the same instance applies immediately. This assumes a single API instance when Redis is off.

@@ -30,3 +30,10 @@ Option 3.
 - **Orphans accumulate.** Documents uploaded but never submitted keep `ApplicationId = NULL` forever, and nothing cleans them up.
 - The document content endpoint checks the officer *role* but not the officer's *department*. Any officer with a document's GUID can read it.
 - Moving to object storage later only requires swapping the `Content` column for a storage key and changing the two read endpoints, because clients only ever see the API URLs.
+
+## Amended (2026-09-29): lists never load file bytes
+
+The finance slip lists in `PaymentsController` (pending slips and department payments) loaded whole `SubmissionDocument` rows, `Content` included, just to find each slip's id, name and upload time. Every page load pulled every attached file out of Neon. They now project to metadata only (`Id`, `ApplicationId`, `FieldLabel`, `FileName`, `ContentType`, `SizeBytes`, `UploadedAt`), and the single-slip lookup selects only the id.
+
+Rule going forward: only the two content endpoints above may read `Content`. Any other query on `SubmissionDocuments` or `PaymentReceipts` must `Select` the columns it needs. The submit path in `ApplicationsController` still loads full rows because it updates them to attach the documents; that happens once per submission.
+

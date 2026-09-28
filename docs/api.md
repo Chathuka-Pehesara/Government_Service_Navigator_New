@@ -1,10 +1,16 @@
 # API Reference
 
-Base URL: `http://localhost:5119` (hardcoded - see `docs/diagrams/system-architecture.md`). Swagger UI is available at `/swagger` when `ASPNETCORE_ENVIRONMENT=Development`.
+Base URL: `http://localhost:5119` (the API listens on a hardcoded port; the web dashboard reads `VITE_API_URL` in new code - see `docs/diagrams/system-architecture.md`). Swagger UI is available at `/swagger` when `ASPNETCORE_ENVIRONMENT=Development`.
 
 All request/response bodies are JSON unless marked *multipart*. ASP.NET Core's default `System.Text.Json` camelCases property names in responses (e.g. the C# `FormName` property serializes as `"formName"`), which is reflected below.
 
-Reflects `backend/src/Controllers/` as of 2026-09-27.
+Reflects `backend/src/Controllers/` as of 2026-09-29.
+
+**Cross-cutting behaviour** (details in [Performance behaviour](#performance-behaviour)):
+- Growing lists are paged with `?page=`; without it they return at most the newest 200 rows.
+- Every client is rate limited (default 120 requests per minute) and gets `429` beyond that.
+- Responses are Brotli/gzip compressed when the client sends `Accept-Encoding`.
+- Changes are pushed over SignalR at `/hubs/applications`, so clients should refetch on a message rather than poll.
 
 ---
 
@@ -38,7 +44,7 @@ Citizens' tokens carry role `User`, so they are excluded from all three.
 | `officer-login` | `sub`, `email`, `role` (e.g. `Verifying Officer`), `department`, `jti` |
 | `admin-login` | `sub`, `email`, `role` (e.g. `Admin`), `jti` |
 
-Tokens are HMAC-SHA256-signed with `JWT_KEY` and expire after **7 days** (hardcoded `DateTime.UtcNow.AddDays(7)` in `AuthService` - `.env`'s `JWT_EXPIRY_HOURS` is **not read anywhere**). The `jti` is checked against the `RevokedTokens` table on every request (`docs/adr/0001-jwt-auth-with-revocation-table.md`). Citizen-facing endpoints identify the caller by the `nicNumber` claim (applications, notifications, installment ownership) or the `email` claim (payments/refunds "mine").
+Tokens are HMAC-SHA256-signed with `JWT_KEY` and expire after **7 days** (hardcoded `DateTime.UtcNow.AddDays(7)` in `AuthService` - `.env`'s `JWT_EXPIRY_HOURS` is **not read anywhere**). The `jti` is checked on every request against Redis, or a short in-memory cache backed by the `RevokedTokens` table when Redis is not configured (`docs/adr/0001-jwt-auth-with-revocation-table.md`, `docs/adr/0013-hybridcache-with-optional-redis.md`). Citizen-facing endpoints identify the caller by the `nicNumber` claim (applications, notifications, installment ownership) or the `email` claim (payments/refunds "mine").
 
 ---
 
@@ -109,8 +115,8 @@ Only one of `user`/`officer`/`admin` is populated. **These actions return `200 O
 
 | Method | Path | Body → Response |
 |---|---|---|
-| GET | `/api/services` | → `ServiceProcedure[]` (excludes `Retired`; includes documents + fees, **not** eligibility rules) |
-| GET | `/api/services/{id}` | → `ServiceProcedure` with rules, documents and fees, or `404` |
+| GET | `/api/services` | → `ServiceProcedure[]` (excludes `Retired`; includes documents + fees, **not** eligibility rules). Cached, cleared on any catalog write |
+| GET | `/api/services/{id}` | → `ServiceProcedure` with rules, documents and fees, or `404`. Cached, cleared on any catalog write |
 | POST | `/api/services` | `ServiceProcedure` → `201`, or `500` |
 | PUT | `/api/services/{id}` | `ServiceProcedure` (only `serviceId`/`name`/`category`/`status` applied) → `200` or `404` |
 | DELETE | `/api/services/{id}` | → `204` or `404` - **soft delete**, sets `Status = "Retired"` |
@@ -267,9 +273,10 @@ What `submit` does, in order:
 
 | Method | Path | Body → Response |
 |---|---|---|
-| GET | `/api/verification/my-applications` | Citizen: their tasks with service, stage, amount and latest installment plan summary |
-| GET | `/api/verification/tasks/pending` | → queue rows with `Status == "Pending"`, department-scoped |
-| GET | `/api/verification/tasks/verified` | → decided queue rows, department-scoped |
+| GET | `/api/verification/my-applications` | Citizen: their tasks with service, stage, amount and latest installment plan summary. Read-only; cached per citizen and cleared on any change to their data |
+| GET | `/api/verification/tasks/pending?page=&pageSize=&search=` | → queue rows with `Status` `Pending`/`Revised`/`Revision Requested`, department-scoped, newest first. [Paged](#paging) |
+| GET | `/api/verification/tasks/verified?page=&pageSize=&search=&status=` | → decided or reviewed queue rows, department-scoped. `status=Rejected` also includes `Suspended`. [Paged](#paging) |
+| GET | `/api/verification/tasks/summary` | → `{ pending, approved, rejected, suspended, verified }` counts, department-scoped |
 | GET | `/api/verification/tasks/{id}` | → [task detail](#task-detail), or `403` if it belongs to another department |
 | GET | `/api/verification/documents/{documentId}/content` | → the uploaded file's bytes (inline, `nosniff`) |
 | GET | `/api/verification/tasks/{id}/agent-draft` | → stored Agent 2 + 3 draft, or `404` if not generated yet |
@@ -277,7 +284,8 @@ What `submit` does, in order:
 | GET | `/api/verification/stats` | → [`OfficerStatsDto`](#officerstatsdto) |
 | POST | `/api/verification/tasks` | `{ applicationId, citizenNic?, department?, stageNumber }` → `VerificationTask` |
 | GET | `/api/verification/audit-logs?applicationId=X` | → `AuditLog[]`, newest first |
-| GET | `/api/verification/audit-logs/all` | → all `AuditLog[]` |
+| GET | `/api/verification/audit-logs/all?page=&pageSize=&search=&action=&applicationIds=` | → `AuditLog[]`, newest first. `action` is `DELETED`, `APPROVED` or `REJECTED`; `applicationIds` is comma separated. [Paged](#paging) |
+| GET | `/api/verification/audit-logs/summary` | → `{ total, deleted, approved, rejected }` counts |
 | PUT | `/api/verification/tasks/{id}/decision` | [`VerificationDecisionRequest`](#verificationdecisionrequest) → `200`, `400` or `404` |
 | PUT | `/api/verification/tasks/{id}/approve-stage` | `{ "notes": "" }` → `{ currentStage, maxStages, status, currentDepartment }` |
 | POST | `/api/verification/tasks/bulk-verify` | [`BulkVerifyRequest`](#bulkverifyrequest) → `200` or `400` |
@@ -510,6 +518,59 @@ Manages the `KnowledgeChunks` table in the **separate pgvector database** (`Conn
 `ingest-local-documents` maps files to hardcoded service codes by filename (`passport` → `GSN-IMM-001`, `driving` → `GSN-DMT-002`, `police` → `GSN-POL-003`, `business` → `GSN-COM-004`, `death` → `GSN-CIV-005`). Files whose service code doesn't exist in the catalog are skipped silently.
 
 **Re-seed after catalog changes:** chunks are a snapshot. Adding a service or changing fees isn't reflected in agent answers until `seed` / `seed-action-agent` are called again. The same applies if the embedding algorithm in `LocalEmbeddingService` changes.
+
+---
+
+## Performance behaviour
+
+Added 2026-09-29 for 1000+ daily users. The reasoning is in `docs/performance-and-redis.md`; the decisions are ADR-0012 to ADR-0014.
+
+### Paging
+
+`tasks/pending`, `tasks/verified` and `audit-logs/all` accept:
+
+| Parameter | Meaning |
+|---|---|
+| `page` | 1-based page. **Its presence switches the response to the envelope below** |
+| `pageSize` | Default 25, maximum 100 |
+| `search` | Tasks: application id (`APP-123` or `123`) or part of a NIC. Audit logs: also the action, officer and remarks |
+
+With `page`:
+
+```json
+{ "items": [ /* rows */ ], "total": 312, "page": 2, "pageSize": 25, "totalPages": 13 }
+```
+
+Without `page`, the response is a plain array (the shape older clients expect), limited to the newest 200 rows. Use the `summary` endpoints for counts instead of counting rows.
+
+### Realtime hub - `/hubs/applications`
+
+SignalR, `[Authorize]`. Send the JWT as `?access_token=` (WebSockets cannot set headers); `accessTokenFactory` in the SignalR clients does this. Browsers must connect with `withCredentials: false`, because CORS allows any origin.
+
+| Message | Sent to | Payload | Client should |
+|---|---|---|---|
+| `applicationsChanged` | The citizen (every connection with that `nicNumber`) | none | Refetch `my-applications` and notifications |
+| `refundUpdated` | The citizen | refund ids | Refetch their refunds |
+| `queueUpdated` | All staff (tokens without `nicNumber`) | none | Refetch the page of the queue/audit list on screen, debounced |
+
+Messages carry no data, only "something changed". They are sent after the change is committed and after the cache is cleared, so a refetch always sees the new state. Writes made with raw SQL or `ExecuteUpdate` do not trigger them (ADR-0012).
+
+### Rate limiting
+
+Fixed window per caller: citizen NIC, else officer/admin email, else IP. Default **120 requests per minute** (`RATE_LIMIT_PER_MINUTE`). Over the limit the API returns `429 Too Many Requests` with no body. Hub connections are not counted.
+
+### Caching
+
+| Response | Cached for | Cleared by |
+|---|---|---|
+| `GET /api/services`, `GET /api/services/{id}` | 10 min (30 s in process memory) | Any write to services, templates, form fields, fees, eligibility rules, documents or departments |
+| `GET /api/verification/my-applications` | 5 min (10 s in process memory) | Any write to that citizen's tasks, submission, payments, installment plans, installments, notifications or refunds |
+
+With `REDIS_URL` set the cache is shared by all API instances; without it, each instance caches in its own memory.
+
+### Compression
+
+Responses are compressed with Brotli or gzip (fastest level) when the request sends `Accept-Encoding`. The applications list shrinks by about 60%.
 
 ---
 

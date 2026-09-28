@@ -34,3 +34,10 @@ Consequences on top of the original ones:
 
   Both would need removing before any production use.
 - The vector DB (`VectorDbContext`) isn't migrated at startup at all. Its schema comes from design-time `dotnet ef` against the connection string hardcoded in `VectorDbContextFactory`.
+
+## Amended (2026-09-29): a silent failure, indexes and data repairs
+
+- **The schema block had been failing on every startup.** A C# comment (`// ---> NEW BOOKING TIME SLOTS TABLE <---`) sat inside the SQL string, and PostgreSQL rejected the whole batch with `42601: syntax error at or near "//"` from commit `5e73577` onward. Because failures are only logged, nobody noticed: the column additions, the department seeding and the orphan-task cleanup after it never ran. It is now a SQL comment (`--`). This is the risk described above happening in practice, so check the startup log for `An error occurred while migrating the database` after changing this block.
+- **Hot-path indexes** (citizen NIC, application id, status and date, audit timestamp, user NIC, revoked token expiry) are created in their own `ExecuteSqlRaw` call **before** the large block, so a mistake in that block cannot skip them. They are mirrored with `HasIndex` in `AppDbContext`, which makes a third place the schema lives.
+- **Data repairs left the GET endpoints.** `GetPendingTasksAsync`, `GetTasksForCitizenAsync` and `my-applications` used to write inside the read (resetting "Approved without a review" tasks to `Pending`, and marking unsubmitted stages `Draft`). They now run in `Services/DataRepairService.cs`, a hosted service that starts 15 s after launch and repeats every 10 minutes. It is another place where the running app changes data, alongside the seeding above.
+
