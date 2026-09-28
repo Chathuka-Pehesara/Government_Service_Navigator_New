@@ -24,7 +24,23 @@ namespace Government_Service_Navigator.AgenticAi.Tools.CheckDuplicateApplication
             // 1. Check in-memory fast registry
             if (ActiveApplicationRegistry.TryGetValue(key, out var existingRef))
             {
-                bool isSameApp = currentApplicationId > 0 && existingRef.EndsWith($"-{currentApplicationId}");
+                bool isSameApp = currentApplicationId > 0 && (
+                    existingRef.EndsWith($"-{currentApplicationId}") ||
+                    existingRef == $"APP-{currentApplicationId}" ||
+                    existingRef == $"APP-2026-{currentApplicationId}");
+
+                // When currentApplicationId > 0 and repository is available, verify with database ground truth
+                if (!isSameApp && currentApplicationId > 0 && _repository != null)
+                {
+                    bool isDuplicateInDb = await _repository.HasDuplicateAsync(citizenNic, serviceProcedureId, currentApplicationId);
+                    if (!isDuplicateInDb)
+                    {
+                        // In DB, no OTHER application exists for this citizen/procedure; this is the same application!
+                        isSameApp = true;
+                        ActiveApplicationRegistry[key] = $"APP-2026-{currentApplicationId}";
+                    }
+                }
+
                 if (!isSameApp)
                 {
                     return new DuplicateCheckOutcome

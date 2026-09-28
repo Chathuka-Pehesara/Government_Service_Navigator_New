@@ -85,7 +85,8 @@ namespace Government_Service_Navigator.AgenticAi.Agents.ValidationSafety
             }
 
             // Register in active registry to prevent immediate duplicate
-            _duplicateTool.RegisterApplication(draft.CitizenNic, draft.ServiceProcedureId, $"APP-2026-{taskId}");
+            int regAppId = draft.ApplicationId > 0 ? draft.ApplicationId : taskId;
+            _duplicateTool.RegisterApplication(draft.CitizenNic, draft.ServiceProcedureId, $"APP-2026-{regAppId}");
 
             return ValidationResult.Success(
                 verificationTaskId: taskId,
