@@ -109,9 +109,15 @@ namespace Government_Service_Navigator.Backend.Controllers
                 .ToListAsync();
 
             var nics = submissions.Values.Select(s => s.CitizenNic).Where(n => !string.IsNullOrEmpty(n)).Distinct().ToList();
-            var users = await _context.Users
+            // NicNumber is not unique in Users, so pick one name per NIC instead of failing on duplicates
+            var users = (await _context.Users
                 .Where(u => nics.Contains(u.NicNumber))
-                .ToDictionaryAsync(u => u.NicNumber, u => u.FullName);
+                .Select(u => new { u.NicNumber, u.FullName })
+                .ToListAsync())
+                .GroupBy(u => u.NicNumber)
+                .ToDictionary(
+                    g => g.Key,
+                    g => g.Select(u => u.FullName).FirstOrDefault(n => !string.IsNullOrWhiteSpace(n)) ?? g.First().FullName);
 
             bool dbUpdatedPending = false;
             var result = pending.Select(p =>
@@ -273,9 +279,15 @@ namespace Government_Service_Navigator.Backend.Controllers
                 .ToListAsync();
 
             var nics = submissions.Values.Select(s => s.CitizenNic).Where(n => !string.IsNullOrEmpty(n)).Distinct().ToList();
-            var users = await _context.Users
+            // NicNumber is not unique in Users, so pick one name per NIC instead of failing on duplicates
+            var users = (await _context.Users
                 .Where(u => nics.Contains(u.NicNumber))
-                .ToDictionaryAsync(u => u.NicNumber, u => u.FullName);
+                .Select(u => new { u.NicNumber, u.FullName })
+                .ToListAsync())
+                .GroupBy(u => u.NicNumber)
+                .ToDictionary(
+                    g => g.Key,
+                    g => g.Select(u => u.FullName).FirstOrDefault(n => !string.IsNullOrWhiteSpace(n)) ?? g.First().FullName);
 
             bool dbUpdatedDept = false;
             var result = payments.Select(p =>

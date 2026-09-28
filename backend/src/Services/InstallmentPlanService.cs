@@ -10,10 +10,12 @@ namespace Government_Service_Navigator.Backend.Services
     public class InstallmentPlanService : IInstallmentPlanService
     {
         private readonly AppDbContext _context;
+        private readonly INotificationService _notificationService;
 
-        public InstallmentPlanService(AppDbContext context)
+        public InstallmentPlanService(AppDbContext context, INotificationService notificationService)
         {
             _context = context;
+            _notificationService = notificationService;
         }
 
         public async Task<InstallmentPlan> CreatePlanAsync(int paymentId, int numberOfInstallments, int intervalDays)
@@ -259,8 +261,48 @@ namespace Government_Service_Navigator.Backend.Services
             if (session.PaymentStatus != "paid")
                 throw new InvalidOperationException("The online payment has not been completed yet.");
 
-            return await MarkInstallmentPaidAsync(installmentId);
+            var paid = await MarkInstallmentPaidAsync(installmentId);
+            await SendInstallmentReceiptAsync(paid, session.Id);
+            return paid;
         }
+
+        private async Task SendInstallmentReceiptAsync(Installment installment, string stripeSessionId)
+        {
+            var plan = installment.InstallmentPlan
+                ?? await _context.InstallmentPlans.FindAsync(installment.InstallmentPlanId);
+            var payment = plan == null ? null : await _context.Payments.FindAsync(plan.PaymentId);
+            if (payment == null) return;
+
+            var submission = await _context.ApplicationSubmissions
+                .Include(s => s.ServiceProcedure)
+                .FirstOrDefaultAsync(s => s.Id == payment.ApplicationId);
+
+            // Prefer the email on the payment; fall back to the application's owner
+            var toEmail = IsDeliverableEmail(payment.UserEmail) ? payment.UserEmail : submission?.UserEmail;
+            if (!IsDeliverableEmail(toEmail)) return;
+
+            await _notificationService.NotifyOnlinePaymentSuccessAsync(toEmail!, new OnlinePaymentReceiptDto
+            {
+                PaymentId = payment.Id,
+                StripeReference = stripeSessionId,
+                ApplicationId = payment.ApplicationId,
+                ServiceName = submission?.ServiceProcedure?.Name ?? "Government Service",
+                StageNumber = submission?.CurrentStage ?? 1,
+                MaxStages = submission?.MaxStages ?? 1,
+                Department = submission?.CurrentDepartment,
+                CitizenNic = submission?.CitizenNic ?? string.Empty,
+                Amount = installment.Amount,
+                Currency = payment.Currency,
+                PaidDate = installment.PaidDate ?? DateTime.UtcNow,
+                InstallmentNumber = installment.InstallmentNumber,
+                NumberOfInstallments = plan!.NumberOfInstallments
+            });
+        }
+
+        private static bool IsDeliverableEmail(string? email) =>
+            !string.IsNullOrWhiteSpace(email) &&
+            System.Net.Mail.MailAddress.TryCreate(email, out var address) &&
+            address.Host.Contains('.');
 
         public async Task<Installment> SubmitBankTransferAsync(int installmentId, string fileName, string contentType, byte[] content)
         {

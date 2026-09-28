@@ -14,5 +14,9 @@ namespace Government_Service_Navigator.Backend.DTOs.Responses
         public decimal Amount { get; set; }
         public string Currency { get; set; } = "LKR";
         public DateTime PaidDate { get; set; }
+
+        // Set only when this payment is one installment of an installment plan
+        public int? InstallmentNumber { get; set; }
+        public int? NumberOfInstallments { get; set; }
     }
 }
