@@ -9,4 +9,8 @@ public interface IActionToolAgent
     Task<ActionDraftResponse> PrepareDraftAsync(
         ActionDraftRequest request,
         CancellationToken cancellationToken = default);
+
+    Task<AppointmentBookingResponse> BookAppointmentAsync(
+        AppointmentBookingRequest request,
+        CancellationToken cancellationToken = default);
 }
