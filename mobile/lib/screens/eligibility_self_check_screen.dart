@@ -28,7 +28,7 @@ class _EligibilitySelfCheckScreenState
 
   final TextEditingController _ageController = TextEditingController(text: '25');
   final TextEditingController _incomeController = TextEditingController(text: '500000');
-  
+
   String _selectedCitizenship = 'Sri Lankan';
   String _selectedEmployment = 'Employed';
 
@@ -51,10 +51,9 @@ class _EligibilitySelfCheckScreenState
     super.dispose();
   }
 
-  // --- Document Inspection & Tagging Helpers ---
+  // --- Document Helpers ---
 
-  ({bool isRecognized, String documentType, bool isGenericWarning, String extension})
-      _inspectDoc(String docEntry) {
+  ({bool isRecognized, String documentType, String extension}) _inspectDoc(String docEntry) {
     String ext = 'PDF';
     final dotIndex = docEntry.lastIndexOf('.');
     if (dotIndex != -1 && dotIndex < docEntry.length - 1) {
@@ -67,18 +66,15 @@ class _EligibilitySelfCheckScreenState
       return (
         isRecognized: true,
         documentType: prefix,
-        isGenericWarning: false,
         extension: ext,
       );
     }
 
     final lower = docEntry.toLowerCase().trim();
-
     if (lower.contains('nic') || lower.contains('identity') || lower.contains('postal id')) {
       return (
         isRecognized: true,
         documentType: 'National Identity Card (NIC)',
-        isGenericWarning: false,
         extension: ext,
       );
     }
@@ -86,7 +82,6 @@ class _EligibilitySelfCheckScreenState
       return (
         isRecognized: true,
         documentType: 'Certified Birth Certificate Extract',
-        isGenericWarning: false,
         extension: ext,
       );
     }
@@ -94,7 +89,6 @@ class _EligibilitySelfCheckScreenState
       return (
         isRecognized: true,
         documentType: 'Police Complaint Report for Loss',
-        isGenericWarning: false,
         extension: ext,
       );
     }
@@ -102,7 +96,6 @@ class _EligibilitySelfCheckScreenState
       return (
         isRecognized: true,
         documentType: 'Medical Fitness Certificate (NTMI)',
-        isGenericWarning: false,
         extension: ext,
       );
     }
@@ -110,7 +103,6 @@ class _EligibilitySelfCheckScreenState
       return (
         isRecognized: true,
         documentType: 'Current / Previous Passport',
-        isGenericWarning: false,
         extension: ext,
       );
     }
@@ -118,7 +110,6 @@ class _EligibilitySelfCheckScreenState
       return (
         isRecognized: true,
         documentType: 'Grama Niladhari Certificate',
-        isGenericWarning: false,
         extension: ext,
       );
     }
@@ -126,15 +117,13 @@ class _EligibilitySelfCheckScreenState
       return (
         isRecognized: true,
         documentType: 'ICAO Biometric Photo Slip',
-        isGenericWarning: false,
         extension: ext,
       );
     }
 
     return (
       isRecognized: false,
-      documentType: 'Unlabelled / Generic Scan',
-      isGenericWarning: true,
+      documentType: 'General Proof Scan',
       extension: ext,
     );
   }
@@ -148,19 +137,9 @@ class _EligibilitySelfCheckScreenState
   }
 
   void _removeDoc(int index) {
-    setState(() {
-      _uploadedDocuments.removeAt(index);
-    });
-  }
-
-  void _tagDoc(int index, String statutoryType) {
     if (index >= 0 && index < _uploadedDocuments.length) {
-      final doc = _uploadedDocuments[index];
-      final cleanName = doc.contains(':')
-          ? doc.split(':').sublist(1).join(':').trim()
-          : doc.trim();
       setState(() {
-        _uploadedDocuments[index] = '$statutoryType: $cleanName';
+        _uploadedDocuments.removeAt(index);
       });
     }
   }
@@ -184,7 +163,7 @@ class _EligibilitySelfCheckScreenState
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
           SnackBar(
-            content: Text('File selection error: $e'),
+            content: Text('File selection note: $e'),
             behavior: SnackBarBehavior.floating,
           ),
         );
@@ -197,13 +176,14 @@ class _EligibilitySelfCheckScreenState
     showDialog(
       context: context,
       builder: (ctx) => AlertDialog(
-        title: const Text('Add Document Reference'),
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
+        title: const Text('Add Document Reference', style: TextStyle(fontWeight: FontWeight.bold, fontSize: 16)),
         content: TextField(
           controller: controller,
-          decoration: const InputDecoration(
-            hintText: 'e.g., nic_copy.pdf, birth_cert.jpg',
-            labelText: 'File Name or Statutory Name',
-            border: OutlineInputBorder(),
+          decoration: InputDecoration(
+            hintText: 'e.g. nic_front_copy.pdf, birth_cert.jpg',
+            labelText: 'File or Document Title',
+            border: OutlineInputBorder(borderRadius: BorderRadius.circular(10)),
           ),
           autofocus: true,
         ),
@@ -213,6 +193,10 @@ class _EligibilitySelfCheckScreenState
             child: const Text('Cancel'),
           ),
           ElevatedButton(
+            style: ElevatedButton.styleFrom(
+              backgroundColor: AppColors.primary,
+              foregroundColor: Colors.white,
+            ),
             onPressed: () {
               final text = controller.text.trim();
               if (text.isNotEmpty) {
@@ -220,129 +204,10 @@ class _EligibilitySelfCheckScreenState
               }
               Navigator.pop(ctx);
             },
-            child: const Text('Add'),
+            child: const Text('Add Document'),
           ),
         ],
       ),
-    );
-  }
-
-  // --- Service Selection Modal ---
-
-  void _showServiceSelectionModal(List<Map<String, dynamic>> services) {
-    final searchController = TextEditingController();
-    showModalBottomSheet(
-      context: context,
-      isScrollControlled: true,
-      shape: const RoundedRectangleBorder(
-        borderRadius: BorderRadius.vertical(top: Radius.circular(20)),
-      ),
-      builder: (modalCtx) {
-        return StatefulBuilder(
-          builder: (context, setModalState) {
-            final filter = searchController.text.toLowerCase().trim();
-            final filtered = services.where((s) {
-              if (s['status'] == 'Retired') return false;
-              final name = (s['name'] as String? ?? '').toLowerCase();
-              final cat = (s['category'] as String? ?? '').toLowerCase();
-              return name.contains(filter) || cat.contains(filter);
-            }).toList();
-
-            return SafeArea(
-              child: SizedBox(
-                height: 480,
-                child: Padding(
-                  padding: const EdgeInsets.symmetric(horizontal: 16.0, vertical: 12.0),
-                  child: Column(
-                    children: [
-                      Container(
-                        width: 40,
-                        height: 4,
-                        margin: const EdgeInsets.only(bottom: 12),
-                        decoration: BoxDecoration(
-                          color: Colors.grey.shade300,
-                          borderRadius: BorderRadius.circular(2),
-                        ),
-                      ),
-                      const Text(
-                        'Select Target Government Service',
-                        style: TextStyle(fontSize: 16, fontWeight: FontWeight.bold),
-                      ),
-                      const SizedBox(height: 12),
-                      TextField(
-                        controller: searchController,
-                        decoration: InputDecoration(
-                          hintText: 'Search service (e.g. NIC, Passport, License)...',
-                          prefixIcon: const Icon(Icons.search),
-                          isDense: true,
-                          border: OutlineInputBorder(
-                            borderRadius: BorderRadius.circular(10),
-                          ),
-                        ),
-                        onChanged: (_) => setModalState(() {}),
-                      ),
-                      const SizedBox(height: 12),
-                      Expanded(
-                        child: filtered.isEmpty
-                            ? const Center(child: Text('No matching services found.'))
-                            : ListView.separated(
-                                itemCount: filtered.length,
-                                separatorBuilder: (_, _) => const Divider(height: 1),
-                                itemBuilder: (context, idx) {
-                                  final s = filtered[idx];
-                                  final rawId = s['id'];
-                                  final sId = (rawId is num)
-                                      ? rawId.toInt()
-                                      : int.tryParse(rawId?.toString() ?? '') ?? 0;
-                                  final sName = (s['name'] as String?) ?? 'Unknown Service';
-                                  final sCat = (s['category'] as String?) ?? '';
-                                  final isSelected = sId == _selectedServiceId;
-
-                                  return ListTile(
-                                    contentPadding: const EdgeInsets.symmetric(
-                                        horizontal: 8, vertical: 2),
-                                    leading: CircleAvatar(
-                                      backgroundColor: isSelected
-                                          ? AppColors.primary
-                                          : AppColors.primary.withValues(alpha: 0.1),
-                                      child: Icon(
-                                        Icons.account_balance,
-                                        size: 18,
-                                        color: isSelected ? Colors.white : AppColors.primary,
-                                      ),
-                                    ),
-                                    title: Text(
-                                      sName,
-                                      style: TextStyle(
-                                        fontWeight: isSelected ? FontWeight.bold : FontWeight.w500,
-                                        fontSize: 13,
-                                      ),
-                                    ),
-                                    subtitle: sCat.isNotEmpty
-                                        ? Text(sCat, style: const TextStyle(fontSize: 11))
-                                        : null,
-                                    trailing: isSelected
-                                        ? const Icon(Icons.check, color: AppColors.primary, size: 20)
-                                        : null,
-                                    onTap: () {
-                                      setState(() {
-                                        _selectedServiceId = sId;
-                                        _selectedServiceName = sName;
-                                      });
-                                      Navigator.pop(modalCtx);
-                                    },
-                                  );
-                                },
-                              ),
-                      ),
-                    ],
-                  ),
-                ),
-              ),
-            );
-          },
-        );
-      },
     );
   }
 
@@ -362,8 +227,6 @@ class _EligibilitySelfCheckScreenState
           providedDocuments: _uploadedDocuments,
         );
   }
-
-  // --- Statutory Requirements Knowledge Base ---
 
   List<String> _getStatutoryRequiredDocs(String serviceName) {
     final name = serviceName.toLowerCase();
@@ -395,6 +258,128 @@ class _EligibilitySelfCheckScreenState
     ];
   }
 
+  // --- Service Selection Modal ---
+
+  void _showServiceSelectionModal(List<Map<String, dynamic>> services) {
+    final searchController = TextEditingController();
+    showModalBottomSheet(
+      context: context,
+      isScrollControlled: true,
+      backgroundColor: Colors.white,
+      shape: const RoundedRectangleBorder(
+        borderRadius: BorderRadius.vertical(top: Radius.circular(24)),
+      ),
+      builder: (modalCtx) {
+        return StatefulBuilder(
+          builder: (context, setModalState) {
+            final filter = searchController.text.toLowerCase().trim();
+            final filtered = services.where((s) {
+              if (s['status'] == 'Retired') return false;
+              final name = (s['name'] as String? ?? '').toLowerCase();
+              final cat = (s['category'] as String? ?? '').toLowerCase();
+              return name.contains(filter) || cat.contains(filter);
+            }).toList();
+
+            return SafeArea(
+              child: Container(
+                height: MediaQuery.of(context).size.height * 0.65,
+                padding: const EdgeInsets.symmetric(horizontal: 16.0, vertical: 12.0),
+                child: Column(
+                  children: [
+                    Container(
+                      width: 36,
+                      height: 4,
+                      margin: const EdgeInsets.only(bottom: 12),
+                      decoration: BoxDecoration(
+                        color: Colors.grey.shade300,
+                        borderRadius: BorderRadius.circular(2),
+                      ),
+                    ),
+                    const Text(
+                      'Select Target Government Service',
+                      style: TextStyle(fontSize: 16, fontWeight: FontWeight.bold, color: AppColors.dark),
+                    ),
+                    const SizedBox(height: 12),
+                    TextField(
+                      controller: searchController,
+                      decoration: InputDecoration(
+                        hintText: 'Search service (NIC, Passport, Driving License)...',
+                        prefixIcon: const Icon(Icons.search, size: 20),
+                        isDense: true,
+                        filled: true,
+                        fillColor: AppColors.background,
+                        border: OutlineInputBorder(
+                          borderRadius: BorderRadius.circular(12),
+                          borderSide: BorderSide.none,
+                        ),
+                      ),
+                      onChanged: (_) => setModalState(() {}),
+                    ),
+                    const SizedBox(height: 12),
+                    Expanded(
+                      child: filtered.isEmpty
+                          ? const Center(child: Text('No matching services found.'))
+                          : ListView.builder(
+                              physics: const BouncingScrollPhysics(),
+                              itemCount: filtered.length,
+                              itemBuilder: (context, idx) {
+                                final s = filtered[idx];
+                                final rawId = s['id'];
+                                final sId = (rawId is num)
+                                    ? rawId.toInt()
+                                    : int.tryParse(rawId?.toString() ?? '') ?? 0;
+                                final sName = (s['name'] as String?) ?? 'Government Service';
+                                final sCat = (s['category'] as String?) ?? '';
+                                final isSelected = sId == _selectedServiceId;
+
+                                return ListTile(
+                                  contentPadding: const EdgeInsets.symmetric(horizontal: 10, vertical: 2),
+                                  shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
+                                  leading: CircleAvatar(
+                                    backgroundColor: isSelected
+                                        ? AppColors.primary
+                                        : AppColors.primary.withValues(alpha: 0.08),
+                                    child: Icon(
+                                      Icons.account_balance_outlined,
+                                      size: 18,
+                                      color: isSelected ? Colors.white : AppColors.primary,
+                                    ),
+                                  ),
+                                  title: Text(
+                                    sName,
+                                    style: TextStyle(
+                                      fontWeight: isSelected ? FontWeight.bold : FontWeight.w500,
+                                      fontSize: 13,
+                                      color: AppColors.dark,
+                                    ),
+                                  ),
+                                  subtitle: sCat.isNotEmpty
+                                      ? Text(sCat, style: const TextStyle(fontSize: 11, color: AppColors.secondaryLabel))
+                                      : null,
+                                  trailing: isSelected
+                                      ? const Icon(Icons.check_circle, color: AppColors.primary, size: 20)
+                                      : null,
+                                  onTap: () {
+                                    setState(() {
+                                      _selectedServiceId = sId;
+                                      _selectedServiceName = sName;
+                                    });
+                                    Navigator.pop(modalCtx);
+                                  },
+                                );
+                              },
+                            ),
+                    ),
+                  ],
+                ),
+              ),
+            );
+          },
+        );
+      },
+    );
+  }
+
   // --- Main Build ---
 
   @override
@@ -403,91 +388,63 @@ class _EligibilitySelfCheckScreenState
     final isEvaluating = evaluation.isLoading;
     final agentResult = evaluation.hasError ? null : evaluation.value;
     final servicesAsync = ref.watch(servicesProvider);
-
     final statutoryDocs = _getStatutoryRequiredDocs(_selectedServiceName);
 
     return Scaffold(
       backgroundColor: AppColors.background,
       appBar: AppBar(
-        title: const Text('Agent 2: Eligibility & Document Check'),
-        elevation: 0,
+        title: const Text(
+          'Agent 2: Eligibility & Document Check',
+          style: TextStyle(fontSize: 16, fontWeight: FontWeight.bold),
+        ),
+        backgroundColor: Colors.white,
+        foregroundColor: AppColors.dark,
+        elevation: 0.5,
+        actions: [
+          IconButton(
+            icon: const Icon(Icons.refresh_rounded),
+            tooltip: 'Reset Evaluation',
+            onPressed: () {
+              ref.invalidate(eligibilityCheckControllerProvider);
+            },
+          ),
+        ],
       ),
-      body: Center(
+      body: Align(
+        alignment: Alignment.topCenter,
         child: ConstrainedBox(
-          constraints: const BoxConstraints(maxWidth: 720),
+          constraints: const BoxConstraints(maxWidth: 760),
           child: SingleChildScrollView(
-            padding: const EdgeInsets.symmetric(horizontal: 16.0, vertical: 18.0),
+            padding: const EdgeInsets.symmetric(horizontal: 16.0, vertical: 16.0),
+            physics: const BouncingScrollPhysics(),
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.stretch,
               children: [
-                // 1. AI Hero Header Banner
+                // 1. Agent 2 Hero Cockpit Banner
                 _buildHeroBanner(),
                 const SizedBox(height: 16),
 
-                // 2. Service Selection Card
+                // 2. Target Government Service Card
                 _buildServiceSelectorCard(servicesAsync),
                 const SizedBox(height: 16),
 
-                // 3. Applicant Demographics Form Card
+                // 3. Demographics Form Card
                 _buildDemographicsCard(),
                 const SizedBox(height: 16),
 
-                // 4. Evidentiary Document Proofs Section
+                // 4. Evidentiary Documents Card
                 _buildDocumentProofsCard(isEvaluating),
                 const SizedBox(height: 16),
 
-                // 5. Pre-Screening Statutory Readiness Preview
+                // 5. Live Statutory Readiness Preview Checklist
                 _buildStatutoryReadinessCard(statutoryDocs),
                 const SizedBox(height: 20),
 
-                // 6. Action Button: Consult Agent 2
-                ElevatedButton(
-                  onPressed: isEvaluating ? null : _runEvaluation,
-                  style: ElevatedButton.styleFrom(
-                    backgroundColor: AppColors.primary,
-                    foregroundColor: Colors.white,
-                    padding: const EdgeInsets.symmetric(vertical: 14),
-                    shape: RoundedRectangleBorder(
-                      borderRadius: BorderRadius.circular(12),
-                    ),
-                    elevation: 2,
-                  ),
-                  child: isEvaluating
-                      ? const Row(
-                          mainAxisAlignment: MainAxisAlignment.center,
-                          children: [
-                            SizedBox(
-                              height: 18,
-                              width: 18,
-                              child: CircularProgressIndicator(
-                                strokeWidth: 2,
-                                color: Colors.white,
-                              ),
-                            ),
-                            SizedBox(width: 10),
-                            Text(
-                              'Agent 2 Auditing Statutory Rules...',
-                              style: TextStyle(
-                                  fontSize: 15, fontWeight: FontWeight.bold),
-                            ),
-                          ],
-                        )
-                      : const Row(
-                          mainAxisAlignment: MainAxisAlignment.center,
-                          children: [
-                            Icon(Icons.psychology_rounded, size: 20),
-                            SizedBox(width: 8),
-                            Text(
-                              'Consult Agent 2 RAG Engine',
-                              style: TextStyle(
-                                  fontSize: 15, fontWeight: FontWeight.bold),
-                            ),
-                          ],
-                        ),
-                ),
-                const SizedBox(height: 24),
+                // 6. Primary Action Button
+                _buildConsultActionButton(isEvaluating),
+                const SizedBox(height: 20),
 
-                // 7. Results Section
+                // 7. Results or Evaluation State
                 if (isEvaluating)
                   _buildEvaluatingCard()
                 else if (agentResult != null)
@@ -506,56 +463,104 @@ class _EligibilitySelfCheckScreenState
 
   Widget _buildHeroBanner() {
     return Container(
-      padding: const EdgeInsets.all(16),
       decoration: BoxDecoration(
-        color: AppColors.primary,
-        borderRadius: BorderRadius.circular(14),
+        gradient: const LinearGradient(
+          colors: [Color(0xFF162A4D), Color(0xFF1F3A68), Color(0xFF2A4D80)],
+          begin: Alignment.topLeft,
+          end: Alignment.bottomRight,
+        ),
+        borderRadius: BorderRadius.circular(16),
         boxShadow: [
           BoxShadow(
-            color: AppColors.primary.withValues(alpha: 0.2),
-            blurRadius: 10,
+            color: const Color(0xFF1F3A68).withValues(alpha: 0.25),
+            blurRadius: 12,
             offset: const Offset(0, 4),
           ),
         ],
       ),
-      child: Row(
+      padding: const EdgeInsets.all(18),
+      child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          Container(
-            padding: const EdgeInsets.all(10),
-            decoration: BoxDecoration(
-              color: Colors.white.withValues(alpha: 0.15),
-              borderRadius: BorderRadius.circular(10),
-            ),
-            child: const Icon(
-              Icons.smart_toy_rounded,
-              size: 28,
-              color: Colors.white,
-            ),
+          Row(
+            children: [
+              Container(
+                padding: const EdgeInsets.all(8),
+                decoration: BoxDecoration(
+                  color: Colors.white.withValues(alpha: 0.15),
+                  borderRadius: BorderRadius.circular(10),
+                ),
+                child: const Icon(
+                  Icons.policy_rounded,
+                  size: 24,
+                  color: Colors.white,
+                ),
+              ),
+              const SizedBox(width: 12),
+              Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Row(
+                      children: [
+                        const Flexible(
+                          child: Text(
+                            'Agent 2 • Statutory Eligibility Audit',
+                            style: TextStyle(
+                              fontSize: 14,
+                              fontWeight: FontWeight.bold,
+                              color: Colors.white,
+                            ),
+                            overflow: TextOverflow.ellipsis,
+                          ),
+                        ),
+                        const SizedBox(width: 6),
+                        Container(
+                          padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
+                          decoration: BoxDecoration(
+                            color: const Color(0xFF2E7D5B),
+                            borderRadius: BorderRadius.circular(6),
+                          ),
+                          child: const Text(
+                            'ONLINE',
+                            style: TextStyle(
+                              color: Colors.white,
+                              fontSize: 9,
+                              fontWeight: FontWeight.bold,
+                              letterSpacing: 0.5,
+                            ),
+                          ),
+                        ),
+                      ],
+                    ),
+                    const SizedBox(height: 2),
+                    const Text(
+                      'Sri Lanka Gazettes • Neon PGVector • Groq LLM',
+                      style: TextStyle(
+                        fontSize: 11,
+                        color: Colors.white70,
+                        fontWeight: FontWeight.w500,
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+            ],
           ),
-          const SizedBox(width: 14),
-          const Expanded(
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                Text(
-                  'Agent 2 • Statutory Eligibility Audit',
-                  style: TextStyle(
-                    fontSize: 15,
-                    fontWeight: FontWeight.bold,
-                    color: Colors.white,
-                  ),
-                ),
-                SizedBox(height: 4),
-                Text(
-                  'Pre-screen statutory eligibility against Sri Lanka Official Gazettes & Circulars using Neon PGVector embeddings and Groq LLM reasoning.',
-                  style: TextStyle(
-                    fontSize: 12,
-                    color: Colors.white70,
-                    height: 1.3,
-                  ),
-                ),
-              ],
+          const SizedBox(height: 12),
+          Container(
+            padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+            decoration: BoxDecoration(
+              color: Colors.black.withValues(alpha: 0.18),
+              borderRadius: BorderRadius.circular(8),
+            ),
+            child: const Text(
+              'Pre-screen statutory eligibility against Sri Lanka Official Gazettes & Circulars using Neon PGVector embeddings and Groq LLM reasoning.',
+              style: TextStyle(
+                fontSize: 12,
+                color: Colors.white,
+                height: 1.35,
+              ),
             ),
           ),
         ],
@@ -564,407 +569,421 @@ class _EligibilitySelfCheckScreenState
   }
 
   Widget _buildServiceSelectorCard(AsyncValue<List<Map<String, dynamic>>> servicesAsync) {
-    return Card(
-      elevation: 1,
-      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
-      child: Padding(
-        padding: const EdgeInsets.all(14),
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            const Row(
-              children: [
-                Icon(Icons.account_balance, size: 16, color: AppColors.primary),
-                SizedBox(width: 6),
-                Text(
-                  'Target Government Service',
-                  style: TextStyle(
-                    fontSize: 12,
-                    fontWeight: FontWeight.bold,
-                    color: AppColors.secondaryLabel,
-                  ),
-                ),
-              ],
-            ),
-            const SizedBox(height: 10),
-            Row(
-              children: [
-                Expanded(
-                  child: Text(
-                    _selectedServiceName,
-                    style: const TextStyle(
-                      fontSize: 14,
-                      fontWeight: FontWeight.bold,
-                      color: AppColors.dark,
-                    ),
-                  ),
-                ),
-                const SizedBox(width: 8),
-                servicesAsync.maybeWhen(
-                  data: (services) => OutlinedButton.icon(
-                    onPressed: () => _showServiceSelectionModal(services),
-                    icon: const Icon(Icons.swap_horiz, size: 16),
-                    label: const Text('Change', style: TextStyle(fontSize: 12)),
-                    style: OutlinedButton.styleFrom(
-                      visualDensity: VisualDensity.compact,
-                      padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
-                    ),
-                  ),
-                  orElse: () => const SizedBox.shrink(),
-                ),
-              ],
-            ),
-          ],
-        ),
-      ),
-    );
-  }
-
-  Widget _buildDemographicsCard() {
-    return Card(
-      elevation: 1,
-      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
-      child: Padding(
-        padding: const EdgeInsets.all(14),
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            const Row(
-              children: [
-                Icon(Icons.person_pin_rounded, size: 16, color: AppColors.primary),
-                SizedBox(width: 6),
-                Text(
-                  'Applicant Statutory Demographics',
-                  style: TextStyle(
-                    fontSize: 13,
-                    fontWeight: FontWeight.bold,
-                    color: AppColors.dark,
-                  ),
-                ),
-              ],
-            ),
-            const SizedBox(height: 12),
-            Row(
-              children: [
-                Expanded(
-                  child: TextField(
-                    controller: _ageController,
-                    keyboardType: TextInputType.number,
-                    decoration: InputDecoration(
-                      labelText: 'Applicant Age',
-                      isDense: true,
-                      prefixIcon: const Icon(Icons.cake, size: 18),
-                      border: OutlineInputBorder(borderRadius: BorderRadius.circular(8)),
-                    ),
-                    onChanged: (_) => setState(() {}),
-                  ),
-                ),
-                const SizedBox(width: 12),
-                Expanded(
-                  child: TextField(
-                    controller: _incomeController,
-                    keyboardType: TextInputType.number,
-                    decoration: InputDecoration(
-                      labelText: 'Annual Income (LKR)',
-                      isDense: true,
-                      prefixIcon: const Icon(Icons.payments_outlined, size: 18),
-                      border: OutlineInputBorder(borderRadius: BorderRadius.circular(8)),
-                    ),
-                  ),
-                ),
-              ],
-            ),
-            const SizedBox(height: 12),
-            const Text(
-              'Citizenship Status:',
-              style: TextStyle(fontSize: 12, fontWeight: FontWeight.w600, color: AppColors.secondaryLabel),
-            ),
-            const SizedBox(height: 6),
-            Wrap(
-              spacing: 8,
-              children: ['Sri Lankan', 'Dual Citizen', 'Foreign National'].map((status) {
-                final isSelected = _selectedCitizenship == status;
-                return ChoiceChip(
-                  label: Text(status, style: TextStyle(fontSize: 12, color: isSelected ? Colors.white : AppColors.dark)),
-                  selected: isSelected,
-                  selectedColor: AppColors.primary,
-                  onSelected: (val) {
-                    if (val) setState(() => _selectedCitizenship = status);
-                  },
-                );
-              }).toList(),
-            ),
-            const SizedBox(height: 10),
-            const Text(
-              'Employment Status:',
-              style: TextStyle(fontSize: 12, fontWeight: FontWeight.w600, color: AppColors.secondaryLabel),
-            ),
-            const SizedBox(height: 6),
-            Wrap(
-              spacing: 8,
-              children: ['Employed', 'Self-Employed', 'Student', 'Unemployed'].map((status) {
-                final isSelected = _selectedEmployment == status;
-                return ChoiceChip(
-                  label: Text(status, style: TextStyle(fontSize: 12, color: isSelected ? Colors.white : AppColors.dark)),
-                  selected: isSelected,
-                  selectedColor: AppColors.primary,
-                  onSelected: (val) {
-                    if (val) setState(() => _selectedEmployment = status);
-                  },
-                );
-              }).toList(),
-            ),
-          ],
-        ),
-      ),
-    );
-  }
-
-  Widget _buildDocumentProofsCard(bool isEvaluating) {
-    return Card(
-      elevation: 1,
-      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
-      child: Padding(
-        padding: const EdgeInsets.all(14),
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            Row(
-              mainAxisAlignment: MainAxisAlignment.spaceBetween,
-              children: [
-                const Row(
-                  children: [
-                    Icon(Icons.folder_shared_rounded, size: 16, color: AppColors.primary),
-                    SizedBox(width: 6),
-                    Text(
-                      'Evidentiary Documents',
-                      style: TextStyle(
-                        fontSize: 13,
-                        fontWeight: FontWeight.bold,
-                        color: AppColors.dark,
-                      ),
-                    ),
-                  ],
-                ),
-                Row(
-                  children: [
-                    OutlinedButton.icon(
-                      onPressed: isEvaluating ? null : _showAddCustomDocDialog,
-                      icon: const Icon(Icons.add, size: 14),
-                      label: const Text('Add Ref', style: TextStyle(fontSize: 11)),
-                      style: OutlinedButton.styleFrom(
-                        visualDensity: VisualDensity.compact,
-                        padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
-                      ),
-                    ),
-                    const SizedBox(width: 6),
-                    ElevatedButton.icon(
-                      onPressed: isEvaluating ? null : _pickFiles,
-                      icon: const Icon(Icons.upload_file, size: 14),
-                      label: const Text('Upload File', style: TextStyle(fontSize: 11)),
-                      style: ElevatedButton.styleFrom(
-                        backgroundColor: AppColors.primary,
-                        foregroundColor: Colors.white,
-                        visualDensity: VisualDensity.compact,
-                        padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
-                      ),
-                    ),
-                  ],
-                ),
-              ],
-            ),
-            const SizedBox(height: 8),
-            Container(
-              padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 8),
-              decoration: BoxDecoration(
-                color: AppColors.primary.withValues(alpha: 0.06),
-                borderRadius: BorderRadius.circular(8),
-              ),
-              child: const Row(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  Icon(Icons.info_outline, size: 15, color: AppColors.primary),
-                  SizedBox(width: 8),
-                  Expanded(
-                    child: Text(
-                      'Agent 2 checks file extensions (.pdf, .jpg, .png) and statutory keywords. Generic scans can be tagged with one tap below.',
-                      style: TextStyle(fontSize: 11, color: Colors.black87, height: 1.3),
-                    ),
-                  ),
-                ],
-              ),
-            ),
-            const SizedBox(height: 10),
-            // Quick preset tags
-            const Text(
-              'Quick Statutory Presets:',
-              style: TextStyle(fontSize: 11, fontWeight: FontWeight.bold, color: AppColors.secondaryLabel),
-            ),
-            const SizedBox(height: 6),
-            Wrap(
-              spacing: 6,
-              runSpacing: 6,
-              children: [
-                _buildQuickPresetChip('NIC Copy', 'National Identity Card (NIC): nic_front.pdf'),
-                _buildQuickPresetChip('Birth Extract', 'Certified Birth Certificate Extract: birth_cert.pdf'),
-                _buildQuickPresetChip('Police Report', 'Police Complaint Report for Loss: police_loss_report.pdf'),
-                _buildQuickPresetChip('NTMI Medical', 'Medical Fitness Certificate (NTMI): ntmi_fitness.pdf'),
-                _buildQuickPresetChip('Biometric Photo', 'ICAO Biometric Photo Slip: photo_slip.jpg'),
-              ],
-            ),
-            const SizedBox(height: 14),
-            // Uploaded items list
-            if (_uploadedDocuments.isEmpty)
-              Container(
-                width: double.infinity,
-                padding: const EdgeInsets.symmetric(vertical: 18),
-                alignment: Alignment.center,
-                child: const Text(
-                  'No documents attached yet. Upload files or select presets above.',
-                  style: TextStyle(fontSize: 12, color: Colors.grey),
-                ),
-              )
-            else
-              Column(
-                children: List.generate(_uploadedDocuments.length, (idx) {
-                  final doc = _uploadedDocuments[idx];
-                  final inspection = _inspectDoc(doc);
-                  return _buildDocumentItem(idx, doc, inspection);
-                }),
-              ),
-          ],
-        ),
-      ),
-    );
-  }
-
-  Widget _buildQuickPresetChip(String label, String fullPayload) {
-    return ActionChip(
-      avatar: const Icon(Icons.add, size: 12),
-      label: Text(label, style: const TextStyle(fontSize: 11)),
-      visualDensity: VisualDensity.compact,
-      onPressed: () => _addDoc(fullPayload),
-    );
-  }
-
-  Widget _buildDocumentItem(int index, String doc,
-      ({bool isRecognized, String documentType, bool isGenericWarning, String extension}) inspection) {
     return Container(
-      margin: const EdgeInsets.only(bottom: 8),
-      padding: const EdgeInsets.all(10),
       decoration: BoxDecoration(
-        color: inspection.isGenericWarning
-            ? Colors.orange.withValues(alpha: 0.08)
-            : AppColors.success.withValues(alpha: 0.08),
-        borderRadius: BorderRadius.circular(8),
-        border: Border.all(
-          color: inspection.isGenericWarning
-              ? Colors.orange.withValues(alpha: 0.4)
-              : AppColors.success.withValues(alpha: 0.3),
-        ),
+        color: AppColors.cardBg,
+        borderRadius: BorderRadius.circular(14),
+        border: Border.all(color: AppColors.divider),
+        boxShadow: [
+          BoxShadow(
+            color: Colors.black.withValues(alpha: 0.03),
+            blurRadius: 6,
+            offset: const Offset(0, 2),
+          ),
+        ],
       ),
+      padding: const EdgeInsets.all(16),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
+          const Row(
+            children: [
+              Icon(Icons.account_balance, size: 16, color: AppColors.primary),
+              SizedBox(width: 8),
+              Text(
+                'Target Government Service',
+                style: TextStyle(
+                  fontSize: 12,
+                  fontWeight: FontWeight.bold,
+                  color: AppColors.secondaryLabel,
+                  letterSpacing: 0.3,
+                ),
+              ),
+            ],
+          ),
+          const SizedBox(height: 10),
           Row(
             children: [
-              Container(
-                padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
-                decoration: BoxDecoration(
-                  color: AppColors.primary.withValues(alpha: 0.15),
-                  borderRadius: BorderRadius.circular(4),
-                ),
+              Expanded(
                 child: Text(
-                  inspection.extension,
+                  _selectedServiceName,
                   style: const TextStyle(
-                    fontSize: 10,
-                    fontWeight: FontWeight.bold,
-                    color: AppColors.primary,
+                    fontSize: 14,
+                    fontWeight: FontWeight.w700,
+                    color: AppColors.dark,
                   ),
                 ),
               ),
               const SizedBox(width: 8),
-              Expanded(
-                child: Text(
-                  doc,
-                  style: const TextStyle(
-                    fontSize: 12,
-                    fontWeight: FontWeight.w600,
+              servicesAsync.maybeWhen(
+                data: (services) => TextButton.icon(
+                  onPressed: () => _showServiceSelectionModal(services),
+                  icon: const Icon(Icons.swap_horiz, size: 16),
+                  label: const Text('Change', style: TextStyle(fontSize: 12, fontWeight: FontWeight.bold)),
+                  style: TextButton.styleFrom(
+                    backgroundColor: AppColors.primary.withValues(alpha: 0.08),
+                    foregroundColor: AppColors.primary,
+                    shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
+                    padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
+                    visualDensity: VisualDensity.compact,
                   ),
-                  overflow: TextOverflow.ellipsis,
                 ),
-              ),
-              IconButton(
-                icon: const Icon(Icons.close, size: 16, color: Colors.grey),
-                onPressed: () => _removeDoc(index),
-                visualDensity: VisualDensity.compact,
-                padding: EdgeInsets.zero,
-                constraints: const BoxConstraints(),
+                orElse: () => const SizedBox.shrink(),
               ),
             ],
           ),
-          const SizedBox(height: 4),
-          Row(
-            children: [
-              Icon(
-                inspection.isGenericWarning
-                    ? Icons.warning_amber_rounded
-                    : Icons.check_circle_outline,
-                size: 14,
-                color: inspection.isGenericWarning ? Colors.orange : AppColors.success,
-              ),
-              const SizedBox(width: 4),
-              Expanded(
-                child: Text(
-                  inspection.isGenericWarning
-                      ? 'Generic Scan — Tap tag below to classify for Agent 2'
-                      : 'Verified as ${inspection.documentType}',
-                  style: TextStyle(
-                    fontSize: 11,
-                    fontWeight: FontWeight.w600,
-                    color: inspection.isGenericWarning ? Colors.orange.shade800 : AppColors.success,
-                  ),
-                ),
-              ),
-            ],
-          ),
-          if (inspection.isGenericWarning) ...[
-            const SizedBox(height: 6),
-            Wrap(
-              spacing: 6,
-              runSpacing: 4,
-              children: [
-                _buildTagButton(index, 'Tag as NIC', 'National Identity Card (NIC)'),
-                _buildTagButton(index, 'Tag as Birth Cert', 'Certified Birth Certificate Extract'),
-                _buildTagButton(index, 'Tag as Police Report', 'Police Complaint Report for Loss'),
-              ],
-            ),
-          ],
         ],
       ),
     );
   }
 
-  Widget _buildTagButton(int index, String label, String statutoryType) {
-    return InkWell(
-      onTap: () => _tagDoc(index, statutoryType),
-      borderRadius: BorderRadius.circular(4),
-      child: Container(
-        padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
-        decoration: BoxDecoration(
-          color: Colors.orange.withValues(alpha: 0.15),
-          borderRadius: BorderRadius.circular(4),
-          border: Border.all(color: Colors.orange.withValues(alpha: 0.5)),
-        ),
-        child: Text(
-          '+ $label',
-          style: TextStyle(
-            fontSize: 10,
-            fontWeight: FontWeight.w600,
-            color: Colors.orange.shade900,
+  Widget _buildDemographicsCard() {
+    return Container(
+      decoration: BoxDecoration(
+        color: AppColors.cardBg,
+        borderRadius: BorderRadius.circular(14),
+        border: Border.all(color: AppColors.divider),
+        boxShadow: [
+          BoxShadow(
+            color: Colors.black.withValues(alpha: 0.03),
+            blurRadius: 6,
+            offset: const Offset(0, 2),
           ),
-        ),
+        ],
       ),
+      padding: const EdgeInsets.all(16),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          const Row(
+            children: [
+              Icon(Icons.person_outline_rounded, size: 18, color: AppColors.primary),
+              SizedBox(width: 8),
+              Text(
+                'Applicant Statutory Demographics',
+                style: TextStyle(
+                  fontSize: 13,
+                  fontWeight: FontWeight.bold,
+                  color: AppColors.dark,
+                ),
+              ),
+            ],
+          ),
+          const SizedBox(height: 14),
+          Row(
+            children: [
+              Expanded(
+                child: TextField(
+                  controller: _ageController,
+                  keyboardType: TextInputType.number,
+                  decoration: InputDecoration(
+                    labelText: 'Applicant Age',
+                    hintText: 'e.g. 25',
+                    isDense: true,
+                    prefixIcon: const Icon(Icons.cake_outlined, size: 18, color: AppColors.secondaryLabel),
+                    filled: true,
+                    fillColor: AppColors.background,
+                    border: OutlineInputBorder(
+                      borderRadius: BorderRadius.circular(10),
+                      borderSide: const BorderSide(color: AppColors.divider),
+                    ),
+                    enabledBorder: OutlineInputBorder(
+                      borderRadius: BorderRadius.circular(10),
+                      borderSide: const BorderSide(color: AppColors.divider),
+                    ),
+                  ),
+                ),
+              ),
+              const SizedBox(width: 12),
+              Expanded(
+                child: TextField(
+                  controller: _incomeController,
+                  keyboardType: TextInputType.number,
+                  decoration: InputDecoration(
+                    labelText: 'Annual Income (LKR)',
+                    hintText: '500,000',
+                    isDense: true,
+                    prefixIcon: const Icon(Icons.payments_outlined, size: 18, color: AppColors.secondaryLabel),
+                    filled: true,
+                    fillColor: AppColors.background,
+                    border: OutlineInputBorder(
+                      borderRadius: BorderRadius.circular(10),
+                      borderSide: const BorderSide(color: AppColors.divider),
+                    ),
+                    enabledBorder: OutlineInputBorder(
+                      borderRadius: BorderRadius.circular(10),
+                      borderSide: const BorderSide(color: AppColors.divider),
+                    ),
+                  ),
+                ),
+              ),
+            ],
+          ),
+          const SizedBox(height: 14),
+          const Text(
+            'Citizenship Status:',
+            style: TextStyle(fontSize: 12, fontWeight: FontWeight.w600, color: AppColors.secondaryLabel),
+          ),
+          const SizedBox(height: 6),
+          Wrap(
+            spacing: 8,
+            children: ['Sri Lankan', 'Dual Citizen', 'Foreign National'].map((status) {
+              final isSelected = _selectedCitizenship == status;
+              return ChoiceChip(
+                label: Text(
+                  status,
+                  style: TextStyle(
+                    fontSize: 12,
+                    fontWeight: isSelected ? FontWeight.bold : FontWeight.normal,
+                    color: isSelected ? Colors.white : AppColors.dark,
+                  ),
+                ),
+                selected: isSelected,
+                selectedColor: AppColors.primary,
+                backgroundColor: AppColors.background,
+                showCheckmark: false,
+                side: BorderSide(
+                  color: isSelected ? AppColors.primary : AppColors.divider,
+                ),
+                shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
+                onSelected: (val) {
+                  if (val) setState(() => _selectedCitizenship = status);
+                },
+              );
+            }).toList(),
+          ),
+          const SizedBox(height: 12),
+          const Text(
+            'Employment Status:',
+            style: TextStyle(fontSize: 12, fontWeight: FontWeight.w600, color: AppColors.secondaryLabel),
+          ),
+          const SizedBox(height: 6),
+          Wrap(
+            spacing: 8,
+            children: ['Employed', 'Self-Employed', 'Student', 'Unemployed'].map((status) {
+              final isSelected = _selectedEmployment == status;
+              return ChoiceChip(
+                label: Text(
+                  status,
+                  style: TextStyle(
+                    fontSize: 12,
+                    fontWeight: isSelected ? FontWeight.bold : FontWeight.normal,
+                    color: isSelected ? Colors.white : AppColors.dark,
+                  ),
+                ),
+                selected: isSelected,
+                selectedColor: AppColors.primary,
+                backgroundColor: AppColors.background,
+                showCheckmark: false,
+                side: BorderSide(
+                  color: isSelected ? AppColors.primary : AppColors.divider,
+                ),
+                shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
+                onSelected: (val) {
+                  if (val) setState(() => _selectedEmployment = status);
+                },
+              );
+            }).toList(),
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildDocumentProofsCard(bool isEvaluating) {
+    return Container(
+      decoration: BoxDecoration(
+        color: AppColors.cardBg,
+        borderRadius: BorderRadius.circular(14),
+        border: Border.all(color: AppColors.divider),
+        boxShadow: [
+          BoxShadow(
+            color: Colors.black.withValues(alpha: 0.03),
+            blurRadius: 6,
+            offset: const Offset(0, 2),
+          ),
+        ],
+      ),
+      padding: const EdgeInsets.all(16),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Row(
+            mainAxisAlignment: MainAxisAlignment.spaceBetween,
+            children: [
+              const Row(
+                children: [
+                  Icon(Icons.folder_open_rounded, size: 18, color: AppColors.primary),
+                  SizedBox(width: 8),
+                  Text(
+                    'Evidentiary Documents',
+                    style: TextStyle(
+                      fontSize: 13,
+                      fontWeight: FontWeight.bold,
+                      color: AppColors.dark,
+                    ),
+                  ),
+                ],
+              ),
+              Row(
+                children: [
+                  OutlinedButton.icon(
+                    onPressed: isEvaluating ? null : _showAddCustomDocDialog,
+                    icon: const Icon(Icons.add, size: 14),
+                    label: const Text('Add Ref', style: TextStyle(fontSize: 11)),
+                    style: OutlinedButton.styleFrom(
+                      foregroundColor: AppColors.primary,
+                      side: const BorderSide(color: AppColors.divider),
+                      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
+                      visualDensity: VisualDensity.compact,
+                      padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
+                    ),
+                  ),
+                  const SizedBox(width: 8),
+                  ElevatedButton.icon(
+                    onPressed: isEvaluating ? null : _pickFiles,
+                    icon: const Icon(Icons.upload_file_rounded, size: 14),
+                    label: const Text('Upload File', style: TextStyle(fontSize: 11, fontWeight: FontWeight.bold)),
+                    style: ElevatedButton.styleFrom(
+                      backgroundColor: AppColors.primary,
+                      foregroundColor: Colors.white,
+                      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
+                      visualDensity: VisualDensity.compact,
+                      padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 4),
+                    ),
+                  ),
+                ],
+              ),
+            ],
+          ),
+          const SizedBox(height: 10),
+          const Text(
+            'Quick Statutory Presets (Tap to attach):',
+            style: TextStyle(fontSize: 11, fontWeight: FontWeight.bold, color: AppColors.secondaryLabel),
+          ),
+          const SizedBox(height: 6),
+          Wrap(
+            spacing: 6,
+            runSpacing: 6,
+            children: [
+              _buildPresetChip('NIC Copy', 'National Identity Card (NIC): nic_front.pdf'),
+              _buildPresetChip('Birth Extract', 'Certified Birth Certificate Extract: birth_cert.pdf'),
+              _buildPresetChip('Police Report', 'Police Complaint Report for Loss: police_loss_report.pdf'),
+              _buildPresetChip('NTMI Medical', 'Medical Fitness Certificate (NTMI): ntmi_fitness.pdf'),
+              _buildPresetChip('Biometric Photo', 'ICAO Biometric Photo Slip: photo_slip.jpg'),
+              _buildPresetChip('Grama Niladhari', 'Grama Niladhari Certificate: residence_gn.pdf'),
+            ],
+          ),
+          const SizedBox(height: 14),
+          if (_uploadedDocuments.isEmpty)
+            Container(
+              width: double.infinity,
+              padding: const EdgeInsets.symmetric(vertical: 20),
+              decoration: BoxDecoration(
+                color: AppColors.background,
+                borderRadius: BorderRadius.circular(10),
+                border: Border.all(color: AppColors.divider, style: BorderStyle.solid),
+              ),
+              alignment: Alignment.center,
+              child: const Text(
+                'No documents attached yet. Tap presets or upload files.',
+                style: TextStyle(fontSize: 12, color: AppColors.secondaryLabel),
+              ),
+            )
+          else
+            ListView.separated(
+              shrinkWrap: true,
+              physics: const NeverScrollableScrollPhysics(),
+              itemCount: _uploadedDocuments.length,
+              separatorBuilder: (context, index) => const SizedBox(height: 6),
+              itemBuilder: (context, idx) {
+                final doc = _uploadedDocuments[idx];
+                final inspection = _inspectDoc(doc);
+
+                return Container(
+                  padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+                  decoration: BoxDecoration(
+                    color: AppColors.background,
+                    borderRadius: BorderRadius.circular(8),
+                    border: Border.all(color: AppColors.divider),
+                  ),
+                  child: Row(
+                    children: [
+                      Container(
+                        padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
+                        decoration: BoxDecoration(
+                          color: AppColors.primary.withValues(alpha: 0.12),
+                          borderRadius: BorderRadius.circular(4),
+                        ),
+                        child: Text(
+                          inspection.extension,
+                          style: const TextStyle(
+                            fontSize: 10,
+                            fontWeight: FontWeight.bold,
+                            color: AppColors.primary,
+                          ),
+                        ),
+                      ),
+                      const SizedBox(width: 8),
+                      Expanded(
+                        child: Column(
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          children: [
+                            Text(
+                              doc,
+                              style: const TextStyle(
+                                fontSize: 12,
+                                fontWeight: FontWeight.w600,
+                                color: AppColors.dark,
+                              ),
+                              overflow: TextOverflow.ellipsis,
+                            ),
+                            Text(
+                              inspection.documentType,
+                              style: TextStyle(
+                                fontSize: 10,
+                                color: inspection.isRecognized
+                                    ? AppColors.success
+                                    : AppColors.secondaryLabel,
+                                fontWeight: FontWeight.w500,
+                              ),
+                            ),
+                          ],
+                        ),
+                      ),
+                      IconButton(
+                        icon: const Icon(Icons.close, size: 16, color: Colors.grey),
+                        onPressed: () => _removeDoc(idx),
+                        visualDensity: VisualDensity.compact,
+                        padding: EdgeInsets.zero,
+                        constraints: const BoxConstraints(),
+                      ),
+                    ],
+                  ),
+                );
+              },
+            ),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildPresetChip(String label, String fullPayload) {
+    final alreadyAdded = _uploadedDocuments.contains(fullPayload);
+    return ActionChip(
+      avatar: Icon(
+        alreadyAdded ? Icons.check : Icons.add,
+        size: 13,
+        color: alreadyAdded ? AppColors.success : AppColors.primary,
+      ),
+      label: Text(label, style: const TextStyle(fontSize: 11, fontWeight: FontWeight.w600)),
+      backgroundColor: alreadyAdded ? AppColors.success.withValues(alpha: 0.1) : AppColors.background,
+      side: BorderSide(
+        color: alreadyAdded ? AppColors.success.withValues(alpha: 0.3) : AppColors.divider,
+      ),
+      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
+      visualDensity: VisualDensity.compact,
+      onPressed: () => _addDoc(fullPayload),
     );
   }
 
@@ -978,139 +997,195 @@ class _EligibilitySelfCheckScreenState
     final recognizedDocs = _uploadedDocuments.map((d) => _inspectDoc(d)).toList();
     final recognizedCount = recognizedDocs.where((i) => i.isRecognized).length;
 
-    return Card(
-      elevation: 1,
-      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
-      child: Padding(
-        padding: const EdgeInsets.all(14),
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            const Row(
-              children: [
-                Icon(Icons.fact_check_outlined, size: 16, color: AppColors.primary),
-                SizedBox(width: 6),
-                Text(
-                  'Live Statutory Criteria Checklist',
-                  style: TextStyle(
-                    fontSize: 13,
-                    fontWeight: FontWeight.bold,
-                    color: AppColors.dark,
-                  ),
+    return Container(
+      decoration: BoxDecoration(
+        color: AppColors.cardBg,
+        borderRadius: BorderRadius.circular(14),
+        border: Border.all(color: AppColors.divider),
+        boxShadow: [
+          BoxShadow(
+            color: Colors.black.withValues(alpha: 0.03),
+            blurRadius: 6,
+            offset: const Offset(0, 2),
+          ),
+        ],
+      ),
+      padding: const EdgeInsets.all(16),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          const Row(
+            children: [
+              Icon(Icons.fact_check_outlined, size: 18, color: AppColors.primary),
+              SizedBox(width: 8),
+              Text(
+                'Live Statutory Criteria Checklist',
+                style: TextStyle(
+                  fontSize: 13,
+                  fontWeight: FontWeight.bold,
+                  color: AppColors.dark,
                 ),
-              ],
-            ),
-            const SizedBox(height: 10),
-            Row(
-              children: [
-                Icon(
-                  isAgeMet ? Icons.check_circle : Icons.cancel,
-                  color: isAgeMet ? AppColors.success : AppColors.danger,
-                  size: 16,
+              ),
+            ],
+          ),
+          const SizedBox(height: 12),
+          Row(
+            children: [
+              Icon(
+                isAgeMet ? Icons.check_circle_rounded : Icons.cancel_rounded,
+                color: isAgeMet ? AppColors.success : AppColors.danger,
+                size: 16,
+              ),
+              const SizedBox(width: 8),
+              Expanded(
+                child: Text(
+                  'Age Threshold: Minimum statutory age met (Applicant: $userAge)',
+                  style: const TextStyle(fontSize: 12, color: AppColors.dark),
                 ),
-                const SizedBox(width: 8),
-                Expanded(
-                  child: Text(
-                    'Age Requirement: Minimum 15+ years (Applicant: $userAge)',
-                    style: const TextStyle(fontSize: 12),
-                  ),
+              ),
+            ],
+          ),
+          const SizedBox(height: 6),
+          Row(
+            children: [
+              Icon(
+                isCitizenMet ? Icons.check_circle_rounded : Icons.cancel_rounded,
+                color: isCitizenMet ? AppColors.success : AppColors.danger,
+                size: 16,
+              ),
+              const SizedBox(width: 8),
+              Expanded(
+                child: Text(
+                  'Citizenship Status: Sri Lankan or Dual Citizen Status',
+                  style: const TextStyle(fontSize: 12, color: AppColors.dark),
                 ),
-              ],
-            ),
-            const SizedBox(height: 6),
-            Row(
-              children: [
-                Icon(
-                  isCitizenMet ? Icons.check_circle : Icons.cancel,
-                  color: isCitizenMet ? AppColors.success : AppColors.danger,
-                  size: 16,
+              ),
+            ],
+          ),
+          const Padding(
+            padding: EdgeInsets.symmetric(vertical: 8.0),
+            child: Divider(height: 1, color: AppColors.divider),
+          ),
+          Row(
+            mainAxisAlignment: MainAxisAlignment.spaceBetween,
+            children: [
+              const Text(
+                'Mandatory Statutory Proofs:',
+                style: TextStyle(fontSize: 12, fontWeight: FontWeight.bold, color: AppColors.dark),
+              ),
+              Text(
+                'Attached: $recognizedCount / ${requiredDocsList.length}',
+                style: const TextStyle(
+                  fontSize: 11,
+                  fontWeight: FontWeight.bold,
+                  color: AppColors.primary,
                 ),
-                const SizedBox(width: 8),
-                Expanded(
-                  child: Text(
-                    'Citizenship: Sri Lankan or Dual Citizen Status',
-                    style: const TextStyle(fontSize: 12),
-                  ),
-                ),
-              ],
-            ),
-            const Divider(height: 18),
-            Row(
-              mainAxisAlignment: MainAxisAlignment.spaceBetween,
-              children: [
-                const Text(
-                  'Mandatory Statutory Proofs:',
-                  style: TextStyle(fontSize: 12, fontWeight: FontWeight.bold),
-                ),
-                Text(
-                  'Attached: $recognizedCount / ${requiredDocsList.length}',
-                  style: const TextStyle(
-                    fontSize: 11,
-                    fontWeight: FontWeight.bold,
-                    color: AppColors.primary,
-                  ),
-                ),
-              ],
-            ),
-            const SizedBox(height: 8),
-            ...requiredDocsList.map((req) {
-              final isAttached = recognizedDocs.any((i) =>
-                  i.isRecognized &&
-                  (req.toLowerCase().contains(i.documentType.toLowerCase()) ||
-                   i.documentType.toLowerCase().contains(req.toLowerCase().split(' ').first)));
+              ),
+            ],
+          ),
+          const SizedBox(height: 8),
+          ...requiredDocsList.map((req) {
+            final isAttached = recognizedDocs.any((i) =>
+                i.isRecognized &&
+                (req.toLowerCase().contains(i.documentType.toLowerCase()) ||
+                 i.documentType.toLowerCase().contains(req.toLowerCase().split(' ').first)));
 
-              return Padding(
-                padding: const EdgeInsets.only(bottom: 4.0),
-                child: Row(
-                  children: [
-                    Icon(
-                      isAttached ? Icons.check_circle : Icons.radio_button_unchecked,
-                      color: isAttached ? AppColors.success : Colors.grey,
-                      size: 15,
-                    ),
-                    const SizedBox(width: 8),
-                    Expanded(
-                      child: Text(
-                        req,
-                        style: TextStyle(
-                          fontSize: 12,
-                          color: isAttached ? AppColors.dark : Colors.black54,
-                          fontWeight: isAttached ? FontWeight.w600 : FontWeight.normal,
-                        ),
+            return Padding(
+              padding: const EdgeInsets.only(bottom: 5.0),
+              child: Row(
+                children: [
+                  Icon(
+                    isAttached ? Icons.check_circle_rounded : Icons.radio_button_unchecked,
+                    color: isAttached ? AppColors.success : Colors.grey,
+                    size: 15,
+                  ),
+                  const SizedBox(width: 8),
+                  Expanded(
+                    child: Text(
+                      req,
+                      style: TextStyle(
+                        fontSize: 12,
+                        color: isAttached ? AppColors.dark : AppColors.secondaryLabel,
+                        fontWeight: isAttached ? FontWeight.w600 : FontWeight.normal,
                       ),
                     ),
-                  ],
-                ),
-              );
-            }),
-          ],
-        ),
+                  ),
+                ],
+              ),
+            );
+          }),
+        ],
       ),
     );
   }
 
+  Widget _buildConsultActionButton(bool isEvaluating) {
+    return ElevatedButton(
+      onPressed: isEvaluating ? null : _runEvaluation,
+      style: ElevatedButton.styleFrom(
+        backgroundColor: AppColors.primary,
+        foregroundColor: Colors.white,
+        padding: const EdgeInsets.symmetric(vertical: 16),
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+        elevation: 2,
+      ),
+      child: isEvaluating
+          ? const Row(
+              mainAxisAlignment: MainAxisAlignment.center,
+              children: [
+                SizedBox(
+                  height: 18,
+                  width: 18,
+                  child: CircularProgressIndicator(
+                    strokeWidth: 2,
+                    color: Colors.white,
+                  ),
+                ),
+                SizedBox(width: 12),
+                Text(
+                  'Agent 2 Auditing Statutory Rules...',
+                  style: TextStyle(fontSize: 14, fontWeight: FontWeight.bold),
+                ),
+              ],
+            )
+          : const Row(
+              mainAxisAlignment: MainAxisAlignment.center,
+              children: [
+                Icon(Icons.psychology_rounded, size: 20),
+                SizedBox(width: 8),
+                Text(
+                  'Consult Agent 2 RAG Engine',
+                  style: TextStyle(fontSize: 14, fontWeight: FontWeight.bold),
+                ),
+              ],
+            ),
+    );
+  }
+
   Widget _buildEvaluatingCard() {
-    return Card(
-      elevation: 2,
-      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
-      child: Padding(
-        padding: const EdgeInsets.all(20.0),
-        child: Column(
-          children: [
-            const CircularProgressIndicator(),
-            const SizedBox(height: 16),
-            const Text(
-              'Agent 2 AI RAG Engine Auditing...',
-              style: TextStyle(fontWeight: FontWeight.bold, fontSize: 15),
-            ),
-            const SizedBox(height: 8),
-            Text(
-              'Auditing uploaded proofs against official circulars in Neon PGVector & synthesizing Groq LLM reasoning...',
-              textAlign: TextAlign.center,
-              style: TextStyle(fontSize: 12, color: Colors.grey.shade700),
-            ),
-          ],
-        ),
+    return Container(
+      decoration: BoxDecoration(
+        color: AppColors.cardBg,
+        borderRadius: BorderRadius.circular(14),
+        border: Border.all(color: AppColors.divider),
+      ),
+      padding: const EdgeInsets.all(24),
+      alignment: Alignment.center,
+      child: Column(
+        children: [
+          const CircularProgressIndicator(color: AppColors.primary),
+          const SizedBox(height: 16),
+          const Text(
+            'Agent 2 RAG Engine Auditing...',
+            style: TextStyle(fontWeight: FontWeight.bold, fontSize: 14, color: AppColors.dark),
+          ),
+          const SizedBox(height: 6),
+          Text(
+            'Auditing proofs against official circulars in Neon PGVector & synthesizing Groq LLM reasoning...',
+            textAlign: TextAlign.center,
+            style: TextStyle(fontSize: 12, color: Colors.grey.shade600),
+          ),
+        ],
       ),
     );
   }
@@ -1121,131 +1196,208 @@ class _EligibilitySelfCheckScreenState
     final bool hasMissingDocs = agentResult.missingDocuments.isNotEmpty;
     final bool hasCriteriaErrors = agentResult.missingCriteria.isNotEmpty;
 
-    Color cardColor;
-    Color textColor;
+    Color badgeColor;
     String statusTitle;
     IconData statusIcon;
 
     if (isFullyEligible) {
-      cardColor = AppColors.success;
-      textColor = AppColors.success;
+      badgeColor = AppColors.success;
       statusTitle = 'Fully Eligible — Ready to Apply';
       statusIcon = Icons.check_circle_rounded;
     } else if (hasCriteriaErrors) {
-      cardColor = AppColors.danger;
-      textColor = AppColors.danger;
+      badgeColor = AppColors.danger;
       statusTitle = 'Ineligible — Statutory Criteria Not Met';
       statusIcon = Icons.cancel_rounded;
     } else {
-      cardColor = AppColors.warning;
-      textColor = Colors.deepOrange;
+      badgeColor = AppColors.warning;
       statusTitle = 'Action Required — Incomplete Proofs';
       statusIcon = Icons.warning_amber_rounded;
     }
 
-    return Card(
-      elevation: 3,
-      color: cardColor.withValues(alpha: 0.08),
-      shape: RoundedRectangleBorder(
-        borderRadius: BorderRadius.circular(12),
-        side: BorderSide(color: cardColor.withValues(alpha: 0.4), width: 1.5),
+    return Container(
+      decoration: BoxDecoration(
+        color: AppColors.cardBg,
+        borderRadius: BorderRadius.circular(14),
+        border: Border.all(color: badgeColor.withValues(alpha: 0.4), width: 1.5),
+        boxShadow: [
+          BoxShadow(
+            color: badgeColor.withValues(alpha: 0.08),
+            blurRadius: 10,
+            offset: const Offset(0, 3),
+          ),
+        ],
       ),
-      child: Padding(
-        padding: const EdgeInsets.all(16.0),
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            Row(
-              children: [
-                Icon(statusIcon, color: textColor, size: 24),
-                const SizedBox(width: 10),
-                Expanded(
-                  child: Text(
-                    statusTitle,
-                    style: TextStyle(
-                      fontSize: 15,
-                      fontWeight: FontWeight.bold,
-                      color: textColor,
-                    ),
+      padding: const EdgeInsets.all(16),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          // Header Verdict Row
+          Row(
+            children: [
+              Icon(statusIcon, color: badgeColor, size: 24),
+              const SizedBox(width: 10),
+              Expanded(
+                child: Text(
+                  statusTitle,
+                  style: TextStyle(
+                    fontSize: 14,
+                    fontWeight: FontWeight.bold,
+                    color: badgeColor,
                   ),
                 ),
-                Container(
-                  padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
-                  decoration: BoxDecoration(
-                    color: isFullyEligible
-                        ? AppColors.success
-                        : (agentResult.matchPercentage >= 50
-                            ? AppColors.warning
-                            : AppColors.danger),
-                    borderRadius: BorderRadius.circular(20),
+              ),
+              Container(
+                padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
+                decoration: BoxDecoration(
+                  color: badgeColor,
+                  borderRadius: BorderRadius.circular(16),
+                ),
+                child: Text(
+                  '${agentResult.matchPercentage}%',
+                  style: const TextStyle(
+                    color: Colors.white,
+                    fontWeight: FontWeight.bold,
+                    fontSize: 12,
                   ),
-                  child: Text(
-                    '${agentResult.matchPercentage}%',
-                    style: const TextStyle(
-                      color: Colors.white,
-                      fontWeight: FontWeight.bold,
-                      fontSize: 12,
-                    ),
-                  ),
+                ),
+              ),
+            ],
+          ),
+          const Padding(
+            padding: EdgeInsets.symmetric(vertical: 12.0),
+            child: Divider(height: 1, color: AppColors.divider),
+          ),
+
+          // AI Cognitive Reasoning Card
+          if (agentResult.reasoning.isNotEmpty) ...[
+            const Row(
+              children: [
+                Icon(Icons.psychology_outlined, size: 16, color: AppColors.primary),
+                SizedBox(width: 6),
+                Text(
+                  'AI Cognitive Reasoning:',
+                  style: TextStyle(fontWeight: FontWeight.bold, fontSize: 13, color: AppColors.dark),
                 ),
               ],
             ),
-            const Divider(height: 20),
-            if (agentResult.reasoning.isNotEmpty) ...[
-              const Row(
-                children: [
-                  Icon(Icons.psychology_outlined, size: 16, color: AppColors.primary),
-                  SizedBox(width: 6),
-                  Text(
-                    'AI Cognitive Reasoning:',
-                    style: TextStyle(fontWeight: FontWeight.bold, fontSize: 13),
-                  ),
-                ],
+            const SizedBox(height: 8),
+            Container(
+              padding: const EdgeInsets.all(12),
+              decoration: BoxDecoration(
+                color: AppColors.background,
+                borderRadius: BorderRadius.circular(10),
+                border: Border.all(color: AppColors.divider),
               ),
-              const SizedBox(height: 6),
-              Container(
-                padding: const EdgeInsets.all(10),
-                decoration: BoxDecoration(
-                  color: Colors.white.withValues(alpha: 0.8),
-                  borderRadius: BorderRadius.circular(8),
-                ),
-                child: Text(
-                  agentResult.reasoning,
-                  style: const TextStyle(fontSize: 13, height: 1.35),
-                ),
+              child: Text(
+                agentResult.reasoning,
+                style: const TextStyle(fontSize: 12, height: 1.4, color: AppColors.dark),
               ),
-              const SizedBox(height: 12),
-            ],
-            if (hasCriteriaErrors) ...[
-              const Text(
-                'Missing / Failed Legal Criteria:',
-                style: TextStyle(fontWeight: FontWeight.bold, color: AppColors.danger, fontSize: 12),
-              ),
-              const SizedBox(height: 4),
-              ...agentResult.missingCriteria.map((c) => Text('• $c', style: const TextStyle(color: AppColors.danger, fontSize: 12))),
-              const SizedBox(height: 10),
-            ],
-            if (hasMissingDocs) ...[
-              const Text(
-                'Missing Required Documents:',
-                style: TextStyle(fontWeight: FontWeight.bold, color: Colors.deepOrange, fontSize: 12),
-              ),
-              const SizedBox(height: 4),
-              ...agentResult.missingDocuments.map((d) => Text('• $d', style: const TextStyle(color: Colors.deepOrange, fontWeight: FontWeight.w600, fontSize: 12))),
-            ] else ...[
-              const Row(
-                children: [
-                  Icon(Icons.verified, color: AppColors.success, size: 16),
-                  SizedBox(width: 6),
-                  Text(
-                    'All statutory required documents verified!',
-                    style: TextStyle(color: AppColors.success, fontWeight: FontWeight.bold, fontSize: 12),
-                  ),
-                ],
-              ),
-            ],
+            ),
+            const SizedBox(height: 14),
           ],
-        ),
+
+          // Missing / Failed Legal Criteria
+          if (hasCriteriaErrors) ...[
+            const Text(
+              'Missing / Failed Legal Criteria:',
+              style: TextStyle(fontWeight: FontWeight.bold, color: AppColors.danger, fontSize: 12),
+            ),
+            const SizedBox(height: 6),
+            ...agentResult.missingCriteria.map((c) => Padding(
+                  padding: const EdgeInsets.only(bottom: 4.0),
+                  child: Row(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      const Icon(Icons.error_outline, size: 14, color: AppColors.danger),
+                      const SizedBox(width: 6),
+                      Expanded(
+                        child: Text(c, style: const TextStyle(color: AppColors.danger, fontSize: 12)),
+                      ),
+                    ],
+                  ),
+                )),
+            const SizedBox(height: 10),
+          ],
+
+          // Missing Required Documents
+          if (hasMissingDocs) ...[
+            const Text(
+              'Missing Required Documents:',
+              style: TextStyle(fontWeight: FontWeight.bold, color: AppColors.warning, fontSize: 12),
+            ),
+            const SizedBox(height: 6),
+            ...agentResult.missingDocuments.map((d) => Padding(
+                  padding: const EdgeInsets.only(bottom: 4.0),
+                  child: Row(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      const Icon(Icons.pending_actions_rounded, size: 14, color: AppColors.warning),
+                      const SizedBox(width: 6),
+                      Expanded(
+                        child: Text(
+                          d,
+                          style: const TextStyle(color: AppColors.warning, fontWeight: FontWeight.w600, fontSize: 12),
+                        ),
+                      ),
+                    ],
+                  ),
+                )),
+            const SizedBox(height: 10),
+          ] else ...[
+            const Row(
+              children: [
+                Icon(Icons.verified, color: AppColors.success, size: 16),
+                SizedBox(width: 6),
+                Text(
+                  'All statutory required documents verified!',
+                  style: TextStyle(color: AppColors.success, fontWeight: FontWeight.bold, fontSize: 12),
+                ),
+              ],
+            ),
+            const SizedBox(height: 10),
+          ],
+
+          // Statutory PGVector Context Snippets
+          if (agentResult.retrievedContextSnippets.isNotEmpty) ...[
+            const Padding(
+              padding: EdgeInsets.symmetric(vertical: 8.0),
+              child: Divider(height: 1, color: AppColors.divider),
+            ),
+            const Row(
+              children: [
+                Icon(Icons.gavel_rounded, size: 16, color: AppColors.primary),
+                SizedBox(width: 6),
+                Text(
+                  'Statutory Gazettes & Circular Citations (PGVector):',
+                  style: TextStyle(fontWeight: FontWeight.bold, fontSize: 12, color: AppColors.dark),
+                ),
+              ],
+            ),
+            const SizedBox(height: 6),
+            ...agentResult.retrievedContextSnippets.take(3).map((snippet) => Container(
+                  margin: const EdgeInsets.only(bottom: 6),
+                  padding: const EdgeInsets.all(8),
+                  decoration: BoxDecoration(
+                    color: AppColors.primary.withValues(alpha: 0.05),
+                    borderRadius: BorderRadius.circular(6),
+                    border: Border.all(color: AppColors.primary.withValues(alpha: 0.15)),
+                  ),
+                  child: Row(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      const Icon(Icons.format_quote_rounded, size: 14, color: AppColors.primary),
+                      const SizedBox(width: 6),
+                      Expanded(
+                        child: Text(
+                          snippet,
+                          style: const TextStyle(fontSize: 11, fontStyle: FontStyle.italic, color: AppColors.dark),
+                        ),
+                      ),
+                    ],
+                  ),
+                )),
+          ],
+        ],
       ),
     );
   }
