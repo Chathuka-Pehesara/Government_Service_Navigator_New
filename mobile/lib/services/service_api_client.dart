@@ -1,4 +1,5 @@
 import 'dart:convert';
+import 'package:flutter/foundation.dart';
 import 'package:http/http.dart' as http;
 import '../config/app_config.dart';
 
@@ -166,6 +167,57 @@ class ServiceApiClient {
       }
     } catch (_) {}
     throw Exception(message);
+  }
+
+  /// Saves a stage draft on the server so unsubmitted work is preserved
+  static Future<void> saveDraft({
+    required int applicationId,
+    required int stageNumber,
+    String? templateId,
+    required Map<String, String> answers,
+    Map<String, String> documents = const {},
+    String? paymentReference,
+    String? paymentMethod,
+    required String token,
+  }) async {
+    try {
+      await http.post(
+        Uri.parse('${AppConfig.baseUrl}/applications/save-draft'),
+        headers: _authHeaders(token),
+        body: jsonEncode({
+          'applicationId': applicationId,
+          'stageNumber': stageNumber,
+          if (templateId != null && templateId.isNotEmpty) 'templateId': templateId,
+          'answers': answers,
+          'documents': documents,
+          if (paymentReference != null && paymentReference.isNotEmpty) 'paymentReference': paymentReference,
+          if (paymentMethod != null && paymentMethod.isNotEmpty) 'paymentMethod': paymentMethod,
+        }),
+      );
+    } catch (e) {
+      debugPrint('Error saving draft to backend: $e');
+    }
+  }
+
+  /// Retrieves a saved stage draft from the server
+  static Future<Map<String, dynamic>?> getDraft({
+    required int applicationId,
+    required int stageNumber,
+    required String token,
+  }) async {
+    try {
+      final response = await http.get(
+        Uri.parse('${AppConfig.baseUrl}/applications/$applicationId/draft?stage=$stageNumber'),
+        headers: _authHeaders(token),
+      );
+      if (response.statusCode == 200) {
+        final body = jsonDecode(response.body);
+        if (body is Map<String, dynamic> && body['hasDraft'] == true) {
+          return body['data'] as Map<String, dynamic>?;
+        }
+      }
+    } catch (_) {}
+    return null;
   }
 
   /// Sends a paid application to the officer queue. Returns the submitted reference, or — if the fee

@@ -258,6 +258,22 @@ namespace Government_Service_Navigator.Backend.Services
 
         public async Task<List<VerificationTask>> GetPendingTasksAsync(string? department = null)
         {
+            // Self-repair: Any task incorrectly marked "Approved" without any actual OfficerReview
+            // belongs back in "Pending" for the department officer to review manually.
+            var unreviewedTasks = await _context.VerificationTasks
+                .Include(t => t.Reviews)
+                .Where(t => t.Status == "Approved" && !t.Reviews.Any())
+                .ToListAsync();
+
+            if (unreviewedTasks.Any())
+            {
+                foreach (var ut in unreviewedTasks)
+                {
+                    ut.Status = "Pending";
+                }
+                await _context.SaveChangesAsync();
+            }
+
             var query = _context.VerificationTasks
                 .Where(t => t.ApplicationId > 0 && (t.Status == "Pending" || t.Status == "Revised" || t.Status == "Revision Requested"));
 
@@ -275,26 +291,6 @@ namespace Government_Service_Navigator.Backend.Services
 
         public async Task<List<VerificationTask>> GetVerifiedTasksAsync(string? department = null)
         {
-            // Auto-heal tasks where a stage milestone was approved or decision was recorded
-            var approvedAuditAppIds = await _context.AuditLogs
-                .Where(a => a.Action.Contains("Milestone Approved") || a.Action.Contains("Decision: Approved"))
-                .Select(a => a.ApplicationId)
-                .Distinct()
-                .ToListAsync();
-
-            var pendingApprovedTasks = await _context.VerificationTasks
-                .Where(t => t.Status == "Pending" && approvedAuditAppIds.Contains(t.ApplicationId))
-                .ToListAsync();
-
-            if (pendingApprovedTasks.Any())
-            {
-                foreach (var pt in pendingApprovedTasks)
-                {
-                    pt.Status = "Approved";
-                }
-                await _context.SaveChangesAsync();
-            }
-
             var query = _context.VerificationTasks
                 .Include(t => t.Reviews)
                 .Where(t => t.ApplicationId > 0 && 
@@ -321,6 +317,20 @@ namespace Government_Service_Navigator.Backend.Services
 
         public async Task<List<VerificationTask>> GetTasksForCitizenAsync(string citizenNic)
         {
+            var unreviewedTasks = await _context.VerificationTasks
+                .Include(t => t.Reviews)
+                .Where(t => t.CitizenNic == citizenNic && t.Status == "Approved" && !t.Reviews.Any())
+                .ToListAsync();
+
+            if (unreviewedTasks.Any())
+            {
+                foreach (var ut in unreviewedTasks)
+                {
+                    ut.Status = "Pending";
+                }
+                await _context.SaveChangesAsync();
+            }
+
             return await _context.VerificationTasks
                 .Where(t => t.CitizenNic == citizenNic)
                 .OrderByDescending(t => t.CreatedDate)

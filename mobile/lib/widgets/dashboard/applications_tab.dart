@@ -10,6 +10,7 @@ import '../../services/verification_api_service.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import '../../providers/application_providers.dart';
 import '../../providers/session_provider.dart';
+import '../../screens/application_form_screen.dart';
 
 class ApplicationsTab extends ConsumerStatefulWidget {
   const ApplicationsTab({super.key});
@@ -81,6 +82,8 @@ class _ApplicationsTabState extends ConsumerState<ApplicationsTab> {
 
   Color _getStatusColor(String status) {
     switch (status.toLowerCase()) {
+      case 'draft':
+        return const Color(0xFFD97706);
       case 'approved':
         return AppColors.success;
       case 'revised':
@@ -97,6 +100,8 @@ class _ApplicationsTabState extends ConsumerState<ApplicationsTab> {
 
   String _getStatusDisplay(String status) {
     switch (status.toLowerCase()) {
+      case 'draft':
+        return 'Draft Saved';
       case 'approved':
         return 'Verified';
       case 'revised':
@@ -113,6 +118,8 @@ class _ApplicationsTabState extends ConsumerState<ApplicationsTab> {
 
   IconData _getStatusIcon(String status) {
     switch (status.toLowerCase()) {
+      case 'draft':
+        return CupertinoIcons.pencil_circle_fill;
       case 'approved':
         return CupertinoIcons.checkmark_seal_fill;
       case 'revised':
@@ -619,12 +626,45 @@ class _ApplicationsTabState extends ConsumerState<ApplicationsTab> {
   }
 
   Widget _buildTrackingCard(ApplicationItemModel app) {
-    final statusColor = _getStatusColor(app.status);
+    final bool isDraft = app.stageStatus == 'Draft' || app.status.toLowerCase() == 'draft';
+
+    final bool isStageUnderReview = !isDraft && (app.stageStatus == 'UnderVerification' ||
+        app.stageStatus == 'PendingReview' ||
+        app.stageStatus == 'AwaitingFeePayment' ||
+        (app.status.toLowerCase() == 'pending' && app.stageStatus != 'StageApproved'));
+
+    final effectiveCardStatus = isDraft
+        ? 'Draft'
+        : (isStageUnderReview
+            ? (app.stageStatus == 'AwaitingFeePayment' ? 'Awaiting Fee' : 'In Review')
+            : app.status);
+
+    final statusColor = _getStatusColor(effectiveCardStatus);
     final reviews = app.verificationTask?.reviews ?? [];
     final latestReview = reviews.isNotEmpty ? reviews.last : null;
 
+    final bool isStageOfficerApproved = app.stageStatus == 'StageApproved' ||
+        (app.status.toLowerCase() == 'approved' &&
+            app.stageStatus != 'UnderVerification' &&
+            app.stageStatus != 'PendingReview');
+
     return GestureDetector(
       onTap: () async {
+        if (isDraft) {
+          await Navigator.push(
+            context,
+            CupertinoPageRoute(
+              builder: (context) => ApplicationFormScreen(
+                serviceId: app.serviceProcedureId,
+                serviceName: app.serviceName,
+                stageNumber: app.currentStage,
+                applicationId: app.applicationId,
+              ),
+            ),
+          );
+          _loadApplications();
+          return;
+        }
         final result = await Navigator.push<ApplicationItemModel>(
           context,
           CupertinoPageRoute(
@@ -679,10 +719,10 @@ class _ApplicationsTabState extends ConsumerState<ApplicationsTab> {
                   child: Row(
                     mainAxisSize: MainAxisSize.min,
                     children: [
-                      Icon(_getStatusIcon(app.status), size: 12, color: statusColor),
+                      Icon(_getStatusIcon(effectiveCardStatus), size: 12, color: statusColor),
                       const SizedBox(width: 5),
                       Text(
-                        _getStatusDisplay(app.status),
+                        _getStatusDisplay(effectiveCardStatus),
                         style: TextStyle(
                           fontSize: 12,
                           fontWeight: FontWeight.w700,
@@ -800,6 +840,30 @@ class _ApplicationsTabState extends ConsumerState<ApplicationsTab> {
                 ),
               ),
             ],
+            if (isDraft) ...[
+              const SizedBox(height: 10),
+              Container(
+                padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+                decoration: BoxDecoration(
+                  color: const Color(0xFFFFFBEB),
+                  borderRadius: BorderRadius.circular(10),
+                  border: Border.all(color: const Color(0xFFFDE68A)),
+                ),
+                child: Row(
+                  children: [
+                    const Icon(CupertinoIcons.pencil_ellipsis_rectangle, size: 16, color: Color(0xFFD97706)),
+                    const SizedBox(width: 8),
+                    Expanded(
+                      child: Text(
+                        'Stage ${app.currentStage} application form saved as draft. Tap to resume filling.',
+                        style: const TextStyle(fontSize: 12, fontWeight: FontWeight.w600, color: Color(0xFF92400E)),
+                      ),
+                    ),
+                    const Icon(CupertinoIcons.chevron_right, size: 14, color: Color(0xFFD97706)),
+                  ],
+                ),
+              ),
+            ],
             if (app.installmentPlan != null) ...[
               const SizedBox(height: 12),
               _buildInstallmentStrip(app),
@@ -909,14 +973,14 @@ class _ApplicationsTabState extends ConsumerState<ApplicationsTab> {
                           child: Container(
                             padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 6),
                             decoration: BoxDecoration(
-                              color: app.status.toLowerCase() == 'approved'
+                              color: isStageOfficerApproved
                                   ? AppColors.success.withValues(alpha: 0.12)
                                   : (!app.isPaymentVerified
                                       ? Colors.grey.withValues(alpha: 0.1)
                                       : AppColors.primary.withValues(alpha: 0.1)),
                               borderRadius: BorderRadius.circular(8),
                               border: Border.all(
-                                color: app.status.toLowerCase() == 'approved'
+                                color: isStageOfficerApproved
                                     ? AppColors.success.withValues(alpha: 0.3)
                                     : (!app.isPaymentVerified
                                         ? Colors.grey.withValues(alpha: 0.3)
@@ -927,13 +991,13 @@ class _ApplicationsTabState extends ConsumerState<ApplicationsTab> {
                             child: Row(
                               children: [
                                 Icon(
-                                  app.status.toLowerCase() == 'approved'
+                                  isStageOfficerApproved
                                       ? CupertinoIcons.checkmark_circle_fill
                                       : (!app.isPaymentVerified
                                           ? CupertinoIcons.lock_fill
-                                          : CupertinoIcons.doc_text_fill),
+                                          : CupertinoIcons.hourglass),
                                   size: 13,
-                                  color: app.status.toLowerCase() == 'approved'
+                                  color: isStageOfficerApproved
                                       ? AppColors.success
                                       : (!app.isPaymentVerified
                                           ? Colors.grey.shade600
@@ -949,7 +1013,7 @@ class _ApplicationsTabState extends ConsumerState<ApplicationsTab> {
                                         style: TextStyle(fontSize: 9, fontWeight: FontWeight.bold, color: AppColors.secondaryLabel),
                                       ),
                                       Text(
-                                        app.status.toLowerCase() == 'approved'
+                                        isStageOfficerApproved
                                             ? 'Stage Approved'
                                             : (!app.isPaymentVerified
                                                 ? 'Locked (Audit)'
@@ -957,7 +1021,7 @@ class _ApplicationsTabState extends ConsumerState<ApplicationsTab> {
                                         style: TextStyle(
                                           fontSize: 11,
                                           fontWeight: FontWeight.w700,
-                                          color: app.status.toLowerCase() == 'approved'
+                                          color: isStageOfficerApproved
                                               ? AppColors.success
                                               : (!app.isPaymentVerified
                                                   ? Colors.grey.shade700

@@ -98,8 +98,12 @@ namespace Government_Service_Navigator.Backend.Services
                     }
                     else
                     {
-                        // Unlocks the stage for Department Verification Officer review
-                        submission.StageStatus = "UnderVerification";
+                        // Only set UnderVerification if citizen has actually submitted the form for CurrentStage
+                        var hasCurrentStageTask = await _context.VerificationTasks.AnyAsync(t => t.ApplicationId == submission.Id && t.StageNumber == submission.CurrentStage);
+                        if (hasCurrentStageTask)
+                        {
+                            submission.StageStatus = "UnderVerification";
+                        }
                     }
                 }
             }
@@ -162,7 +166,11 @@ namespace Government_Service_Navigator.Backend.Services
                     }
                     else
                     {
-                        submission.StageStatus = "UnderVerification";
+                        var hasCurrentStageTask = await _context.VerificationTasks.AnyAsync(t => t.ApplicationId == submission.Id && t.StageNumber == submission.CurrentStage);
+                        if (hasCurrentStageTask)
+                        {
+                            submission.StageStatus = "UnderVerification";
+                        }
                     }
                 }
             }

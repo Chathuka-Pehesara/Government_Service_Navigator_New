@@ -12,6 +12,7 @@ import '../providers/payment_providers.dart';
 import '../providers/service_providers.dart';
 import 'payments/payment_screen.dart';
 import 'payments/checkout_webview_screen.dart';
+import 'package:shared_preferences/shared_preferences.dart';
 
 /// Renders the admin-built application template as a paper-style government form
 /// (matching the web Template Builder canvas) and submits the citizen's answers.
@@ -118,6 +119,7 @@ class _ApplicationFormScreenState extends ConsumerState<ApplicationFormScreen> {
         final department = form['department'] as Map<String, dynamic>?;
         final deptName = department?['name']?.toString() ?? '';
         _resolveDepartmentMetadata(deptName);
+        await _restoreDraft();
       } else {
         setState(() {
           _isLoadingStageForm = false;
@@ -130,6 +132,171 @@ class _ApplicationFormScreenState extends ConsumerState<ApplicationFormScreen> {
         _stageFormError = 'Could not load Stage ${widget.stageNumber} form.';
       });
     }
+  }
+
+  String get _draftStorageKey =>
+      'gsn_draft_app_${widget.applicationId ?? widget.serviceId}_stage_$_currentStage';
+
+  Future<void> _saveDraft({bool showNotice = false}) async {
+    try {
+      final answers = _collectAnswers();
+      final docs = {for (final e in _documents.entries) e.key: e.value.id};
+      final paymentRef = _collectPaymentRef();
+      final paymentMethod = _collectPaymentMethod();
+
+      final draftData = {
+        'answers': answers,
+        'documents': docs,
+        'paymentReference': paymentRef,
+        'paymentMethod': paymentMethod,
+        'savedAt': DateTime.now().toUtc().toIso8601String(),
+      };
+
+      final prefs = await SharedPreferences.getInstance();
+      await prefs.setString(_draftStorageKey, jsonEncode(draftData));
+
+      if (widget.applicationId != null) {
+        final token = ref.read(authTokenProvider);
+        if (token.isNotEmpty) {
+          await ServiceApiClient.saveDraft(
+            applicationId: widget.applicationId!,
+            stageNumber: _currentStage,
+            templateId: _template?['id']?.toString(),
+            answers: answers,
+            documents: docs,
+            paymentReference: paymentRef,
+            paymentMethod: paymentMethod,
+            token: token,
+          );
+          ref.invalidate(myApplicationsProvider);
+        }
+      }
+
+      if (showNotice && mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(
+            content: Text('Stage application draft saved successfully.'),
+            duration: Duration(seconds: 2),
+            backgroundColor: Color(0xFF24A148),
+          ),
+        );
+      }
+    } catch (e) {
+      debugPrint('Failed to save draft: $e');
+    }
+  }
+
+  Future<void> _restoreDraft() async {
+    try {
+      Map<String, dynamic>? draft;
+
+      if (widget.applicationId != null) {
+        final token = ref.read(authTokenProvider);
+        if (token.isNotEmpty) {
+          draft = await ServiceApiClient.getDraft(
+            applicationId: widget.applicationId!,
+            stageNumber: _currentStage,
+            token: token,
+          );
+        }
+      }
+
+      if (draft == null) {
+        final prefs = await SharedPreferences.getInstance();
+        final raw = prefs.getString(_draftStorageKey);
+        if (raw != null && raw.isNotEmpty) {
+          draft = jsonDecode(raw) as Map<String, dynamic>?;
+        }
+      }
+
+      if (draft == null || !mounted) return;
+
+      final answers = (draft['answers'] as Map?)?.cast<String, dynamic>() ?? {};
+      final documents = (draft['documents'] as Map?)?.cast<String, dynamic>() ?? {};
+      final paymentRef = draft['paymentReference']?.toString();
+      final paymentMethod = draft['paymentMethod']?.toString();
+
+      setState(() {
+        for (final entry in answers.entries) {
+          final label = entry.key;
+          final value = entry.value?.toString() ?? '';
+          if (value.isEmpty) continue;
+
+          final field = _fields.firstWhere((f) => f['label'] == label, orElse: () => {});
+          final type = field['type']?.toString() ?? 'text';
+
+          if (type == 'select') {
+            _selectValues[label] = value;
+          } else if (type == 'multiselect') {
+            _multiValues[label] = value.split(', ').map((s) => s.trim()).toSet();
+          } else if (type == 'table') {
+            try {
+              final List rowsList = jsonDecode(value) as List;
+              final cols = _columnsOf(field);
+              final tableControllers = _rowsFor(label, cols.length);
+              while (tableControllers.length < rowsList.length) {
+                tableControllers.add(List.generate(cols.length, (_) => TextEditingController()));
+              }
+              for (var r = 0; r < rowsList.length && r < tableControllers.length; r++) {
+                final rowMap = rowsList[r] as Map;
+                for (var c = 0; c < cols.length; c++) {
+                  final colName = cols[c];
+                  if (rowMap.containsKey(colName)) {
+                    tableControllers[r][c].text = rowMap[colName]?.toString() ?? '';
+                  }
+                }
+              }
+            } catch (_) {}
+          } else {
+            _controllerFor(label).text = value;
+          }
+        }
+
+        for (final docEntry in documents.entries) {
+          final label = docEntry.key;
+          final docId = docEntry.value?.toString();
+          if (docId != null && docId.isNotEmpty) {
+            final fileName = answers[label] ?? 'Uploaded Document';
+            _documents[label] = (id: docId, fileName: fileName);
+          }
+        }
+
+        if (paymentRef != null && paymentRef.isNotEmpty) {
+          for (final f in _fields) {
+            if (f['type'] == 'payment') {
+              final pLabel = f['label']?.toString() ?? '';
+              if (pLabel.isNotEmpty) {
+                _controllerFor(pLabel).text = paymentRef;
+                _paymentModes[pLabel] = paymentMethod ?? 'slip';
+              }
+            }
+          }
+        }
+      });
+    } catch (e) {
+      debugPrint('Failed to restore draft: $e');
+    }
+  }
+
+  String? _collectPaymentRef() {
+    for (final f in _fields) {
+      if (f['type'] == 'payment') {
+        final label = f['label']?.toString() ?? '';
+        final text = _controllers[label]?.text.trim() ?? '';
+        if (text.isNotEmpty) return text;
+      }
+    }
+    return null;
+  }
+
+  String? _collectPaymentMethod() {
+    for (final f in _fields) {
+      if (f['type'] == 'payment') {
+        final label = f['label']?.toString() ?? '';
+        return _paymentModes[label];
+      }
+    }
+    return null;
   }
 
   // Loaded form data. Read (not watched) so these are safe in callbacks; [build] watches.
@@ -306,6 +473,10 @@ class _ApplicationFormScreenState extends ConsumerState<ApplicationFormScreen> {
         );
       }
       if (!mounted) return;
+      try {
+        final prefs = await SharedPreferences.getInstance();
+        await prefs.remove(_draftStorageKey);
+      } catch (_) {}
       ref.invalidate(myApplicationsProvider);
       if (result['paymentRequired'] == true) {
         // Saved, but only sent to the officers once the fee is paid
@@ -374,14 +545,36 @@ class _ApplicationFormScreenState extends ConsumerState<ApplicationFormScreen> {
   @override
   Widget build(BuildContext context) {
     ref.watch(applicationFormDataProvider(widget.serviceId));
-    return Scaffold(
-      backgroundColor: AppColors.background,
-      appBar: AppBar(
-        title: Text(widget.serviceName),
-        backgroundColor: AppColors.cardBg,
-        elevation: 0,
+    return PopScope(
+      canPop: true,
+      onPopInvokedWithResult: (didPop, result) {
+        if (!didPop) return;
+        if (!_isSubmitting && _submitted == null) {
+          _saveDraft();
+        }
+      },
+      child: Scaffold(
+        backgroundColor: AppColors.background,
+        appBar: AppBar(
+          title: Text(widget.serviceName),
+          backgroundColor: AppColors.cardBg,
+          elevation: 0,
+          actions: [
+            if (!_isSubmitting && _submitted == null) ...[
+              TextButton.icon(
+                onPressed: () => _saveDraft(showNotice: true),
+                icon: const Icon(CupertinoIcons.floppy_disk, size: 16, color: AppColors.primary),
+                label: const Text(
+                  'Save Draft',
+                  style: TextStyle(fontSize: 12.5, fontWeight: FontWeight.w700, color: AppColors.primary),
+                ),
+              ),
+              const SizedBox(width: 4),
+            ],
+          ],
+        ),
+        body: _buildBody(),
       ),
-      body: _buildBody(),
     );
   }
 
@@ -1328,6 +1521,8 @@ class _ApplicationFormScreenState extends ConsumerState<ApplicationFormScreen> {
               _documents[label] = (id: docId, fileName: docName);
             }
           });
+          // Immediately save draft so leaving the screen preserves the uploaded slip!
+          _saveDraft();
         },
       ),
     );
@@ -1371,29 +1566,36 @@ class _ApplicationFormScreenState extends ConsumerState<ApplicationFormScreen> {
                 borderRadius: const BorderRadius.vertical(top: Radius.circular(6)),
               ),
               child: Row(
-                mainAxisAlignment: MainAxisAlignment.spaceBetween,
                 children: [
-                  Row(
-                    children: [
-                      Icon(
-                        hasPaid ? CupertinoIcons.checkmark_seal_fill : CupertinoIcons.creditcard,
-                        size: 16,
-                        color: Colors.white,
-                      ),
-                      const SizedBox(width: 8),
-                      Text(
-                        hasPaid
-                            ? 'STATUTORY STAGE PAYMENT RECORDED'
-                            : 'STATUTORY STAGE PAYMENT REQUIRED',
-                        style: const TextStyle(
+                  Expanded(
+                    child: Row(
+                      mainAxisSize: MainAxisSize.min,
+                      children: [
+                        Icon(
+                          hasPaid ? CupertinoIcons.checkmark_seal_fill : CupertinoIcons.creditcard,
+                          size: 15,
                           color: Colors.white,
-                          fontSize: 11,
-                          fontWeight: FontWeight.bold,
-                          letterSpacing: 0.5,
                         ),
-                      ),
-                    ],
+                        const SizedBox(width: 6),
+                        Flexible(
+                          child: Text(
+                            hasPaid
+                                ? 'STATUTORY STAGE PAYMENT RECORDED'
+                                : 'STATUTORY STAGE PAYMENT REQUIRED',
+                            style: const TextStyle(
+                              color: Colors.white,
+                              fontSize: 10.5,
+                              fontWeight: FontWeight.bold,
+                              letterSpacing: 0.3,
+                            ),
+                            maxLines: 1,
+                            overflow: TextOverflow.ellipsis,
+                          ),
+                        ),
+                      ],
+                    ),
                   ),
+                  const SizedBox(width: 6),
                   Container(
                     padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
                     decoration: BoxDecoration(
@@ -1514,16 +1716,21 @@ class _ApplicationFormScreenState extends ConsumerState<ApplicationFormScreen> {
                         children: [
                           Row(
                             children: [
-                              const Icon(CupertinoIcons.checkmark_circle_fill, color: Color(0xFF24A148), size: 16),
+                              const Icon(CupertinoIcons.checkmark_circle_fill, color: Color(0xFF24A148), size: 15),
                               const SizedBox(width: 6),
                               const Text(
-                                'Payment Reference Recorded:',
+                                'Payment Ref:',
                                 style: TextStyle(fontSize: 12, fontWeight: FontWeight.w600, color: _ink),
                               ),
-                              const Spacer(),
-                              Text(
-                                paymentRef,
-                                style: const TextStyle(fontSize: 12, fontWeight: FontWeight.bold, color: Color(0xFF0F62FE)),
+                              const SizedBox(width: 6),
+                              Expanded(
+                                child: Text(
+                                  paymentRef,
+                                  textAlign: TextAlign.end,
+                                  style: const TextStyle(fontSize: 11.5, fontWeight: FontWeight.bold, color: Color(0xFF0F62FE)),
+                                  maxLines: 1,
+                                  overflow: TextOverflow.ellipsis,
+                                ),
                               ),
                             ],
                           ),
@@ -1543,9 +1750,19 @@ class _ApplicationFormScreenState extends ConsumerState<ApplicationFormScreen> {
                                   child: const Column(
                                     crossAxisAlignment: CrossAxisAlignment.start,
                                     children: [
-                                      Text('Step 1 • Finance Audit', style: TextStyle(fontSize: 9.5, fontWeight: FontWeight.bold, color: Color(0xFFD46B08))),
+                                      Text(
+                                        'Step 1 • Finance Audit',
+                                        style: TextStyle(fontSize: 9.5, fontWeight: FontWeight.bold, color: Color(0xFFD46B08)),
+                                        maxLines: 1,
+                                        overflow: TextOverflow.ellipsis,
+                                      ),
                                       SizedBox(height: 2),
-                                      Text('Verifying by Finance Officer', style: TextStyle(fontSize: 11, fontWeight: FontWeight.w600, color: Color(0xFF874D00))),
+                                      Text(
+                                        'Verifying by Finance Officer',
+                                        style: TextStyle(fontSize: 10.5, fontWeight: FontWeight.w600, color: Color(0xFF874D00)),
+                                        maxLines: 1,
+                                        overflow: TextOverflow.ellipsis,
+                                      ),
                                     ],
                                   ),
                                 ),
@@ -1562,9 +1779,19 @@ class _ApplicationFormScreenState extends ConsumerState<ApplicationFormScreen> {
                                   child: const Column(
                                     crossAxisAlignment: CrossAxisAlignment.start,
                                     children: [
-                                      Text('Step 2 • Application', style: TextStyle(fontSize: 9.5, fontWeight: FontWeight.bold, color: Color(0xFF096DD9))),
+                                      Text(
+                                        'Step 2 • Application',
+                                        style: TextStyle(fontSize: 9.5, fontWeight: FontWeight.bold, color: Color(0xFF096DD9)),
+                                        maxLines: 1,
+                                        overflow: TextOverflow.ellipsis,
+                                      ),
                                       SizedBox(height: 2),
-                                      Text('Under Review by Officer', style: TextStyle(fontSize: 11, fontWeight: FontWeight.w600, color: Color(0xFF003A8C))),
+                                      Text(
+                                        'Under Review by Officer',
+                                        style: TextStyle(fontSize: 10.5, fontWeight: FontWeight.w600, color: Color(0xFF003A8C)),
+                                        maxLines: 1,
+                                        overflow: TextOverflow.ellipsis,
+                                      ),
                                     ],
                                   ),
                                 ),
@@ -1576,12 +1803,16 @@ class _ApplicationFormScreenState extends ConsumerState<ApplicationFormScreen> {
                     ),
                     const SizedBox(height: 8),
                     Row(
-                      mainAxisAlignment: MainAxisAlignment.spaceBetween,
                       children: [
-                        const Text(
-                          'Payment submitted for financial audit clearance.',
-                          style: TextStyle(fontSize: 10.5, fontStyle: FontStyle.italic, color: Color(0xFF525252)),
+                        const Expanded(
+                          child: Text(
+                            'Payment submitted for financial audit clearance.',
+                            style: TextStyle(fontSize: 10.5, fontStyle: FontStyle.italic, color: Color(0xFF525252)),
+                            maxLines: 1,
+                            overflow: TextOverflow.ellipsis,
+                          ),
                         ),
+                        const SizedBox(width: 8),
                         GestureDetector(
                           onTap: () => _openMakePaymentModal(
                             label: label,

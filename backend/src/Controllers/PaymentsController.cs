@@ -542,9 +542,18 @@ namespace Government_Service_Navigator.Backend.Controllers
             else
             {
                 var existingSub = await _context.ApplicationSubmissions.FindAsync(appId);
-                if (existingSub != null && !string.IsNullOrEmpty(dto.Department))
+                if (existingSub != null)
                 {
-                    existingSub.CurrentDepartment = dto.Department;
+                    if (!string.IsNullOrEmpty(dto.Department))
+                    {
+                        existingSub.CurrentDepartment = dto.Department;
+                    }
+                    var hasTaskForStage = await _context.VerificationTasks
+                        .AnyAsync(t => t.ApplicationId == appId && t.StageNumber == existingSub.CurrentStage);
+                    if (!hasTaskForStage && existingSub.StageStatus != "Completed")
+                    {
+                        existingSub.StageStatus = "Draft";
+                    }
                     await _context.SaveChangesAsync();
                 }
             }

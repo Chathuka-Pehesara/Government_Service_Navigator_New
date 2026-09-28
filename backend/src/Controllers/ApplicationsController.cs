@@ -718,6 +718,7 @@ namespace Government_Service_Navigator.Backend.Controllers
             try { currentAnswers = JsonSerializer.Deserialize<Dictionary<string, string>>(submission.FormDataJson) ?? new(); }
             catch { }
 
+            currentAnswers.Remove($"[Draft Stage {template.StageOrder}]");
             foreach (var kvp in request.Answers)
             {
                 currentAnswers[$"[Stage {template.StageOrder}] {kvp.Key}"] = kvp.Value;
@@ -887,6 +888,81 @@ namespace Government_Service_Navigator.Backend.Controllers
                 message = "Your support concern has been logged and escalated to the department officer. Reference ID: " + ticketRef
             });
         }
+
+        [HttpPost("save-draft")]
+        public async Task<IActionResult> SaveDraft([FromBody] SaveDraftRequest request)
+        {
+            var nic = User.FindFirstValue("nicNumber");
+            if (string.IsNullOrWhiteSpace(nic)) return Forbid();
+
+            var submission = await _context.ApplicationSubmissions
+                .FirstOrDefaultAsync(s => s.Id == request.ApplicationId && s.CitizenNic == nic);
+            if (submission == null) return NotFound("Application not found.");
+
+            Dictionary<string, string> currentAnswers = new();
+            try { currentAnswers = JsonSerializer.Deserialize<Dictionary<string, string>>(submission.FormDataJson) ?? new(); }
+            catch { }
+
+            var draftPayload = new
+            {
+                answers = request.Answers,
+                documents = request.Documents.ToDictionary(k => k.Key, v => v.Value.ToString()),
+                paymentReference = request.PaymentReference,
+                paymentMethod = request.PaymentMethod,
+                savedAt = DateTime.UtcNow
+            };
+
+            currentAnswers[$"[Draft Stage {request.StageNumber}]"] = JsonSerializer.Serialize(draftPayload);
+            submission.FormDataJson = JsonSerializer.Serialize(currentAnswers);
+
+            if (submission.CurrentStage <= request.StageNumber)
+            {
+                submission.CurrentStage = request.StageNumber;
+            }
+
+            var hasActiveTask = await _context.VerificationTasks
+                .AnyAsync(t => t.ApplicationId == submission.Id && t.StageNumber == submission.CurrentStage);
+            if (!hasActiveTask && submission.StageStatus != "Completed")
+            {
+                submission.StageStatus = "Draft";
+            }
+
+            await _context.SaveChangesAsync();
+
+            return Ok(new { message = "Draft saved successfully", stage = request.StageNumber });
+        }
+
+        [HttpGet("{id:int}/draft")]
+        public async Task<IActionResult> GetDraft(int id, [FromQuery] int stage = 1)
+        {
+            var nic = User.FindFirstValue("nicNumber");
+            if (string.IsNullOrWhiteSpace(nic)) return Forbid();
+
+            var submission = await _context.ApplicationSubmissions
+                .FirstOrDefaultAsync(s => s.Id == id && s.CitizenNic == nic);
+            if (submission == null) return NotFound("Application not found.");
+
+            Dictionary<string, string> currentAnswers = new();
+            try { currentAnswers = JsonSerializer.Deserialize<Dictionary<string, string>>(submission.FormDataJson) ?? new(); }
+            catch { }
+
+            if (currentAnswers.TryGetValue($"[Draft Stage {stage}]", out var draftJson))
+            {
+                try
+                {
+                    using var doc = JsonDocument.Parse(draftJson);
+                    return Ok(new
+                    {
+                        hasDraft = true,
+                        stage,
+                        data = doc.RootElement.Clone()
+                    });
+                }
+                catch { }
+            }
+
+            return Ok(new { hasDraft = false, stage });
+        }
     }
 
     public class SubmitStageRequest
@@ -895,5 +971,16 @@ namespace Government_Service_Navigator.Backend.Controllers
         public Guid TemplateId { get; set; }
         public Dictionary<string, string> Answers { get; set; } = new();
         public Dictionary<string, Guid> Documents { get; set; } = new();
+    }
+
+    public class SaveDraftRequest
+    {
+        public int ApplicationId { get; set; }
+        public int StageNumber { get; set; }
+        public Guid? TemplateId { get; set; }
+        public Dictionary<string, string> Answers { get; set; } = new();
+        public Dictionary<string, Guid> Documents { get; set; } = new();
+        public string? PaymentReference { get; set; }
+        public string? PaymentMethod { get; set; }
     }
 }

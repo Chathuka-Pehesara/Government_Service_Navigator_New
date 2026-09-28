@@ -165,10 +165,36 @@ namespace Government_Service_Navigator.Backend.Controllers
                 .GroupBy(p => p.ApplicationId)
                 .ToDictionary(g => g.Key, g => g.First());
 
-            return Ok(tasks.Select(t =>
+            var activeTasks = tasks
+                .GroupBy(t => t.ApplicationId)
+                .Select(g =>
+                {
+                    services.TryGetValue(g.Key, out var sub);
+                    var activeStage = sub?.CurrentStage ?? 1;
+                    return g.FirstOrDefault(t => t.StageNumber == activeStage || t.CurrentStage == activeStage)
+                           ?? g.OrderByDescending(t => t.Id).First();
+                })
+                .ToList();
+
+            bool needSave = false;
+            foreach (var t in activeTasks)
             {
                 services.TryGetValue(t.ApplicationId, out var s);
-                var currentStageNum = t.CurrentStage > 0 ? t.CurrentStage : (s?.CurrentStage ?? 1);
+                if (s != null && s.CurrentStage > t.StageNumber && (s.StageStatus == "UnderVerification" || s.StageStatus == "PendingReview"))
+                {
+                    s.StageStatus = "Draft";
+                    needSave = true;
+                }
+            }
+            if (needSave)
+            {
+                await _context.SaveChangesAsync();
+            }
+
+            return Ok(activeTasks.Select(t =>
+            {
+                services.TryGetValue(t.ApplicationId, out var s);
+                var currentStageNum = s?.CurrentStage ?? (t.CurrentStage > 0 ? t.CurrentStage : 1);
                 var stageTemplate = templates.FirstOrDefault(tmpl =>
                     tmpl.ServiceProcedureId == s?.ServiceProcedureId &&
                     tmpl.StageOrder == currentStageNum);
@@ -249,11 +275,40 @@ namespace Government_Service_Navigator.Backend.Controllers
                     isPayVerified = true;
                 }
 
+                var effectiveStatus = t.Status;
+                var isUnsubmittedStage = (s != null && s.CurrentStage > t.StageNumber);
+
+                if (isUnsubmittedStage)
+                {
+                    effectiveStatus = (s?.StageStatus == "StageApproved") ? "StageApproved" : "Draft";
+                    if (s != null && (s.StageStatus == "UnderVerification" || s.StageStatus == "PendingReview"))
+                    {
+                        s.StageStatus = "Draft";
+                    }
+                }
+                else if ((s?.StageStatus == "UnderVerification" || s?.StageStatus == "PendingReview") && effectiveStatus == "Approved")
+                {
+                    effectiveStatus = "Pending";
+                }
+
+                var resolvedStageStatus = s?.StageStatus;
+                if (isUnsubmittedStage)
+                {
+                    if (string.IsNullOrEmpty(resolvedStageStatus) || resolvedStageStatus == "UnderVerification" || resolvedStageStatus == "PendingReview")
+                    {
+                        resolvedStageStatus = "Draft";
+                    }
+                }
+                else if (string.IsNullOrEmpty(resolvedStageStatus))
+                {
+                    resolvedStageStatus = (effectiveStatus == "Approved" ? "Completed" : "PendingReview");
+                }
+
                 return new
                 {
                     t.Id,
                     t.ApplicationId,
-                    t.Status,
+                    Status = effectiveStatus,
                     t.CreatedDate,
                     ReferenceNumber = $"APP-{t.ApplicationId}",
                     ServiceName = s?.ServiceProcedure?.Name,
@@ -264,7 +319,7 @@ namespace Government_Service_Navigator.Backend.Controllers
                     ServiceProcedureId = s?.ServiceProcedureId ?? 0,
                     CurrentStage = currentStageNum,
                     MaxStages = t.MaxStages > 0 ? t.MaxStages : (s?.MaxStages ?? 1),
-                    StageStatus = !string.IsNullOrEmpty(s?.StageStatus) ? s.StageStatus : (t.Status == "Approved" ? "Completed" : "PendingReview"),
+                    StageStatus = resolvedStageStatus,
                     Amount = stageFeeAmount,
                     UserEmail = s?.UserEmail ?? string.Empty,
                     PaymentStatus = paymentStatus,
