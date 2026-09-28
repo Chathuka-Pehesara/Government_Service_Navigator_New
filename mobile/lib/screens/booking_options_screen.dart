@@ -1,15 +1,18 @@
 import 'package:flutter/material.dart';
 import 'package:flutter/cupertino.dart';
 import '../../theme/app_colors.dart';
+import 'post_service_form_screen.dart';
 
 class BookingOptionsScreen extends StatefulWidget {
   final String applicationId;
   final String serviceName;
+  final VoidCallback? onPostalSubmitted;
 
   const BookingOptionsScreen({
     super.key,
     required this.applicationId,
     required this.serviceName,
+    this.onPostalSubmitted,
   });
 
   @override
@@ -21,20 +24,13 @@ class _BookingOptionsScreenState extends State<BookingOptionsScreen> {
   final TextEditingController _timeController = TextEditingController();
 
   void _handlePostService() {
-    showDialog(
-      context: context,
-      builder: (context) => AlertDialog(
-        title: const Text('Post Service Selected'),
-        content: const Text('You will get it within 7 or 14 days.'),
-        actions: [
-          TextButton(
-            onPressed: () {
-              Navigator.of(context).pop();
-              Navigator.of(context).pop(); // Return to previous screen
-            },
-            child: const Text('Understood'),
-          ),
-        ],
+    Navigator.of(context).pushReplacement(
+      CupertinoPageRoute(
+        builder: (_) => PostServiceFormScreen(
+          applicationId: widget.applicationId,
+          serviceName: widget.serviceName,
+          onSubmitted: widget.onPostalSubmitted,
+        ),
       ),
     );
   }
@@ -74,7 +70,6 @@ class _BookingOptionsScreenState extends State<BookingOptionsScreen> {
             ),
             const SizedBox(height: 16),
             
-            // Option 1: Post Service
             RadioListTile<String>(
               title: const Text('Get it with post service'),
               subtitle: const Text('Delivered directly to your registered address.'),
@@ -88,7 +83,6 @@ class _BookingOptionsScreenState extends State<BookingOptionsScreen> {
             ),
             const SizedBox(height: 8),
 
-            // Option 2: Make a Booking
             RadioListTile<String>(
               title: const Text('Make a booking'),
               subtitle: const Text('Collect in person at the department office.'),
@@ -100,7 +94,6 @@ class _BookingOptionsScreenState extends State<BookingOptionsScreen> {
               },
             ),
 
-            // Type Box for Available Times (Only visible if 'book' is selected)
             if (_selectedOption == 'book') ...[
               const SizedBox(height: 24),
               const Text(
