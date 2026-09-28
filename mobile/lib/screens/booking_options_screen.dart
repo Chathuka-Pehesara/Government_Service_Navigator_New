@@ -11,6 +11,7 @@ class BookingOptionsScreen extends StatefulWidget {
   final String serviceName;
   final String? citizenNic;
   final VoidCallback? onPostalSubmitted;
+  final ValueChanged<Map<String, dynamic>>? onAppointmentBooked;
 
   const BookingOptionsScreen({
     super.key,
@@ -18,6 +19,7 @@ class BookingOptionsScreen extends StatefulWidget {
     required this.serviceName,
     this.citizenNic,
     this.onPostalSubmitted,
+    this.onAppointmentBooked,
   });
 
   @override
@@ -102,6 +104,9 @@ class _BookingOptionsScreenState extends State<BookingOptionsScreen> {
           _bookingResult = data;
           _isBooking = false;
         });
+        if (data['isBooked'] == true) {
+          widget.onAppointmentBooked?.call(data);
+        }
       } else {
         setState(() {
           _bookingError = 'Booking failed (${response.statusCode}): ${response.body}';
@@ -470,6 +475,21 @@ class _BookingOptionsScreenState extends State<BookingOptionsScreen> {
             label: const Text('Change or Reschedule Time', style: TextStyle(fontSize: 11)),
             style: OutlinedButton.styleFrom(
               visualDensity: VisualDensity.compact,
+            ),
+          ),
+          const SizedBox(height: 10),
+          SizedBox(
+            width: double.infinity,
+            child: ElevatedButton.icon(
+              icon: const Icon(Icons.check_circle_rounded, size: 16),
+              label: const Text('Done • Return to Completed Services', style: TextStyle(fontWeight: FontWeight.bold)),
+              style: ElevatedButton.styleFrom(
+                backgroundColor: AppColors.success,
+                foregroundColor: Colors.white,
+                padding: const EdgeInsets.symmetric(vertical: 12),
+                shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
+              ),
+              onPressed: () => Navigator.of(context).pop(_bookingResult),
             ),
           ),
         ],
