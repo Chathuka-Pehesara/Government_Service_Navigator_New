@@ -43,9 +43,25 @@ import {
   type RefundStatus,
 } from "./refundsApi";
 
-// ── Helpers ───────────────────────────────────────────────────────────────────
+// ── Helpers & Status Mapping ──────────────────────────────────────────────────
 
-const STATUS_FILTERS: { key: "All" | RefundStatus; label: string }[] = [
+function getStatusString(status: RefundStatus | number | undefined | null): string {
+  if (status === undefined || status === null) return "Pending";
+  if (typeof status === 'number') {
+    const map: Record<number, string> = {
+      0: "Pending",
+      1: "Approved",
+      2: "Rejected",
+      3: "Processing",
+      4: "Completed",
+      5: "Failed",
+    };
+    return map[status] ?? "Pending";
+  }
+  return String(status);
+}
+
+const STATUS_FILTERS: { key: "All" | string; label: string }[] = [
   { key: "All", label: "All" },
   { key: "Pending", label: "Pending" },
   { key: "Approved", label: "Approved" },
@@ -57,8 +73,8 @@ const STATUS_FILTERS: { key: "All" | RefundStatus; label: string }[] = [
 
 type TagType = "blue" | "green" | "red" | "teal" | "purple" | "cool-gray";
 
-function statusTag(status: RefundStatus): TagType {
-  const map: Record<RefundStatus, TagType> = {
+function statusTag(statusStr: string): TagType {
+  const map: Record<string, TagType> = {
     Pending: "blue",
     Approved: "teal",
     Rejected: "red",
@@ -66,7 +82,7 @@ function statusTag(status: RefundStatus): TagType {
     Completed: "green",
     Failed: "cool-gray",
   };
-  return map[status] ?? "blue";
+  return map[statusStr] ?? "blue";
 }
 
 function fmt(iso: string | null | undefined): string {
@@ -104,7 +120,7 @@ export default function FinanceRefunds() {
   const [loading, setLoading] = useState(true);
   const [fetchError, setFetchError] = useState<string | null>(null);
 
-  const [statusFilter, setStatusFilter] = useState<"All" | RefundStatus>("All");
+  const [statusFilter, setStatusFilter] = useState<string>("All");
   const [search, setSearch] = useState("");
 
   const [selected, setSelected] = useState<RefundResponse | null>(null);
@@ -140,7 +156,11 @@ export default function FinanceRefunds() {
 
   const filtered = useMemo(() => {
     return refunds
-      .filter((r) => statusFilter === "All" || r.status === statusFilter)
+      .filter((r) => {
+        if (statusFilter === "All") return true;
+        const currentStatusStr = getStatusString(r.status);
+        return currentStatusStr.toLowerCase() === statusFilter.toLowerCase();
+      })
       .filter((r) => {
         if (!search.trim()) return true;
         const t = search.trim().toLowerCase();
@@ -157,17 +177,17 @@ export default function FinanceRefunds() {
     paymentId: String(r.paymentId),
     requestedByEmail: r.requestedByEmail,
     refundAmount: fmtAmount(r.refundAmount),
-    status: r.status,
+    status: getStatusString(r.status),
     requestedDate: fmt(r.requestedDate),
   }));
 
   // ── Summary counts ─────────────────────────────────────────────────────────
 
   const counts = useMemo(() => ({
-    pending: refunds.filter((r) => r.status === "Pending").length,
-    approved: refunds.filter((r) => r.status === "Approved").length,
-    processing: refunds.filter((r) => r.status === "Processing").length,
-    completed: refunds.filter((r) => r.status === "Completed").length,
+    pending: refunds.filter((r) => getStatusString(r.status) === "Pending").length,
+    approved: refunds.filter((r) => getStatusString(r.status) === "Approved").length,
+    processing: refunds.filter((r) => getStatusString(r.status) === "Processing").length,
+    completed: refunds.filter((r) => getStatusString(r.status) === "Completed").length,
   }), [refunds]);
 
   // ── Actions ────────────────────────────────────────────────────────────────
@@ -213,6 +233,25 @@ export default function FinanceRefunds() {
   function handleProcess() {
     if (!selected || !txRef.trim()) return;
     mutate(() => processRefund(selected.id, txRef.trim()), "Refund marked as Processing.");
+  }
+
+  async function handleApproveAndComplete() {
+    if (!selected) return;
+    setActionLoading(true);
+    setBanner(null);
+    try {
+      // Step 1: Process with dummy ref if not provided, or jump straight to complete if backend permits, 
+      // otherwise follow sequence Process -> Complete.
+      const processed = await processRefund(selected.id, txRef.trim() || "DIRECT-COMPLETE");
+      const completed = await completeRefund(processed.id);
+      setRefunds((prev) => prev.map((r) => (r.id === completed.id ? completed : r)));
+      setSelected(completed);
+      setBanner({ kind: "success", msg: "Refund marked directly as Completed." });
+    } catch (e: unknown) {
+      setBanner({ kind: "error", msg: e instanceof Error ? e.message : "Action failed." });
+    } finally {
+      setActionLoading(false);
+    }
   }
 
   function handleComplete() {
@@ -270,7 +309,13 @@ export default function FinanceRefunds() {
       {/* Status filter switcher */}
       <div style={{ marginBottom: "1rem", overflowX: "auto" }}>
         <ContentSwitcher
-          onChange={(e) => setStatusFilter((e as { name: "All" | RefundStatus }).name)}
+          selectedIndex={STATUS_FILTERS.findIndex((f) => f.key === statusFilter)}
+          onChange={(e) => {
+            const selectedSwitch = e as { name?: string };
+            if (selectedSwitch && selectedSwitch.name) {
+              setStatusFilter(selectedSwitch.name);
+            }
+          }}
           size="sm"
         >
           {STATUS_FILTERS.map(({ key, label }) => (
@@ -320,8 +365,8 @@ export default function FinanceRefunds() {
                         {row.cells.map((cell) => (
                           <TableCell key={cell.id}>
                             {cell.info.header === "status" ? (
-                              <Tag type={statusTag(cell.value as RefundStatus)}>
-                                {cell.value}
+                              <Tag type={statusTag(String(cell.value))}>
+                                {String(cell.value)}
                               </Tag>
                             ) : (
                               cell.value
@@ -335,7 +380,7 @@ export default function FinanceRefunds() {
                             renderIcon={ArrowRight}
                             onClick={() => openDetail(row.id)}
                           >
-                            Review
+                            Review & Change Status
                           </Button>
                         </TableCell>
                       </TableRow>
@@ -348,148 +393,169 @@ export default function FinanceRefunds() {
         </DataTable>
       )}
 
-      {/* ── Detail modal ─────────────────────────────────────────────────── */}
+      {/* ── Detail Modal with Status Changing Control Panel ──────────────── */}
       <Modal
         open={selected !== null}
-        modalHeading={`Refund #${selected?.id ?? ""}`}
+        modalHeading={`Manage Refund Request #${selected?.id ?? ""}`}
         passiveModal
         onRequestClose={closeDetail}
         size="md"
       >
-        {selected && (
-          <div style={{ paddingBottom: "1rem" }}>
-            {/* Banner */}
-            {banner && (
-              <InlineNotification
-                kind={banner.kind}
-                title={banner.kind === "success" ? "Success" : "Error"}
-                subtitle={banner.msg}
-                style={{ marginBottom: "1rem" }}
-                lowContrast
-              />
-            )}
+        {selected && (() => {
+          const currentStatusStr = getStatusString(selected.status);
+          return (
+            <div style={{ paddingBottom: "1rem" }}>
+              {/* Banner */}
+              {banner && (
+                <InlineNotification
+                  kind={banner.kind}
+                  title={banner.kind === "success" ? "Success" : "Error"}
+                  subtitle={banner.msg}
+                  style={{ marginBottom: "1rem" }}
+                  lowContrast
+                />
+              )}
 
-            {/* Meta grid */}
-            <Grid style={{ paddingLeft: 0, paddingRight: 0, marginBottom: "1.5rem" }}>
-              {[
-                { label: "Status", value: <Tag type={statusTag(selected.status)}>{selected.status}</Tag> },
-                { label: "Payment ID", value: `#${selected.paymentId}` },
-                { label: "Refund Amount", value: fmtAmount(selected.refundAmount) },
-                { label: "Requested By", value: selected.requestedByEmail },
-                { label: "Requested", value: fmt(selected.requestedDate) },
-                { label: "Decided", value: fmt(selected.decidedDate) },
-                { label: "Decided By", value: selected.decidedByEmail ?? "—" },
-                { label: "Completed", value: fmt(selected.completedDate) },
-                { label: "Transaction Ref", value: selected.refundTransactionRef ?? "—" },
-              ].map(({ label, value }) => (
-                <Column sm={4} md={4} lg={8} key={label} style={{ marginBottom: "1rem" }}>
-                  <p style={{ fontSize: "0.75rem", color: "#525252", textTransform: "uppercase", letterSpacing: "0.05em" }}>
-                    {label}
-                  </p>
-                  <p style={{ fontSize: "0.875rem", color: "#161616", marginTop: "0.25rem" }}>
-                    {value}
-                  </p>
-                </Column>
-              ))}
-            </Grid>
+              {/* Meta grid */}
+              <Grid style={{ paddingLeft: 0, paddingRight: 0, marginBottom: "1.5rem" }}>
+                {[
+                  { label: "Status Stage", value: <Tag type={statusTag(currentStatusStr)}>{currentStatusStr}</Tag> },
+                  { label: "Payment ID", value: `#${selected.paymentId}` },
+                  { label: "Refund Amount", value: fmtAmount(selected.refundAmount) },
+                  { label: "Requested By", value: selected.requestedByEmail },
+                  { label: "Requested", value: fmt(selected.requestedDate) },
+                  { label: "Decided", value: fmt(selected.decidedDate) },
+                  { label: "Decided By", value: selected.decidedByEmail ?? "—" },
+                  { label: "Completed", value: fmt(selected.completedDate) },
+                  { label: "Transaction Ref", value: selected.refundTransactionRef ?? "—" },
+                ].map(({ label, value }) => (
+                  <Column sm={4} md={4} lg={8} key={label} style={{ marginBottom: "1rem" }}>
+                    <p style={{ fontSize: "0.75rem", color: "#525252", textTransform: "uppercase", letterSpacing: "0.05em" }}>
+                      {label}
+                    </p>
+                    <p style={{ fontSize: "0.875rem", color: "#161616", marginTop: "0.25rem" }}>
+                      {value}
+                    </p>
+                  </Column>
+                ))}
+              </Grid>
 
-            {/* Reason */}
-            <Tile style={{ marginBottom: "1.5rem", background: "#f4f4f4" }}>
-              <p style={{ fontSize: "0.75rem", color: "#525252", textTransform: "uppercase", letterSpacing: "0.05em", marginBottom: "0.5rem" }}>
-                Reason for Refund
-              </p>
-              <p style={{ fontSize: "0.875rem", color: "#161616" }}>{selected.reason}</p>
-            </Tile>
-
-            {/* Decision note (if already decided) */}
-            {selected.decisionNote && (
+              {/* Reason */}
               <Tile style={{ marginBottom: "1.5rem", background: "#f4f4f4" }}>
                 <p style={{ fontSize: "0.75rem", color: "#525252", textTransform: "uppercase", letterSpacing: "0.05em", marginBottom: "0.5rem" }}>
-                  Officer Note
+                  Reason for Refund
                 </p>
-                <p style={{ fontSize: "0.875rem", color: "#161616" }}>{selected.decisionNote}</p>
+                <p style={{ fontSize: "0.875rem", color: "#161616" }}>{selected.reason}</p>
               </Tile>
-            )}
 
-            {/* ── PENDING: Approve / Reject ──────────────────────────────── */}
-            {selected.status === "Pending" && (
-              <div style={{ borderTop: "1px solid #e0e0e0", paddingTop: "1.5rem" }}>
-                <p style={{ fontWeight: 600, marginBottom: "1rem" }}>Decision</p>
-                <TextArea
-                  id="refund-decision-note"
-                  labelText="Note (optional)"
-                  placeholder="Add a note visible to the citizen…"
-                  value={note}
-                  onChange={(e) => setNote(e.target.value)}
-                  rows={3}
-                  style={{ marginBottom: "1rem" }}
-                />
-                <div style={{ display: "flex", gap: "1rem", flexWrap: "wrap" }}>
-                  <Button
-                    renderIcon={Checkmark}
-                    onClick={handleApprove}
-                    disabled={actionLoading}
-                  >
-                    {actionLoading ? "Saving…" : "Approve"}
-                  </Button>
-                  <Button
-                    kind="danger"
-                    renderIcon={Misuse}
-                    onClick={handleReject}
-                    disabled={actionLoading}
-                  >
-                    {actionLoading ? "Saving…" : "Reject"}
-                  </Button>
-                </div>
-              </div>
-            )}
+              {/* Decision note (if already decided) */}
+              {selected.decisionNote && (
+                <Tile style={{ marginBottom: "1.5rem", background: "#f4f4f4" }}>
+                  <p style={{ fontSize: "0.75rem", color: "#525252", textTransform: "uppercase", letterSpacing: "0.05em", marginBottom: "0.5rem" }}>
+                    Officer Note
+                  </p>
+                  <p style={{ fontSize: "0.875rem", color: "#161616" }}>{selected.decisionNote}</p>
+                </Tile>
+              )}
 
-            {/* ── APPROVED: Process (requires bank transfer ref) ─────────── */}
-            {selected.status === "Approved" && (
-              <div style={{ borderTop: "1px solid #e0e0e0", paddingTop: "1.5rem" }}>
-                <p style={{ fontWeight: 600, marginBottom: "0.5rem" }}>Process Refund</p>
-                <p style={{ fontSize: "0.875rem", color: "#525252", marginBottom: "1rem" }}>
-                  Confirm the manual bank transfer has been initiated and enter the
-                  bank confirmation / transaction reference number below.
+              {/* ── OFFICER STATUS CHANGE SECTION ──────────────────────── */}
+              <div style={{ marginTop: "1.5rem", padding: "1.25rem", border: "1px solid #c6c6c6", background: "#f4f4f4", borderRadius: "6px" }}>
+                <h4 style={{ fontSize: "1rem", fontWeight: 600, marginBottom: "0.5rem", color: "#161616" }}>
+                  Officer Status Management Control
+                </h4>
+                <p style={{ fontSize: "0.875rem", color: "#525252", marginBottom: "1.25rem" }}>
+                  Current stage: <strong style={{ color: "#0f62fe" }}>{currentStatusStr}</strong>. Advance or change the status below to update the workflow state in real-time.
                 </p>
-                <TextInput
-                  id="refund-tx-ref"
-                  labelText="Bank Transfer Reference *"
-                  placeholder="e.g. TRF-2026-00142"
-                  value={txRef}
-                  onChange={(e) => setTxRef(e.target.value)}
-                  style={{ marginBottom: "1rem" }}
-                />
-                <Button
-                  renderIcon={ArrowRight}
-                  onClick={handleProcess}
-                  disabled={actionLoading || !txRef.trim()}
-                >
-                  {actionLoading ? "Saving…" : "Mark as Processing"}
-                </Button>
-              </div>
-            )}
 
-            {/* ── PROCESSING: Complete ───────────────────────────────────── */}
-            {selected.status === "Processing" && (
-              <div style={{ borderTop: "1px solid #e0e0e0", paddingTop: "1.5rem" }}>
-                <p style={{ fontWeight: 600, marginBottom: "0.5rem" }}>Complete Refund</p>
-                <p style={{ fontSize: "0.875rem", color: "#525252", marginBottom: "1rem" }}>
-                  Confirm that the bank transfer has been received by the citizen and
-                  mark this refund as completed. This will also update the original
-                  payment status to "Refunded".
-                </p>
-                <Button
-                  renderIcon={CheckmarkFilled}
-                  onClick={handleComplete}
-                  disabled={actionLoading}
-                >
-                  {actionLoading ? "Saving…" : "Mark as Completed"}
-                </Button>
+                {/* PENDING: Approve or Reject */}
+                {currentStatusStr === "Pending" && (
+                  <div>
+                    <TextArea
+                      id="refund-decision-note"
+                      labelText="Officer Note (Optional)"
+                      placeholder="Add an optional explanation note for the citizen..."
+                      value={note}
+                      onChange={(e) => setNote(e.target.value)}
+                      rows={2}
+                      style={{ marginBottom: "1rem" }}
+                    />
+                    <div style={{ display: "flex", gap: "1rem", flexWrap: "wrap" }}>
+                      <Button
+                        renderIcon={Checkmark}
+                        onClick={handleApprove}
+                        disabled={actionLoading}
+                      >
+                        {actionLoading ? "Updating..." : "Set Status: Approved"}
+                      </Button>
+                      <Button
+                        kind="danger"
+                        renderIcon={Misuse}
+                        onClick={handleReject}
+                        disabled={actionLoading}
+                      >
+                        {actionLoading ? "Updating..." : "Set Status: Rejected"}
+                      </Button>
+                    </div>
+                  </div>
+                )}
+
+                {/* APPROVED: Process OR Jump Straight to Complete */}
+                {currentStatusStr === "Approved" && (
+                  <div>
+                    <TextInput
+                      id="refund-tx-ref"
+                      labelText="Bank Transfer Reference Number *"
+                      placeholder="e.g. TRF-2026-00142"
+                      value={txRef}
+                      onChange={(e) => setTxRef(e.target.value)}
+                      style={{ marginBottom: "1rem" }}
+                    />
+                    <div style={{ display: "flex", gap: "1rem", flexWrap: "wrap" }}>
+                      <Button
+                        renderIcon={ArrowRight}
+                        onClick={handleProcess}
+                        disabled={actionLoading || !txRef.trim()}
+                      >
+                        {actionLoading ? "Updating..." : "Set Status: Processing"}
+                      </Button>
+                      <Button
+                        kind="primary"
+                        renderIcon={CheckmarkFilled}
+                        onClick={handleApproveAndComplete}
+                        disabled={actionLoading || !txRef.trim()}
+                      >
+                        {actionLoading ? "Updating..." : "Set Status: Completed Directly"}
+                      </Button>
+                    </div>
+                  </div>
+                )}
+
+                {/* PROCESSING: Complete */}
+                {currentStatusStr === "Processing" && (
+                  <div>
+                    <p style={{ fontSize: "0.875rem", color: "#525252", marginBottom: "1rem" }}>
+                      Confirm that the manual bank disbursement has settled to finalize this request.
+                    </p>
+                    <Button
+                      renderIcon={CheckmarkFilled}
+                      onClick={handleComplete}
+                      disabled={actionLoading}
+                    >
+                      {actionLoading ? "Updating..." : "Set Status: Completed"}
+                    </Button>
+                  </div>
+                )}
+
+                {/* Terminal States */}
+                {(currentStatusStr === "Completed" || currentStatusStr === "Rejected" || currentStatusStr === "Failed") && (
+                  <div style={{ fontStyle: "italic", color: "#525252", fontSize: "0.875rem" }}>
+                    This request has reached its terminal lifecycle state ({currentStatusStr}) and can no longer be modified.
+                  </div>
+                )}
               </div>
-            )}
-          </div>
-        )}
+            </div>
+          );
+        })()}
       </Modal>
     </FinanceShell>
   );

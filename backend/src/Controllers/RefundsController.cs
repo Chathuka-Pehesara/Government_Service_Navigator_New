@@ -3,6 +3,8 @@ using Government_Service_Navigator.Backend.DTOs.Responses;
 using Government_Service_Navigator.Backend.Services.Interfaces;
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
+using System.Security.Claims;
+using System.IdentityModel.Tokens.Jwt;
 
 namespace Government_Service_Navigator.Backend.Controllers
 {
@@ -15,6 +17,15 @@ namespace Government_Service_Navigator.Backend.Controllers
         public RefundsController(IRefundService refundService)
         {
             _refundService = refundService;
+        }
+
+        private string GetUserEmail()
+        {
+            return User.FindFirstValue(ClaimTypes.Email)
+                ?? User.FindFirstValue("email")
+                ?? User.FindFirstValue(JwtRegisteredClaimNames.Email)
+                ?? User.Identity?.Name
+                ?? "unknown@user";
         }
 
         // Finance Officer: list all refund requests, optionally filtered by status.
@@ -31,7 +42,7 @@ namespace Government_Service_Navigator.Backend.Controllers
         [Authorize]
         public async Task<IActionResult> Create([FromBody] CreateRefundRequestDto dto)
         {
-            var email = User.Identity?.Name ?? "unknown@user";
+            var email = GetUserEmail();
             try
             {
                 var refund = await _refundService.CreateRefundRequestAsync(dto.PaymentId, dto.RefundAmount, dto.Reason, email);
@@ -64,20 +75,16 @@ namespace Government_Service_Navigator.Backend.Controllers
         [Authorize]
         public async Task<IActionResult> GetMine()
         {
-            var email = User.FindFirst(System.Security.Claims.ClaimTypes.Email)?.Value 
-                     ?? User.FindFirst("email")?.Value 
-                     ?? User.Identity?.Name 
-                     ?? "unknown@user";
+            var email = GetUserEmail();
             var refunds = await _refundService.GetByRequesterAsync(email);
             return Ok(refunds.Select(RefundResponseDto.FromEntity));
         }
 
-        // TODO: restrict to the FinanceOfficer/Officer role once role claims are finalized.
         [HttpPost("{id}/approve")]
         [Authorize]
         public async Task<IActionResult> Approve(int id, [FromBody] RefundDecisionDto dto)
         {
-            var email = User.Identity?.Name ?? "unknown@officer";
+            var email = GetUserEmail();
             try
             {
                 var refund = await _refundService.ApproveAsync(id, email, dto.Note);
@@ -91,7 +98,7 @@ namespace Government_Service_Navigator.Backend.Controllers
         [Authorize]
         public async Task<IActionResult> Reject(int id, [FromBody] RefundDecisionDto dto)
         {
-            var email = User.Identity?.Name ?? "unknown@officer";
+            var email = GetUserEmail();
             try
             {
                 var refund = await _refundService.RejectAsync(id, email, dto.Note);

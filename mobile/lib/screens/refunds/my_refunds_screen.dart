@@ -27,7 +27,7 @@ class _MyRefundsScreenState extends ConsumerState<MyRefundsScreen> {
       ref.invalidate(myRefundsProvider);
       await ref.read(myRefundsProvider.future);
     } catch (_) {
-      // Shown from the provider's error state
+      // Handled by provider error state
     }
   }
 
@@ -154,7 +154,7 @@ class _MyRefundsScreenState extends ConsumerState<MyRefundsScreen> {
                   ),
                   const SizedBox(height: 20),
                   const Text(
-                    'No refund requests yet',
+                    'No refund requests found',
                     style: TextStyle(
                       fontSize: 18,
                       fontWeight: FontWeight.w700,
@@ -163,7 +163,7 @@ class _MyRefundsScreenState extends ConsumerState<MyRefundsScreen> {
                   ),
                   const SizedBox(height: 8),
                   const Text(
-                    'You have not submitted any refund requests yet. Tap + to create one.',
+                    'No refund requests match your current account session. Tap + to submit a new request.',
                     textAlign: TextAlign.center,
                     style: TextStyle(fontSize: 14, color: AppColors.secondaryLabel),
                   ),
@@ -186,99 +186,9 @@ class _MyRefundsScreenState extends ConsumerState<MyRefundsScreen> {
         separatorBuilder: (_, _) => const SizedBox(height: 12),
         itemBuilder: (context, index) {
           final r = _refunds[index];
-          return Container(
-            decoration: BoxDecoration(
-              color: AppColors.cardBg,
-              borderRadius: BorderRadius.circular(14),
-              border: Border.all(color: AppColors.divider, width: 0.8),
-              boxShadow: [
-                BoxShadow(
-                  color: AppColors.dark.withValues(alpha: 0.03),
-                  blurRadius: 10,
-                  offset: const Offset(0, 4),
-                ),
-              ],
-            ),
-            child: Material(
-              color: Colors.transparent,
-              child: InkWell(
-                borderRadius: BorderRadius.circular(14),
-                onTap: () {
-                  Navigator.of(context).push(
-                    CupertinoPageRoute(
-                      builder: (_) => RefundDetailScreen(
-                        refundId: r.id,
-                      ),
-                    ),
-                  );
-                },
-                child: Padding(
-                  padding: const EdgeInsets.all(16),
-                  child: Row(
-                    children: [
-                      Container(
-                        width: 44,
-                        height: 44,
-                        decoration: BoxDecoration(
-                          color: AppColors.primary.withValues(alpha: 0.08),
-                          borderRadius: BorderRadius.circular(12),
-                        ),
-                        child: const Icon(
-                          CupertinoIcons.arrow_uturn_left,
-                          color: AppColors.primary,
-                          size: 22,
-                        ),
-                      ),
-                      const SizedBox(width: 14),
-                      Expanded(
-                        child: Column(
-                          crossAxisAlignment: CrossAxisAlignment.start,
-                          children: [
-                            Text(
-                              'Payment #${r.paymentId}',
-                              style: const TextStyle(
-                                fontSize: 16,
-                                fontWeight: FontWeight.w700,
-                                color: AppColors.dark,
-                              ),
-                            ),
-                            const SizedBox(height: 4),
-                            Text(
-                              'LKR ${r.refundAmount.toStringAsFixed(2)}',
-                              style: const TextStyle(
-                                fontSize: 14,
-                                color: AppColors.secondaryLabel,
-                                fontWeight: FontWeight.w500,
-                              ),
-                            ),
-                            if (r.reason != null && r.reason!.isNotEmpty) ...[
-                              const SizedBox(height: 2),
-                              Text(
-                                r.reason!,
-                                maxLines: 1,
-                                overflow: TextOverflow.ellipsis,
-                                style: const TextStyle(
-                                  fontSize: 12,
-                                  color: AppColors.secondaryLabel,
-                                ),
-                              ),
-                            ],
-                          ],
-                        ),
-                      ),
-                      const SizedBox(width: 10),
-                      StatusBadge(status: r.status),
-                      const SizedBox(width: 6),
-                      const Icon(
-                        CupertinoIcons.chevron_right,
-                        size: 14,
-                        color: AppColors.secondaryLabel,
-                      ),
-                    ],
-                  ),
-                ),
-              ),
-            ),
+          return _RefundListItem(
+            initialRefund: r,
+            onReturned: _loadRefunds,
           );
         },
       ),
@@ -286,3 +196,120 @@ class _MyRefundsScreenState extends ConsumerState<MyRefundsScreen> {
   }
 }
 
+/// Helper widget that subscribes to real-time polling updates for each list item
+class _RefundListItem extends ConsumerWidget {
+  final RefundRequest initialRefund;
+  final VoidCallback onReturned;
+
+  const _RefundListItem({
+    required this.initialRefund,
+    required this.onReturned,
+  });
+
+  @override
+  Widget build(BuildContext context, WidgetRef ref) {
+    // Watches the same real-time polling provider used in RefundDetailScreen
+    final liveRefundAsync = ref.watch(refundDetailProvider(initialRefund.id));
+    
+    // Fall back to initial list data if live fetch is still loading or errored
+    final currentStatus = liveRefundAsync.value?.status ?? initialRefund.status;
+    final currentAmount = liveRefundAsync.value?.refundAmount ?? initialRefund.refundAmount;
+    final currentReason = liveRefundAsync.value?.reason ?? initialRefund.reason;
+
+    return Container(
+      decoration: BoxDecoration(
+        color: AppColors.cardBg,
+        borderRadius: BorderRadius.circular(14),
+        border: Border.all(color: AppColors.divider, width: 0.8),
+        boxShadow: [
+          BoxShadow(
+            color: AppColors.dark.withValues(alpha: 0.03),
+            blurRadius: 10,
+            offset: const Offset(0, 4),
+          ),
+        ],
+      ),
+      child: Material(
+        color: Colors.transparent,
+        child: InkWell(
+          borderRadius: BorderRadius.circular(14),
+          onTap: () async {
+            await Navigator.of(context).push(
+              CupertinoPageRoute(
+                builder: (_) => RefundDetailScreen(
+                  refundId: initialRefund.id,
+                ),
+              ),
+            );
+            onReturned();
+          },
+          child: Padding(
+            padding: const EdgeInsets.all(16),
+            child: Row(
+              children: [
+                Container(
+                  width: 44,
+                  height: 44,
+                  decoration: BoxDecoration(
+                    color: AppColors.primary.withValues(alpha: 0.08),
+                    borderRadius: BorderRadius.circular(12),
+                  ),
+                  child: const Icon(
+                    CupertinoIcons.arrow_uturn_left,
+                    color: AppColors.primary,
+                    size: 22,
+                  ),
+                ),
+                const SizedBox(width: 14),
+                Expanded(
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Text(
+                        'Payment #${initialRefund.paymentId}',
+                        style: const TextStyle(
+                          fontSize: 16,
+                          fontWeight: FontWeight.w700,
+                          color: AppColors.dark,
+                        ),
+                      ),
+                      const SizedBox(height: 4),
+                      Text(
+                        'LKR ${currentAmount.toStringAsFixed(2)}',
+                        style: const TextStyle(
+                          fontSize: 14,
+                          color: AppColors.secondaryLabel,
+                          fontWeight: FontWeight.w500,
+                        ),
+                      ),
+                      if (currentReason != null && currentReason.isNotEmpty) ...[
+                        const SizedBox(height: 2),
+                        Text(
+                          currentReason,
+                          maxLines: 1,
+                          overflow: TextOverflow.ellipsis,
+                          style: const TextStyle(
+                            fontSize: 12,
+                            color: AppColors.secondaryLabel,
+                          ),
+                        ),
+                      ],
+                    ],
+                  ),
+                ),
+                const SizedBox(width: 10),
+                StatusBadge(status: currentStatus),
+                const SizedBox(width: 6),
+                const Icon(
+                  CupertinoIcons.chevron_right,
+                  size: 14,
+                  color: AppColors.secondaryLabel,
+                ),
+              ],
+            ),
+          ),
+        ),
+      ),
+    );
+  }
+}
