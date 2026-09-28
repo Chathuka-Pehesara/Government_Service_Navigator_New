@@ -63,6 +63,7 @@ class AppDrawer extends ConsumerWidget {
               title: const Text('Dashboard'),
               onTap: () => Navigator.pop(context),
             ),
+            
             ListTile(
               leading: const Icon(Icons.folder),
               title: const Text('My Applications'),
@@ -90,6 +91,14 @@ class AppDrawer extends ConsumerWidget {
               onTap: () {
                 Navigator.pop(context);
                 Navigator.of(context).pushNamed('/refund-request');
+              },
+            ),
+            ListTile(
+              leading: const Icon(Icons.book_online),
+              title: const Text('Bookings'),
+              onTap: () {
+                Navigator.pop(context);
+                Navigator.of(context).pushNamed('/bookings');
               },
             ),
             ListTile(
