@@ -174,5 +174,48 @@ namespace Government_Service_Navigator.AgenticAi.Tests
             Assert.Equal(new DateTime(2026, 9, 29, 3, 30, 0, DateTimeKind.Utc), first.SlotStartUtc); // 09:00 +05:30
             Assert.Equal(first.SlotStartUtc!.Value.AddMinutes(30), second.SlotStartUtc);            // not double-booked
         }
+
+        private class StubLlmService : global::AgenticAi.Services.ILlmService
+        {
+            public bool IsConfigured => true;
+            public string ModelName => "stub-model";
+            public string ResponseToReturn { get; set; } = "{}";
+
+            public Task<string?> GenerateChatCompletionAsync(string systemPrompt, string userPrompt, bool jsonMode = false, CancellationToken cancellationToken = default)
+                => Task.FromResult<string?>(ResponseToReturn);
+        }
+
+        [Fact]
+        public async Task ActionAgent_WithLlmService_SynthesizesOfficerNotesAndReasoning()
+        {
+            _fees.Fees.Add(new FeeScheduleEntry("Standard Processing", 10000m, DateTime.UtcNow.AddYears(-1)));
+            var stubLlm = new StubLlmService
+            {
+                ResponseToReturn = """
+                {
+                    "notesForOfficer": [
+                        "Verify physical police report at counter",
+                        "Applicant opted for standard processing schedule"
+                    ],
+                    "reasoning": "Application pre-filled successfully. Standard processing fee of LKR 10,000.00 assessed according to statutory regulations. Appointment slot proposed for Colombo headquarters."
+                }
+                """
+            };
+
+            var agent = new ActionToolAgent(
+                new StubRetriever(),
+                _embeddings,
+                new CalculateFeeTool(_fees),
+                new FindAppointmentSlotTool(),
+                new PrefillApplicationTool(_templates),
+                stubLlm);
+
+            var result = await agent.PrepareDraftAsync(BuildRequest());
+
+            Assert.True(result.IsReadyForValidation);
+            Assert.Contains("Verify physical police report at counter", result.NotesForOfficer);
+            Assert.Contains("Applicant opted for standard processing schedule", result.NotesForOfficer);
+            Assert.Contains("Standard processing fee of LKR 10,000.00 assessed", result.Reasoning);
+        }
     }
 }

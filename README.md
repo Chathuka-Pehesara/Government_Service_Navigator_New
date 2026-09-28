@@ -42,7 +42,6 @@ Government_Service_Navigator/
 │   ├── diagrams/                    # System architecture + database ER diagrams (Mermaid)
 │   ├── reports/                     # (empty — add test/eval/perf/deployment reports here)
 │   ├── api.md                       # Full endpoint-by-endpoint API reference, incl. actual auth requirements
-│   ├── performance-and-redis.md     # Why the apps load slowly and the fix plan: polling, indexes, SignalR, Redis
 │   └── Government_Service_Navigator_Project_Plan.md   # Original 9-week plan, role split, agentic AI design
 │
 ├── tui-runner/                      # Node.js split-pane TUI: runs backend + web (+ optional mobile) together

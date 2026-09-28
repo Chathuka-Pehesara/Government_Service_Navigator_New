@@ -81,6 +81,44 @@ namespace Government_Service_Navigator.AgenticAi.Tests
             Assert.Empty(plan.RequiredDocuments);
         }
 
+        private class StubLlmService : global::AgenticAi.Services.ILlmService
+        {
+            public bool IsConfigured => true;
+            public string ModelName => "stub-model";
+            public string ResponseToReturn { get; set; } = "{}";
+
+            public Task<string?> GenerateChatCompletionAsync(string systemPrompt, string userPrompt, bool jsonMode = false, CancellationToken cancellationToken = default)
+                => Task.FromResult<string?>(ResponseToReturn);
+        }
+
+        [Fact]
+        public async Task Intake_WithLlmService_ReturnsAiSynthesizedPlan()
+        {
+            _retriever.Chunks.Add(PassportChunk);
+            var stubLlm = new StubLlmService
+            {
+                ResponseToReturn = """
+                {
+                    "recommendedService": "Passport Renewal & Application",
+                    "requiredDocuments": ["Old Passport", "National Identity Card", "Police Lost Complaint Report"],
+                    "stepByStepPlan": [
+                        "Step 1: Obtain a police report for your lost document.",
+                        "Step 2: Complete the online passport renewal form.",
+                        "Step 3: Book an appointment at the Department of Immigration."
+                    ]
+                }
+                """
+            };
+
+            var agent = new IntakePlanningAgent(_retriever, new StubEmbeddingService(), stubLlm);
+            var plan = await agent.GeneratePlanAsync(new IntakePlanRequest("I lost my travel document in Colombo and need an urgent passport"));
+
+            Assert.Equal("Passport Renewal & Application", plan.RecommendedService);
+            Assert.Contains("Police Lost Complaint Report", plan.RequiredDocuments);
+            Assert.Equal(3, plan.StepByStepPlan.Count);
+            Assert.StartsWith("Step 1: Obtain a police report", plan.StepByStepPlan[0]);
+        }
+
         [Fact]
         public async Task Eligibility_UsesCatalogDocuments_FlagsUnmatchedOnes_WithoutBlocking()
         {
@@ -112,6 +150,43 @@ namespace Government_Service_Navigator.AgenticAi.Tests
             Assert.Equal(new[] { "NIC" }, result.RequiredDocuments);
             Assert.Empty(result.MissingDocuments);
             Assert.Equal(100, result.MatchPercentage);
+        }
+
+        [Fact]
+        public async Task Eligibility_WithLlmService_ReturnsAiSynthesizedEvaluation()
+        {
+            _retriever.Chunks.Add(PassportChunk);
+            var stubLlm = new StubLlmService
+            {
+                ResponseToReturn = """
+                {
+                    "isEligible": true,
+                    "matchPercentage": 85,
+                    "missingCriteria": [],
+                    "requiredDocuments": ["National Identity Card", "Old Passport", "Birth Certificate"],
+                    "missingDocuments": ["Birth Certificate"],
+                    "reasoning": "The applicant meets age and citizenship requirements. Valid NIC and Old Passport uploaded. Birth Certificate is still required."
+                }
+                """
+            };
+
+            var agent = new EligibilityDocumentAgent(
+                _retriever, 
+                new StubEmbeddingService(), 
+                new CheckEligibilityRulesTool(), 
+                new GetDocumentRequirementsTool(new StubDocumentRepository()),
+                stubLlm);
+
+            var result = await agent.EvaluateEligibilityAsync(new EligibilityPlanRequest(
+                "Passport Renewal & Application",
+                ServiceId: 1,
+                Profile: new CitizenProfile { Age = 28, CitizenshipStatus = "Citizen", ProvidedDocuments = new() { "nic_scan.pdf", "old_passport.pdf" } }));
+
+            Assert.True(result.IsEligible);
+            Assert.Equal(85, result.MatchPercentage);
+            Assert.Empty(result.MissingCriteria);
+            Assert.Contains("Birth Certificate", result.MissingDocuments);
+            Assert.Contains("meets age and citizenship requirements", result.Reasoning);
         }
     }
 }

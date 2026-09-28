@@ -1,3 +1,4 @@
+import { useState } from "react";
 import {
   Accordion,
   AccordionItem,
@@ -7,7 +8,13 @@ import {
   Tag,
 } from "@carbon/react";
 import { Renew } from "@carbon/icons-react";
-import type { AgentDraftView } from "./agentDraftApi";
+import {
+  compileCaseDossier,
+  draftDecisionOrder,
+  type AgentDraftView,
+  type VerificationCaseDossier,
+  type DecisionOrderDraft,
+} from "./agentDraftApi";
 
 interface Props {
   draft: AgentDraftView | null;
@@ -38,6 +45,60 @@ export default function AgentDraftPanel({ draft, loading, error, answers, onRege
   const eligibility = draft?.eligibility;
   const action = draft?.action;
   const fields = action?.draft?.formFields ?? {};
+
+  // Agent 4 Active Actions State
+  const [dossier, setDossier] = useState<VerificationCaseDossier | null>(null);
+  const [isCompilingDossier, setIsCompilingDossier] = useState(false);
+  const [decisionOrder, setDecisionOrder] = useState<DecisionOrderDraft | null>(null);
+  const [isDraftingOrder, setIsDraftingOrder] = useState(false);
+  const [orderTypeDrafted, setOrderTypeDrafted] = useState<string>("");
+  const [copiedText, setCopiedText] = useState(false);
+
+  const handleCompileDossier = async () => {
+    if (!draft) return;
+    setIsCompilingDossier(true);
+    try {
+      const res = await compileCaseDossier({
+        applicationId: draft.applicationId,
+        serviceProcedureId: action?.draft?.serviceProcedureId ?? 1,
+        serviceName: action?.draft?.serviceName ?? "Government Service",
+        citizenNic: action?.draft?.citizenNic ?? "",
+        citizenName: action?.draft?.citizenName ?? "",
+        citizenAge: action?.draft?.citizenAge ?? draft.derivedAgeFromNic ?? 25,
+        calculatedFee: action?.fee?.totalAmount ?? 0,
+        attachedDocumentNames: action?.draft?.attachedDocumentNames ?? [],
+        requiredDocuments: eligibility?.requiredDocuments ?? []
+      });
+      setDossier(res);
+    } catch (e) {
+      console.error(e);
+    } finally {
+      setIsCompilingDossier(false);
+    }
+  };
+
+  const handleDraftOrder = async (type: "Approval" | "RevisionRequired" | "Rejection") => {
+    if (!draft) return;
+    setIsDraftingOrder(true);
+    setOrderTypeDrafted(type);
+    try {
+      const res = await draftDecisionOrder({
+        applicationId: draft.applicationId,
+        serviceProcedureId: action?.draft?.serviceProcedureId ?? 1,
+        serviceName: action?.draft?.serviceName ?? "Government Service",
+        citizenNic: action?.draft?.citizenNic ?? "",
+        citizenName: action?.draft?.citizenName ?? "",
+        calculatedFee: action?.fee?.totalAmount ?? 0,
+        determinationType: type,
+        attachedDocumentNames: action?.draft?.attachedDocumentNames ?? []
+      });
+      setDecisionOrder(res);
+    } catch (e) {
+      console.error(e);
+    } finally {
+      setIsDraftingOrder(false);
+    }
+  };
 
   return (
     <div style={{ backgroundColor: "#fff", padding: "1rem", borderLeft: "4px solid #0f62fe", marginBottom: "2rem" }}>
@@ -172,16 +233,38 @@ export default function AgentDraftPanel({ draft, loading, error, answers, onRege
           <AccordionItem title="Phase 4: Safety & Compliance Audit (Agent 4)" open>
             {draft?.validation ? (
               <>
-                <div style={{ display: "flex", gap: "0.5rem", marginBottom: "0.75rem", alignItems: "center" }}>
+                <div style={{ display: "flex", gap: "0.5rem", marginBottom: "0.75rem", alignItems: "center", flexWrap: "wrap" }}>
                   <Tag type={draft.validation.isValid ? "green" : "red"}>
                     {draft.validation.isValid ? "Safety Checks Passed" : "Safety Check Failed"}
                   </Tag>
-                  <Tag type={draft.validation.isValid ? "cool-gray" : "magenta"}>
-                    {draft.validation.isValid ? "Low Risk" : "High Risk / Attention"}
+                  <Tag type={
+                    draft.validation.riskLevel?.toLowerCase() === "low" ? "green" :
+                    draft.validation.riskLevel?.toLowerCase() === "medium" ? "warm-gray" :
+                    draft.validation.riskLevel?.toLowerCase() === "high" ? "red" : "magenta"
+                  }>
+                    {draft.validation.riskLevel ? `${draft.validation.riskLevel} Risk` : (draft.validation.isValid ? "Low Risk" : "High Risk / Attention")}
                   </Tag>
+                  <Tag type="blue" size="sm">Groq LLM Cognitive Guardrails Active</Tag>
                 </div>
 
                 <p style={{ ...muted, marginBottom: "0.75rem" }}>{draft.validation.summary}</p>
+
+                {draft.validation.officerBriefing && (
+                  <div style={{
+                    backgroundColor: "#edf5ff",
+                    borderLeft: "3px solid #0f62fe",
+                    padding: "0.75rem 1rem",
+                    borderRadius: "4px",
+                    marginBottom: "1rem"
+                  }}>
+                    <div style={{ fontSize: "0.8125rem", fontWeight: 600, color: "#0043ce", marginBottom: "0.375rem" }}>
+                      Agent 4 Officer Safety Briefing:
+                    </div>
+                    <p style={{ fontSize: "0.875rem", color: "#161616", lineHeight: 1.4, whiteSpace: "pre-line", margin: 0 }}>
+                      {draft.validation.officerBriefing}
+                    </p>
+                  </div>
+                )}
 
                 {draft.validation.complianceChecks.length > 0 && (
                   <ul style={{ fontSize: "0.875rem", display: "grid", gap: "0.5rem" }}>
@@ -216,9 +299,171 @@ export default function AgentDraftPanel({ draft, loading, error, answers, onRege
                     </ul>
                   </div>
                 )}
+
+                {/* Agent 4 High-Impact Autonomous Actions */}
+                <div style={{
+                  marginTop: "1.25rem",
+                  padding: "1rem",
+                  backgroundColor: "#f4f7fb",
+                  border: "1px solid #d0e2ff",
+                  borderRadius: "8px"
+                }}>
+                  <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: "0.75rem" }}>
+                    <span style={{ fontSize: "0.875rem", fontWeight: 700, color: "#0043ce" }}>
+                      ⚡ Agent 4 High-Impact Actions
+                    </span>
+                    <Tag type="purple" size="sm">Autonomous Agent</Tag>
+                  </div>
+
+                  <p style={{ fontSize: "0.8125rem", color: "#525252", marginBottom: "0.75rem" }}>
+                    Execute intelligent compliance actions or instruct Agent 4 to draft official statutory orders:
+                  </p>
+
+                  <div style={{ display: "flex", gap: "0.5rem", flexWrap: "wrap", marginBottom: "1rem" }}>
+                    <Button
+                      size="sm"
+                      kind="secondary"
+                      onClick={handleCompileDossier}
+                      disabled={isCompilingDossier}
+                    >
+                      {isCompilingDossier ? "Compiling Dossier..." : "Compile Verification Dossier"}
+                    </Button>
+
+                    <Button
+                      size="sm"
+                      kind="primary"
+                      onClick={() => handleDraftOrder("Approval")}
+                      disabled={isDraftingOrder}
+                    >
+                      {isDraftingOrder && orderTypeDrafted === "Approval" ? "Drafting..." : "Draft Legal Approval Order"}
+                    </Button>
+
+                    <Button
+                      size="sm"
+                      kind="tertiary"
+                      onClick={() => handleDraftOrder("RevisionRequired")}
+                      disabled={isDraftingOrder}
+                    >
+                      {isDraftingOrder && orderTypeDrafted === "RevisionRequired" ? "Drafting..." : "Draft Revision Order"}
+                    </Button>
+                  </div>
+
+                  {/* Render Compiled Dossier */}
+                  {dossier && (
+                    <div style={{
+                      backgroundColor: "#fff",
+                      border: "1px solid #c6c6c6",
+                      borderRadius: "6px",
+                      padding: "0.875rem 1rem",
+                      marginBottom: "1rem"
+                    }}>
+                      <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: "0.5rem" }}>
+                        <span style={{ fontWeight: 600, fontSize: "0.875rem", color: "#161616" }}>
+                          📋 Official Verification Dossier: {dossier.dossierNumber}
+                        </span>
+                        <Tag type={dossier.riskScore < 30 ? "green" : (dossier.riskScore <= 60 ? "warm-gray" : "red")}>
+                          Risk Score: {dossier.riskScore}/100
+                        </Tag>
+                      </div>
+
+                      <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: "0.5rem", fontSize: "0.8125rem", marginBottom: "0.5rem" }}>
+                        <div><strong>Assigned Queue:</strong> {dossier.assignedQueueTier}</div>
+                        <div><strong>Audit Status:</strong> {dossier.statutoryComplianceSummary}</div>
+                      </div>
+
+                      <div style={{
+                        backgroundColor: "#f4f4f4",
+                        padding: "0.5rem 0.75rem",
+                        borderRadius: "4px",
+                        fontSize: "0.75rem",
+                        fontFamily: "monospace",
+                        color: "#393939"
+                      }}>
+                        🛡️ Anti-Tamper SHA-256 Hash Seal: {dossier.integritySealHash}
+                      </div>
+                    </div>
+                  )}
+
+                  {/* Render Drafted Decision Order */}
+                  {decisionOrder && (
+                    <div style={{
+                      backgroundColor: "#fff",
+                      border: "2px solid #0f62fe",
+                      borderRadius: "6px",
+                      padding: "1rem",
+                      marginTop: "0.5rem"
+                    }}>
+                      <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: "0.5rem" }}>
+                        <Tag type={decisionOrder.orderType === "Approval" ? "green" : "red"}>
+                          {decisionOrder.orderType.toUpperCase()} ORDER
+                        </Tag>
+                        <Button
+                          size="sm"
+                          kind="ghost"
+                          onClick={() => {
+                            navigator.clipboard.writeText(
+                              `${decisionOrder.orderTitle}\n\n${decisionOrder.legalStatutoryBasis}\n\n${decisionOrder.findingsAndEvidence}\n\n${decisionOrder.officerSignOffText}`
+                            );
+                            setCopiedText(true);
+                            setTimeout(() => setCopiedText(false), 2000);
+                          }}
+                        >
+                          {copiedText ? "✓ Copied to Clipboard" : "Copy Legal Order Text"}
+                        </Button>
+                      </div>
+
+                      <h4 style={{ fontSize: "0.875rem", fontWeight: 700, margin: "0.25rem 0 0.5rem", color: "#0f62fe" }}>
+                        {decisionOrder.orderTitle}
+                      </h4>
+
+                      <p style={{ fontSize: "0.8125rem", color: "#525252", fontStyle: "italic", marginBottom: "0.5rem" }}>
+                        {decisionOrder.legalStatutoryBasis}
+                      </p>
+
+                      <p style={{ fontSize: "0.8125rem", color: "#161616", lineHeight: 1.4, marginBottom: "0.5rem" }}>
+                        <strong>Findings:</strong> {decisionOrder.findingsAndEvidence}
+                      </p>
+
+                      {decisionOrder.termsAndConditions.length > 0 && (
+                        <div style={{ marginBottom: "0.5rem" }}>
+                          <span style={{ fontSize: "0.8125rem", fontWeight: 600 }}>Covenants & Conditions:</span>
+                          <ul style={{ fontSize: "0.8125rem", listStyle: "disc", paddingLeft: "1.25rem", margin: "0.25rem 0" }}>
+                            {decisionOrder.termsAndConditions.map((tc, idx) => (
+                              <li key={idx}>{tc}</li>
+                            ))}
+                          </ul>
+                        </div>
+                      )}
+
+                      <div style={{
+                        backgroundColor: "#edf5ff",
+                        padding: "0.75rem",
+                        borderRadius: "4px",
+                        borderLeft: "3px solid #0043ce",
+                        fontSize: "0.8125rem",
+                        color: "#161616"
+                      }}>
+                        <strong>Officer Seal & Sign-Off Directive:</strong>
+                        <p style={{ margin: "0.25rem 0 0" }}>{decisionOrder.officerSignOffText}</p>
+                      </div>
+                    </div>
+                  )}
+                </div>
               </>
             ) : (
-              <p style={muted}>Safety and duplicate checks pending review generation.</p>
+              <div style={{ padding: "0.5rem 0" }}>
+                <p style={{ ...muted, marginBottom: "0.75rem" }}>
+                  Safety, duplicate detection, and Groq LLM cognitive audits are ready to execute for this case.
+                </p>
+                <Button
+                  size="sm"
+                  kind="primary"
+                  onClick={onRegenerate}
+                  disabled={loading}
+                >
+                  {loading ? "Running Agent 4 Audit..." : "Run Agent 4 Audit & Safety Scan Now"}
+                </Button>
+              </div>
             )}
           </AccordionItem>
 
@@ -249,23 +494,34 @@ export default function AgentDraftPanel({ draft, loading, error, answers, onRege
             )}
           </AccordionItem>
 
-          <AccordionItem title={`Tool Calls (${action.toolCalls.length})`}>
-            {action.toolCalls.length === 0 ? (
-              <p style={muted}>No tools were called.</p>
-            ) : (
-              action.toolCalls.map((t, i) => (
-                <details key={i} style={{ marginBottom: "0.5rem", fontSize: "0.8125rem" }}>
-                  <summary style={{ cursor: "pointer" }}>
-                    <code>{t.toolName}</code> <span style={{ color: "#6f6f6f" }}>· {new Date(t.calledAt).toLocaleTimeString()}</span>
-                  </summary>
-                  <pre style={{ background: "#f4f4f4", padding: "0.5rem", overflowX: "auto", whiteSpace: "pre-wrap" }}>
-                    Input: {prettyJson(t.input)}
-                    {"\n"}Output: {prettyJson(t.output)}
-                  </pre>
-                </details>
-              ))
-            )}
-          </AccordionItem>
+          {/* Agent Tool Calls */}
+          {(() => {
+            const allToolCalls = [
+              ...action.toolCalls.map(t => ({ ...t, agent: "Agent 3: Action & Tool Agent" })),
+              ...(draft?.validation?.toolCalls ?? []).map(t => ({ ...t, agent: "Agent 4: Validation & Safety Agent" }))
+            ];
+            return (
+              <AccordionItem title={`Tool Execution Traces (${allToolCalls.length})`}>
+                {allToolCalls.length === 0 ? (
+                  <p style={muted}>No tools were called.</p>
+                ) : (
+                  allToolCalls.map((t, i) => (
+                    <details key={i} style={{ marginBottom: "0.5rem", fontSize: "0.8125rem" }}>
+                      <summary style={{ cursor: "pointer", display: "flex", alignItems: "center", gap: "0.5rem" }}>
+                        <code>{t.toolName}</code>
+                        <Tag type={t.agent.includes("Agent 4") ? "purple" : "cyan"} size="sm">{t.agent.split(":")[0]}</Tag>
+                        <span style={{ color: "#6f6f6f", marginLeft: "auto" }}>· {new Date(t.calledAt).toLocaleTimeString()}</span>
+                      </summary>
+                      <pre style={{ background: "#f4f4f4", padding: "0.5rem", overflowX: "auto", whiteSpace: "pre-wrap", marginTop: "0.25rem" }}>
+                        Input: {prettyJson(t.input)}
+                        {"\n"}Output: {prettyJson(t.output)}
+                      </pre>
+                    </details>
+                  ))
+                )}
+              </AccordionItem>
+            );
+          })()}
         </Accordion>
       )}
     </div>

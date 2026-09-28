@@ -22,108 +22,63 @@ class DepartmentServicesScreen extends StatelessWidget {
         backgroundColor: AppColors.cardBg,
         elevation: 0,
       ),
-      body: ListView.builder(
-        padding: const EdgeInsets.all(16.0),
-        itemCount: services.length,
-        itemBuilder: (context, index) {
-          final service = services[index];
-          final fees = service['feeSchedules'] as List? ?? [];
-          final feeString = fees.isNotEmpty ? 'LKR ${fees[0]['amount']}' : 'Free';
+      body: services.isEmpty
+          ? const Center(child: Text('No services found for this department.'))
+          : ListView.separated(
+              itemCount: services.length,
+              separatorBuilder: (context, index) => const Divider(height: 1, thickness: 0.8),
+              itemBuilder: (context, index) {
+                final service = services[index];
+                final fees = service['feeSchedules'] as List? ?? [];
+                final feeString = fees.isNotEmpty ? 'LKR ${fees[0]['amount']}' : 'Free';
 
-          return Padding(
-            padding: const EdgeInsets.only(bottom: 12.0),
-            child: InkWell(
-              borderRadius: BorderRadius.circular(14),
-              onTap: () {
-                Navigator.push(
-                  context,
-                  CupertinoPageRoute(
-                    builder: (context) => ProcedureDetailScreen(
-                      serviceId: service['id'],
+                return ListTile(
+                  contentPadding: const EdgeInsets.symmetric(horizontal: 16, vertical: 10),
+                  leading: Container(
+                    width: 42,
+                    height: 42,
+                    decoration: BoxDecoration(
+                      color: AppColors.primary.withValues(alpha: 0.1),
+                      borderRadius: BorderRadius.circular(10),
+                    ),
+                    child: const Icon(CupertinoIcons.doc_text, color: AppColors.primary, size: 20),
+                  ),
+                  title: Text(
+                    service['name'] ?? 'Untitled Service',
+                    style: const TextStyle(
+                      fontSize: 14.5,
+                      fontWeight: FontWeight.w600,
+                      color: AppColors.dark,
                     ),
                   ),
-                );
-              },
-              child: _buildServiceItem(
-                title: service['name'] ?? 'Untitled Service',
-                subtitle: service['serviceId'] ?? department,
-                fee: feeString,
-              ),
-            ),
-          );
-        },
-      ),
-    );
-  }
-
-  Widget _buildServiceItem({
-    required String title,
-    required String subtitle,
-    required String fee,
-  }) {
-    return Container(
-      padding: const EdgeInsets.all(16),
-      decoration: BoxDecoration(
-        color: AppColors.cardBg,
-        borderRadius: BorderRadius.circular(14),
-        border: Border.all(color: AppColors.divider, width: 0.8),
-      ),
-      child: Row(
-        children: [
-          Container(
-            width: 48,
-            height: 48,
-            decoration: BoxDecoration(
-              color: AppColors.primary.withValues(alpha: 0.1),
-              borderRadius: BorderRadius.circular(12),
-            ),
-            child: const Icon(CupertinoIcons.doc_text, color: AppColors.primary, size: 24),
-          ),
-          const SizedBox(width: 14),
-          Expanded(
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                Text(
-                  title,
-                  style: const TextStyle(
-                    fontSize: 16,
-                    fontWeight: FontWeight.w600,
-                    color: AppColors.dark,
+                  subtitle: Padding(
+                    padding: const EdgeInsets.only(top: 4.0),
+                    child: Text(
+                      '${service['serviceId'] ?? department}  •  Fee: $feeString',
+                      style: const TextStyle(
+                        fontSize: 12.5,
+                        color: AppColors.secondaryLabel,
+                      ),
+                    ),
                   ),
-                ),
-                const SizedBox(height: 4),
-                Text(
-                  subtitle,
-                  style: const TextStyle(
-                    fontSize: 13,
+                  trailing: const Icon(
+                    CupertinoIcons.chevron_right,
+                    size: 14,
                     color: AppColors.secondaryLabel,
                   ),
-                ),
-              ],
+                  onTap: () {
+                    Navigator.push(
+                      context,
+                      CupertinoPageRoute(
+                        builder: (context) => ProcedureDetailScreen(
+                          serviceId: service['id'],
+                        ),
+                      ),
+                    );
+                  },
+                );
+              },
             ),
-          ),
-          Column(
-            crossAxisAlignment: CrossAxisAlignment.end,
-            children: [
-              Text(
-                fee,
-                style: const TextStyle(
-                  fontSize: 13,
-                  fontWeight: FontWeight.w600,
-                  color: AppColors.primary,
-                ),
-              ),
-              const SizedBox(height: 4),
-              const Icon(
-                CupertinoIcons.chevron_right,
-                size: 16,
-                color: AppColors.secondaryLabel,
-              ),
-            ],
-          ),
-        ],
-      ),
     );
   }
 }

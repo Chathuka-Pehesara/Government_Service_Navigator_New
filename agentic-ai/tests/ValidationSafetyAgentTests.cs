@@ -215,5 +215,81 @@ namespace Government_Service_Navigator.AgenticAi.Tests
             Assert.True(result.IsValid);
             Assert.Empty(result.RejectionReasons);
         }
+
+        [Fact]
+        public async Task Agent4_LogsDeterministicToolCalls_And_GeneratesOfficerBriefing()
+        {
+            var draft = new DraftApplication
+            {
+                ApplicationId = 8846,
+                ServiceProcedureId = 1,
+                ServiceName = "Small Business Registration",
+                CitizenNic = "199423401928",
+                CitizenName = "Kamal Perera",
+                CitizenAge = 32,
+                CalculatedFee = 2500m,
+                AttachedDocumentNames = new List<string> { "Identity Document.pdf" }
+            };
+
+            var result = await _agent.ValidateAndEnqueueAsync(draft, new List<string> { "Identity Document" });
+
+            Assert.True(result.IsValid);
+            Assert.NotEmpty(result.ToolCalls);
+            Assert.Contains(result.ToolCalls, t => t.ToolName == "validate_schema");
+            Assert.Contains(result.ToolCalls, t => t.ToolName == "check_duplicate_application");
+            Assert.Contains(result.ToolCalls, t => t.ToolName == "validate_business_rules");
+            Assert.NotEmpty(result.OfficerBriefing);
+            Assert.Equal("Low", result.RiskLevel);
+        }
+
+        private class StubLlmService : global::AgenticAi.Services.ILlmService
+        {
+            public bool IsConfigured => true;
+            public string ModelName => "stub-groq-model";
+            public string ResponseToReturn { get; set; } = "{}";
+
+            public System.Threading.Tasks.Task<string?> GenerateChatCompletionAsync(
+                string systemPrompt, string userPrompt, bool jsonMode = false, System.Threading.CancellationToken cancellationToken = default)
+                => System.Threading.Tasks.Task.FromResult<string?>(ResponseToReturn);
+        }
+
+        [Fact]
+        public async Task Agent4_WithGroqLlm_SynthesizesRiskLevelAndOfficerBriefing()
+        {
+            var stubLlm = new StubLlmService
+            {
+                ResponseToReturn = """
+                {
+                  "riskLevel": "Low",
+                  "isSemanticallyConsistent": true,
+                  "executiveSummary": "Application is complete, consistent, and passes statutory criteria.",
+                  "officerBriefing": "• Verified applicant age matches NIC.\n• Declared income is consistent.\n• All required documents attached.",
+                  "inconsistencies": []
+                }
+                """
+            };
+
+            var agentWithLlm = new ValidationSafetyAgent(_schemaTool, _duplicateTool, null, stubLlm);
+
+            var draft = new DraftApplication
+            {
+                ApplicationId = 8847,
+                ServiceProcedureId = 1,
+                ServiceName = "Small Business Registration",
+                CitizenNic = "199423401928",
+                CitizenName = "Kamal Perera",
+                CitizenAge = 32,
+                CitizenIncome = 150000m,
+                CalculatedFee = 2500m,
+                AttachedDocumentNames = new List<string> { "Identity Document.pdf" }
+            };
+
+            var result = await agentWithLlm.ValidateAndEnqueueAsync(draft, new List<string> { "Identity Document" });
+
+            Assert.True(result.IsValid);
+            Assert.Equal("Low", result.RiskLevel);
+            Assert.Contains("Verified applicant age matches NIC", result.OfficerBriefing);
+            Assert.Contains(result.ToolCalls, t => t.ToolName == "ai_cognitive_safety_audit");
+        }
     }
 }

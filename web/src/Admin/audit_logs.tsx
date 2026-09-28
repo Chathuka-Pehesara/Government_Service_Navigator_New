@@ -1,7 +1,11 @@
-import '@carbon/styles/css/styles.css'; // This fixes the unstyled layout![cite: 5]
+import "@carbon/styles/css/styles.css"; // This fixes the unstyled layout![cite: 5]
 import { useState, useEffect } from "react";
 import CurrentUserBadge from "../components/CurrentUserBadge";
-import { getStoredUser, getAdminOverviewHref, canManageServices } from "../utils/currentUser";
+import {
+  getStoredUser,
+  getAdminOverviewHref,
+  canManageServices,
+} from "../utils/currentUser";
 import {
   Header,
   HeaderContainer,
@@ -42,6 +46,7 @@ import {
   Categories,
   Document,
   Money,
+  Calendar,
 } from "@carbon/icons-react";
 import { getDepartmentSlug } from "../constants/departments";
 
@@ -69,8 +74,14 @@ interface AuditLogRow {
 // dedicated status column, so this is derived, not fabricated.
 function deriveStatus(action: string): string {
   const normalized = action.toLowerCase();
-  if (normalized.includes("fail") || normalized.includes("reject")) return "Failed";
-  if (normalized.includes("suspend") || normalized.includes("delete") || normalized.includes("revised")) return "Warning";
+  if (normalized.includes("fail") || normalized.includes("reject"))
+    return "Failed";
+  if (
+    normalized.includes("suspend") ||
+    normalized.includes("delete") ||
+    normalized.includes("revised")
+  )
+    return "Warning";
   return "Success";
 }
 
@@ -81,18 +92,29 @@ export default function AuditLogs() {
   const [pageSize, setPageSize] = useState<number>(10);
   const [currentUser] = useState(getStoredUser);
   const isSysAdmin = canManageServices(currentUser);
-  const deptSlug = currentUser?.department ? getDepartmentSlug(currentUser.department) : null;
+  const deptSlug = currentUser?.department
+    ? getDepartmentSlug(currentUser.department)
+    : null;
   const [overviewHref] = useState(() => getAdminOverviewHref(currentUser));
 
   useEffect(() => {
     const fetchAuditLogs = async () => {
       try {
         const token = localStorage.getItem("officerToken");
-        const response = await fetch("http://localhost:5119/api/verification/audit-logs/all", {
-          headers: { Authorization: `Bearer ${token}` },
-        });
+        const response = await fetch(
+          "http://localhost:5119/api/verification/audit-logs/all",
+          {
+            headers: { Authorization: `Bearer ${token}` },
+          },
+        );
         if (response.ok) {
-          const data: { id: number; applicationId: number; action: string; performedBy: string; timestamp: string }[] = await response.json();
+          const data: {
+            id: number;
+            applicationId: number;
+            action: string;
+            performedBy: string;
+            timestamp: string;
+          }[] = await response.json();
           setRows(
             data.map((log) => ({
               id: log.id.toString(),
@@ -101,7 +123,7 @@ export default function AuditLogs() {
               action: log.action,
               target: `APP-${log.applicationId}`,
               status: deriveStatus(log.action),
-            }))
+            })),
           );
         } else {
           console.error("Failed to fetch audit logs");
@@ -151,7 +173,12 @@ export default function AuditLogs() {
 
             <HeaderGlobalBar>
               <div className="flex items-center w-[120px] sm:w-[250px] mr-2 sm:mr-4">
-                 <Search size="sm" id="search-records" labelText="Search" placeholder="Search records..." />
+                <Search
+                  size="sm"
+                  id="search-records"
+                  labelText="Search"
+                  placeholder="Search records..."
+                />
               </div>
               <CurrentUserBadge />
               <HeaderGlobalAction aria-label="Notifications" onClick={() => {}}>
@@ -209,6 +236,12 @@ export default function AuditLogs() {
                     >
                       Eligibility Simulator
                     </SideNavLink>
+                    <SideNavLink
+                      renderIcon={Calendar}
+                      href="/admin/collection-slots"
+                    >
+                      Collection Slots
+                    </SideNavLink>
                   </>
                 )}
 
@@ -227,7 +260,11 @@ export default function AuditLogs() {
                 >
                   Manage Officers
                 </SideNavLink>
-                <SideNavLink renderIcon={Security} href="/admin/audit-logs" isActive>
+                <SideNavLink
+                  renderIcon={Security}
+                  href="/admin/audit-logs"
+                  isActive
+                >
                   Audit Logs
                 </SideNavLink>
                 {isSysAdmin && (
@@ -256,14 +293,19 @@ export default function AuditLogs() {
           </Header>
 
           {/* Main Content[cite: 5] */}
-          <main className="mt-12 min-h-screen p-4 min-[66rem]:p-8 ml-0 min-[66rem]:ml-64" style={{ backgroundColor: '#f4f4f4' }}>
-            
-            <div style={{ marginBottom: '2rem' }}>
-              <h1 style={{ fontSize: '2rem', fontWeight: 400, color: '#161616' }}>
+          <main
+            className="mt-12 min-h-screen p-4 min-[66rem]:p-8 ml-0 min-[66rem]:ml-64"
+            style={{ backgroundColor: "#f4f4f4" }}
+          >
+            <div style={{ marginBottom: "2rem" }}>
+              <h1
+                style={{ fontSize: "2rem", fontWeight: 400, color: "#161616" }}
+              >
                 System Audit Logs
               </h1>
-              <p style={{ color: '#525252', marginTop: '0.5rem' }}>
-                Immutable, timestamped record of all registry modifications, access attempts, and administrative actions.
+              <p style={{ color: "#525252", marginTop: "0.5rem" }}>
+                Immutable, timestamped record of all registry modifications,
+                access attempts, and administrative actions.
               </p>
             </div>
 
@@ -272,7 +314,14 @@ export default function AuditLogs() {
               <Loading description="Loading audit logs" withOverlay={false} />
             ) : (
               <DataTable rows={rows} headers={headers}>
-                {({ rows, headers, getTableProps, getHeaderProps, getRowProps, onInputChange }) => (
+                {({
+                  rows,
+                  headers,
+                  getTableProps,
+                  getHeaderProps,
+                  getRowProps,
+                  onInputChange,
+                }) => (
                   <TableContainer>
                     <TableToolbar>
                       <TableToolbarContent>
@@ -284,7 +333,7 @@ export default function AuditLogs() {
                         <Button
                           kind="ghost"
                           renderIcon={Download}
-                          onClick={() => console.log('Exporting CSV...')}
+                          onClick={() => console.log("Exporting CSV...")}
                         >
                           Export CSV
                         </Button>
@@ -295,7 +344,10 @@ export default function AuditLogs() {
                       <TableHead>
                         <TableRow>
                           {headers.map((header) => (
-                            <TableHeader {...getHeaderProps({ header })} key={header.key}>
+                            <TableHeader
+                              {...getHeaderProps({ header })}
+                              key={header.key}
+                            >
                               {header.header}
                             </TableHeader>
                           ))}
@@ -304,7 +356,10 @@ export default function AuditLogs() {
                       <TableBody>
                         {rows.length === 0 ? (
                           <TableRow>
-                            <TableCell colSpan={headers.length} style={{ textAlign: 'center', padding: '2rem' }}>
+                            <TableCell
+                              colSpan={headers.length}
+                              style={{ textAlign: "center", padding: "2rem" }}
+                            >
                               No audit log entries recorded yet.
                             </TableCell>
                           </TableRow>
@@ -312,35 +367,46 @@ export default function AuditLogs() {
                           rows
                             .slice((page - 1) * pageSize, page * pageSize)
                             .map((row) => (
-                            <TableRow {...getRowProps({ row })} key={row.id}>
-                              {row.cells.map((cell) => {
-                                if (cell.info.header === 'status') {
-                                  let tagType: "green" | "red" | "magenta" = "green";
-                                  if (cell.value === "Failed") tagType = "red";
-                                  if (cell.value === "Warning") tagType = "magenta";
+                              <TableRow {...getRowProps({ row })} key={row.id}>
+                                {row.cells.map((cell) => {
+                                  if (cell.info.header === "status") {
+                                    let tagType: "green" | "red" | "magenta" =
+                                      "green";
+                                    if (cell.value === "Failed")
+                                      tagType = "red";
+                                    if (cell.value === "Warning")
+                                      tagType = "magenta";
+
+                                    return (
+                                      <TableCell key={cell.id}>
+                                        <Tag type={tagType}>{cell.value}</Tag>
+                                      </TableCell>
+                                    );
+                                  }
+
+                                  // Render monospace font for Target IDs for better readability
+                                  if (cell.info.header === "target") {
+                                    return (
+                                      <TableCell
+                                        key={cell.id}
+                                        style={{
+                                          fontFamily: "monospace",
+                                          fontSize: "13px",
+                                        }}
+                                      >
+                                        {cell.value}
+                                      </TableCell>
+                                    );
+                                  }
 
                                   return (
                                     <TableCell key={cell.id}>
-                                      <Tag type={tagType}>
-                                        {cell.value}
-                                      </Tag>
-                                    </TableCell>
-                                  );
-                                }
-
-                                // Render monospace font for Target IDs for better readability
-                                if (cell.info.header === 'target') {
-                                  return (
-                                    <TableCell key={cell.id} style={{ fontFamily: 'monospace', fontSize: '13px' }}>
                                       {cell.value}
                                     </TableCell>
                                   );
-                                }
-
-                                return <TableCell key={cell.id}>{cell.value}</TableCell>;
-                              })}
-                            </TableRow>
-                          ))
+                                })}
+                              </TableRow>
+                            ))
                         )}
                       </TableBody>
                     </Table>
@@ -361,7 +427,6 @@ export default function AuditLogs() {
                 )}
               </DataTable>
             )}
-
           </main>
         </>
       )}

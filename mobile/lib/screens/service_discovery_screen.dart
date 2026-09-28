@@ -86,28 +86,36 @@ class _ServiceDiscoveryScreenState extends ConsumerState<ServiceDiscoveryScreen>
                 ? const Center(child: CircularProgressIndicator())
                 : filteredServices.isEmpty
                     ? const Center(child: Text('No services found in this category.'))
-                    : ListView.builder(
+                    : ListView.separated(
                         itemCount: filteredServices.length,
+                        separatorBuilder: (context, index) => const Divider(height: 1, thickness: 0.8),
                         itemBuilder: (context, index) {
                           final service = filteredServices[index];
                           final fees = service['feeSchedules'] as List? ?? [];
                           final feeString = fees.isNotEmpty ? 'LKR ${fees[0]['amount']}' : 'Free';
 
-                          return Card(
-                            margin: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
-                            child: ListTile(
-                              title: Text(service['name'] ?? '', style: const TextStyle(fontWeight: FontWeight.bold)),
-                              subtitle: Text('Category: ${service['category']} | Fee: $feeString'),
-                              trailing: const Icon(Icons.arrow_forward_ios, size: 16),
-                              onTap: () {
-                                Navigator.push(
-                                  context,
-                                  MaterialPageRoute(
-                                    builder: (context) => ProcedureDetailScreen(serviceId: service['id']),
-                                  ),
-                                );
-                              },
+                          return ListTile(
+                            contentPadding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
+                            title: Text(
+                              service['name'] ?? '', 
+                              style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 14.5),
                             ),
+                            subtitle: Padding(
+                              padding: const EdgeInsets.only(top: 4.0),
+                              child: Text(
+                                'Category: ${service['category']}  •  Fee: $feeString',
+                                style: const TextStyle(fontSize: 12.5),
+                              ),
+                            ),
+                            trailing: const Icon(Icons.arrow_forward_ios, size: 14),
+                            onTap: () {
+                              Navigator.push(
+                                context,
+                                MaterialPageRoute(
+                                  builder: (context) => ProcedureDetailScreen(serviceId: service['id']),
+                                ),
+                              );
+                            },
                           );
                         },
                       ),

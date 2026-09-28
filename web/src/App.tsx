@@ -32,6 +32,10 @@ import FinanceDashboard from "./Finance/finance_dashboard";
 import FinanceLedger from "./Finance/finance_ledger";
 import FinanceProfile from "./Finance/finance_profile";
 import FinanceRefunds from "./Finance/finance_refunds";
+import ManageCollectionSlots from "./Admin/manage_collection_slots";
+
+
+
 
 export default function App() {
   return (
@@ -53,6 +57,7 @@ export default function App() {
         <Route path="/admin/analytics" element={<AdminAnalytics />} />
         <Route path="/admin/anomaly-review" element={<AdminAnomalyReview />} />
         <Route path="/admin/services" element={<ServiceCatalogManager />} />
+        <Route path="/admin/collection-slots" element={<ManageCollectionSlots />} />
         <Route
           path="/admin/services/rules"
           element={<EligibilityRuleBuilder />}

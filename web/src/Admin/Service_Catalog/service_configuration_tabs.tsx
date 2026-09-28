@@ -55,6 +55,8 @@ import {
   Upload,
   Renew,
   Document,
+  View,
+  CheckmarkFilled,
 } from "@carbon/icons-react";
 import type { Department } from "../Department_Management/types";
 
@@ -261,6 +263,66 @@ export default function ServiceConfigurationTabs() {
   const [policyText, setPolicyText] = useState("");
   const [policyFile, setPolicyFile] = useState<File | null>(null);
   const [isUploadingKnowledge, setIsUploadingKnowledge] = useState(false);
+  const [inspectingPolicy, setInspectingPolicy] = useState<{
+    title: string;
+    type: string;
+    category: string;
+    chunkCount: number;
+    preview: string;
+    clauses: Array<{ id: string; text: string }>;
+  } | null>(null);
+
+  // Group low-level vector chunks into clean high-level regulatory policy documents
+  const groupedPolicies = useMemo(() => {
+    const groups: Record<string, {
+      title: string;
+      type: string;
+      category: string;
+      chunkCount: number;
+      preview: string;
+      clauses: Array<{ id: string; text: string }>;
+    }> = {};
+
+    knowledgeChunks.forEach((chunk, idx) => {
+      let title = "Official Statutory Policy";
+      let type = "Official Circular / Gazette";
+      let clauseText = chunk.content;
+
+      const prefixMatch = chunk.content.match(/^\[(.*?) - (.*?)\]:\s*(.*)$/s);
+      if (prefixMatch) {
+        title = prefixMatch[2].trim();
+        clauseText = prefixMatch[3].trim();
+        type = "Official Circular / Gazette";
+      } else if (chunk.content.includes("To apply for this service, citizens must provide")) {
+        title = "Statutory Prerequisites & Required Documents";
+        type = "Service Catalog Specification";
+      } else if (chunk.content.startsWith("Fee schedule") || chunk.content.startsWith("Application form") || chunk.content.startsWith("Appointment policy")) {
+        title = "Operational Fee & Appointment Rules";
+        type = "Operational Rules";
+      } else {
+        title = chunk.sourceCategory || "Departmental Regulatory Document";
+      }
+
+      if (!groups[title]) {
+        groups[title] = {
+          title,
+          type,
+          category: chunk.sourceCategory || "Regulatory Document",
+          chunkCount: 0,
+          preview: clauseText.length > 220 ? clauseText.substring(0, 220) + "..." : clauseText,
+          clauses: [],
+        };
+      }
+
+      groups[title].chunkCount += 1;
+      groups[title].clauses.push({
+        id: chunk.id || `chunk-${idx}`,
+        text: clauseText,
+      });
+    });
+
+    return Object.values(groups);
+  }, [knowledgeChunks]);
 
   const fetchTemplatesForService = async (svcId: string) => {
     if (!svcId) return;
@@ -1516,55 +1578,209 @@ export default function ServiceConfigurationTabs() {
                   </div>
                 </Tile>
 
-                {/* Active Knowledge Chunks Viewer */}
-                <div>
-                  <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: "1rem" }}>
-                    <h5 style={{ margin: 0, fontWeight: 600, fontSize: "1rem" }}>
-                      Active Neon Vector Chunks
-                    </h5>
-                    <Tag type={knowledgeChunks.length > 0 ? "teal" : "gray"}>
-                      {knowledgeChunks.length} Chunks Indexed in Neon DB
-                    </Tag>
+                {/* Active Policy Knowledge Base & Documents Registry */}
+                <div style={{ marginTop: "1rem" }}>
+                  <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", flexWrap: "wrap", gap: "1rem", marginBottom: "1.2rem" }}>
+                    <div>
+                      <div style={{ display: "flex", alignItems: "center", gap: "0.6rem" }}>
+                        <h5 style={{ margin: 0, fontWeight: 600, fontSize: "1.1rem", color: "#161616" }}>
+                          Active Policy Knowledge Registry
+                        </h5>
+                        <div style={{
+                          display: "inline-flex",
+                          alignItems: "center",
+                          gap: "0.35rem",
+                          backgroundColor: "#defbe6",
+                          color: "#0e6027",
+                          padding: "0.2rem 0.6rem",
+                          borderRadius: "12px",
+                          fontSize: "0.75rem",
+                          fontWeight: 600,
+                        }}>
+                          <span style={{
+                            width: "7px",
+                            height: "7px",
+                            borderRadius: "50%",
+                            backgroundColor: "#24a148",
+                            boxShadow: "0 0 6px #24a148"
+                          }} />
+                          Neon pgvector: Active & Synced
+                        </div>
+                      </div>
+                      <p style={{ margin: "0.25rem 0 0 0", color: "#525252", fontSize: "0.85rem" }}>
+                        Official circulars, legal gazettes, and statutory rules indexed in Neon DB to power citizen AI reasoning.
+                      </p>
+                    </div>
+
+                    <div style={{ display: "flex", gap: "0.5rem" }}>
+                      <Tag type={groupedPolicies.length > 0 ? "teal" : "gray"}>
+                        {groupedPolicies.length} Active Policies
+                      </Tag>
+                      <Tag type={knowledgeChunks.length > 0 ? "blue" : "gray"}>
+                        {knowledgeChunks.length} Vector Segments
+                      </Tag>
+                    </div>
                   </div>
 
                   {knowledgeLoading ? (
-                    <div style={{ padding: "2rem", textAlign: "center" }}>
-                      <Loading description="Loading vectorized chunks from Neon DB..." withOverlay={false} small />
+                    <div style={{ padding: "3rem", textAlign: "center", backgroundColor: "#ffffff", borderRadius: "8px" }}>
+                      <Loading description="Loading policy registry from Neon DB..." withOverlay={false} small />
                     </div>
-                  ) : knowledgeChunks.length === 0 ? (
-                    <Tile style={{ padding: "2rem", textAlign: "center", backgroundColor: "#f4f4f4", border: "1px dashed #8d8d8d" }}>
-                      <p style={{ margin: 0, color: "#525252", fontSize: "0.95rem" }}>
-                        No vector chunks indexed yet for <strong>{selectedServiceName}</strong>.
+                  ) : groupedPolicies.length === 0 ? (
+                    <Tile style={{ padding: "2.5rem 1.5rem", textAlign: "center", backgroundColor: "#f4f4f4", border: "1px dashed #8d8d8d", borderRadius: "8px" }}>
+                      <Document size={36} style={{ color: "#8d8d8d", marginBottom: "0.8rem" }} />
+                      <p style={{ margin: 0, fontWeight: 600, color: "#161616", fontSize: "1rem" }}>
+                        No regulatory policies indexed yet for {selectedServiceName || "this service"}.
                       </p>
-                      <p style={{ margin: "0.5rem 0 0 0", color: "#6f6f6f", fontSize: "0.85rem" }}>
-                        Click <strong>&quot;Ingest Sri Lankan Gazettes&quot;</strong> above or upload an official circular to populate authentic regulatory context for citizen AI assistance.
+                      <p style={{ margin: "0.5rem 0 1rem 0", color: "#6f6f6f", fontSize: "0.85rem", maxWidth: "560px", marginLeft: "auto", marginRight: "auto" }}>
+                        Upload official departmental circulars, gazettes, or statutory guidelines above. 
+                        Once ingested, the system automatically vectorizes the rules into Neon pgvector for AI agent consultation.
                       </p>
+                      <Button
+                        kind="tertiary"
+                        size="sm"
+                        renderIcon={Renew}
+                        disabled={isUploadingKnowledge}
+                        onClick={handleIngestLocalDocs}
+                      >
+                        Ingest Default Sri Lankan Gazettes
+                      </Button>
                     </Tile>
                   ) : (
                     <div style={{ display: "flex", flexDirection: "column", gap: "1rem" }}>
-                      {knowledgeChunks.map((chunk, index) => (
-                        <Tile key={chunk.id || index} style={{ padding: "1.2rem", borderLeft: "4px solid #0f62fe", backgroundColor: "#ffffff" }}>
-                          <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: "0.6rem" }}>
-                            <Tag type="blue">Chunk #{index + 1}</Tag>
-                            <span style={{ fontSize: "0.75rem", color: "#6f6f6f", fontFamily: "monospace" }}>
-                              Source: {chunk.sourceCategory || "Official Sri Lankan Policy Document"}
-                            </span>
+                      {groupedPolicies.map((doc, index) => (
+                        <Tile
+                          key={doc.title || index}
+                          style={{
+                            padding: "1.4rem",
+                            backgroundColor: "#ffffff",
+                            borderRadius: "6px",
+                            border: "1px solid #e0e0e0",
+                            boxShadow: "0 2px 6px rgba(0,0,0,0.04)",
+                            borderLeft: "4px solid #0f62fe"
+                          }}
+                        >
+                          <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start", flexWrap: "wrap", gap: "0.75rem", marginBottom: "0.8rem" }}>
+                            <div style={{ display: "flex", alignItems: "center", gap: "0.6rem" }}>
+                              <div style={{
+                                width: "36px",
+                                height: "36px",
+                                borderRadius: "8px",
+                                backgroundColor: "#edf5ff",
+                                display: "flex",
+                                alignItems: "center",
+                                justifyContent: "center",
+                              }}>
+                                <Document size={20} style={{ color: "#0f62fe" }} />
+                              </div>
+                              <div>
+                                <h6 style={{ margin: 0, fontSize: "0.95rem", fontWeight: 600, color: "#161616" }}>
+                                  {doc.title}
+                                </h6>
+                                <span style={{ fontSize: "0.75rem", color: "#6f6f6f" }}>
+                                  Source: {doc.category}
+                                </span>
+                              </div>
+                            </div>
+
+                            <div style={{ display: "flex", alignItems: "center", gap: "0.4rem" }}>
+                              <Tag type={doc.type.includes("Gazette") ? "teal" : doc.type.includes("Catalog") ? "purple" : "blue"}>
+                                {doc.type}
+                              </Tag>
+                              <Tag type="cool-gray">
+                                {doc.chunkCount} {doc.chunkCount === 1 ? "Clause" : "Clauses"} Indexed
+                              </Tag>
+                              <div style={{
+                                display: "inline-flex",
+                                alignItems: "center",
+                                gap: "0.25rem",
+                                fontSize: "0.75rem",
+                                color: "#0e6027",
+                                backgroundColor: "#defbe6",
+                                padding: "0.15rem 0.5rem",
+                                borderRadius: "10px",
+                                fontWeight: 500,
+                              }}>
+                                <CheckmarkFilled size={12} style={{ fill: "#24a148" }} />
+                                Vectorized
+                              </div>
+                            </div>
                           </div>
+
                           <div style={{
-                            fontSize: "0.875rem",
-                            color: "#161616",
-                            whiteSpace: "pre-wrap",
+                            fontSize: "0.85rem",
+                            color: "#393939",
+                            backgroundColor: "#fbfbfb",
+                            borderLeft: "3px solid #a6c8ff",
+                            padding: "0.75rem 1rem",
+                            borderRadius: "0 4px 4px 0",
                             lineHeight: "1.5",
-                            backgroundColor: "#f4f4f4",
-                            padding: "0.85rem",
-                            borderRadius: "4px",
-                            fontFamily: "monospace"
+                            marginBottom: "0.9rem",
                           }}>
-                            {chunk.content}
+                            {doc.preview}
+                          </div>
+
+                          <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", paddingTop: "0.4rem" }}>
+                            <span style={{ fontSize: "0.75rem", color: "#8d8d8d" }}>
+                              Embedding: HNSW Cosine Index • 768 Dimensions • Neon pgvector
+                            </span>
+                            <Button
+                              kind="ghost"
+                              size="sm"
+                              renderIcon={View}
+                              onClick={() => setInspectingPolicy(doc)}
+                            >
+                              Inspect Clauses ({doc.chunkCount})
+                            </Button>
                           </div>
                         </Tile>
                       ))}
                     </div>
+                  )}
+
+                  {/* Modal to Inspect All Clauses of a Policy */}
+                  {inspectingPolicy && (
+                    <Modal
+                      open
+                      modalHeading={inspectingPolicy.title}
+                      modalLabel={`Policy Document • ${inspectingPolicy.chunkCount} Vector Clauses`}
+                      primaryButtonText="Close"
+                      onRequestClose={() => setInspectingPolicy(null)}
+                      onRequestSubmit={() => setInspectingPolicy(null)}
+                      size="lg"
+                    >
+                      <div style={{ maxHeight: "60vh", overflowY: "auto", paddingRight: "0.5rem" }}>
+                        <div style={{ marginBottom: "1rem", padding: "0.8rem", backgroundColor: "#edf5ff", borderRadius: "4px", fontSize: "0.85rem", color: "#002d9c" }}>
+                          <strong>Active Vector Knowledge:</strong> These clauses are embedded in your Neon Vector DB and are referenced by AI Agents to formulate step-by-step procedures and evaluate eligibility.
+                        </div>
+
+                        <div style={{ display: "flex", flexDirection: "column", gap: "0.8rem" }}>
+                          {inspectingPolicy.clauses.map((clause, cIdx) => (
+                            <div
+                              key={clause.id || cIdx}
+                              style={{
+                                padding: "0.9rem 1rem",
+                                border: "1px solid #e0e0e0",
+                                borderRadius: "4px",
+                                backgroundColor: "#ffffff"
+                              }}
+                            >
+                              <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: "0.4rem" }}>
+                                <span style={{ fontWeight: 600, fontSize: "0.8rem", color: "#0f62fe" }}>
+                                  Clause / Provision #{cIdx + 1}
+                                </span>
+                                <span style={{ fontSize: "0.7rem", color: "#8d8d8d", fontFamily: "monospace" }}>
+                                  ID: {clause.id.substring(0, 8)}...
+                                </span>
+                              </div>
+                              <p style={{ margin: 0, fontSize: "0.85rem", color: "#161616", lineHeight: "1.5", whiteSpace: "pre-wrap" }}>
+                                {clause.text}
+                              </p>
+                            </div>
+                          ))}
+                        </div>
+                      </div>
+                    </Modal>
                   )}
                 </div>
               </TabPanel>

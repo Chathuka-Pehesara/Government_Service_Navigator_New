@@ -39,6 +39,7 @@ import {
   CloseFilled,
   Money,
   ArrowRight,
+  Calendar,
 } from "@carbon/icons-react";
 import { getDepartmentLabel } from "../constants/departments";
 
@@ -571,7 +572,12 @@ export default function DepartmentAdminDashboard() {
                   Manage Officers
                 </SideNavLink>
 
-                {/* 6. Audit Logs */}
+                {/* 6. Collection Slots */}
+                <SideNavLink renderIcon={Calendar} href="/admin/collection-slots">
+                  Collection Slots
+                </SideNavLink>
+
+                {/* 7. Audit Logs */}
                 <SideNavLink renderIcon={Security} href="/admin/audit-logs">
                   Audit Logs
                 </SideNavLink>

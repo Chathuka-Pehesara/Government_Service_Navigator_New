@@ -143,11 +143,22 @@ public class ApplicationDraftingService : IApplicationDraftingService
             Eligibility: eligibility,
             ProvidedDocuments: providedDocuments,
             Stage: currentStage), cancellationToken);
-        ValidationResult? validation = null;
-        if (action.Draft != null)
+        var draftForValidation = action.Draft ?? new DraftApplication
         {
-            validation = await _safetyAgent.ValidateAndEnqueueAsync(action.Draft, eligibility.RequiredDocuments);
-        }
+            ApplicationId = submission.Id,
+            ServiceProcedureId = service.Id,
+            ServiceName = service.Name,
+            CitizenNic = submission.CitizenNic,
+            CitizenName = fullName ?? FindAnswer(citizenAnswers, "full name", "name") ?? submission.CitizenNic,
+            CitizenAge = profile.Age,
+            CitizenIncome = profile.AnnualIncome,
+            CalculatedFee = action.Fee?.TotalAmount ?? 0m,
+            FormFields = citizenAnswers,
+            AttachedDocumentNames = providedDocuments,
+            Stage = currentStage
+        };
+
+        var validation = await _safetyAgent.ValidateAndEnqueueAsync(draftForValidation, eligibility.RequiredDocuments, cancellationToken);
 
         var view = new AgentDraftView(submission.Id, DateTime.UtcNow, derivedAge, eligibility, action, validation);
 
