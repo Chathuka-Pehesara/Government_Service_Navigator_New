@@ -1,0 +1,15 @@
+**/bin/
+**/obj/
+**/.env
+**/App_Data/
+**/node_modules/
+.git/
+.github/
+mobile/
+web/
+docs/
+load/
+install/
+tui-runner/
+*.jpeg
+*.png
