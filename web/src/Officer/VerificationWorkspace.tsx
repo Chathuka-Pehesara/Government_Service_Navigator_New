@@ -21,7 +21,7 @@ import { Checkmark, Close, Document, ChevronLeft, ArrowRight, Warning, Money, Tr
 import AgentDraftPanel from "./AgentDraftPanel";
 import DocumentPreview from "./DocumentPreview";
 import { getAgentDraft, generateAgentDraft, type AgentDraftView } from "./agentDraftApi";
-import { ApiError } from "../utils/api";
+import { API_BASE_URL, ApiError } from "../utils/api";
 import { v } from "../utils/validation";
 
 interface PaymentDetail {
@@ -159,7 +159,7 @@ export default function VerificationWorkspace() {
     const fetchDetail = async () => {
       try {
         const token = localStorage.getItem("officerToken");
-        const response = await fetch(`http://localhost:5119/api/Verification/tasks/${taskId}`, {
+        const response = await fetch(`${API_BASE_URL}/api/Verification/tasks/${taskId}`, {
           headers: { ...(token ? { Authorization: `Bearer ${token}` } : {}) }
         });
         if (response.ok) {
@@ -179,7 +179,7 @@ export default function VerificationWorkspace() {
     const fetchReasons = async () => {
       try {
         const token = localStorage.getItem("officerToken");
-        const response = await fetch(`http://localhost:5119/api/Verification/rejection-reasons`, {
+        const response = await fetch(`${API_BASE_URL}/api/Verification/rejection-reasons`, {
           headers: {
             "Content-Type": "application/json",
             ...(token ? { Authorization: `Bearer ${token}` } : {})
@@ -244,8 +244,8 @@ export default function VerificationWorkspace() {
 
     try {
       const endpoint = (status === "Approved" && isMultiStage)
-        ? `http://localhost:5119/api/Verification/tasks/${taskId}/approve-stage`
-        : `http://localhost:5119/api/Verification/tasks/${taskId}/decision`;
+        ? `${API_BASE_URL}/api/Verification/tasks/${taskId}/approve-stage`
+        : `${API_BASE_URL}/api/Verification/tasks/${taskId}/decision`;
 
       const payload = (status === "Approved" && isMultiStage)
         ? { notes: comments || "Milestone approved by officer" }
@@ -283,7 +283,7 @@ export default function VerificationWorkspace() {
     const token = localStorage.getItem("officerToken");
     const fullReason = deleteNotes.trim() ? `${deleteReason}: ${deleteNotes.trim()}` : deleteReason;
     try {
-      const response = await fetch(`http://localhost:5119/api/Verification/tasks/${taskId}?reason=${encodeURIComponent(fullReason)}`, {
+      const response = await fetch(`${API_BASE_URL}/api/Verification/tasks/${taskId}?reason=${encodeURIComponent(fullReason)}`, {
         method: "DELETE",
         headers: {
           ...(token ? { Authorization: `Bearer ${token}` } : {})

@@ -729,4 +729,10 @@ app.UseAuthorization();
 app.MapControllers();
 app.MapHub<ApplicationHub>(ApplicationHub.Path);
 
-app.Run("http://0.0.0.0:5119");
+// Docker/Azure set ASPNETCORE_HTTP_PORTS (8080); local runs keep the usual port 5119
+var portConfigured = !string.IsNullOrEmpty(Environment.GetEnvironmentVariable("ASPNETCORE_HTTP_PORTS"))
+    || !string.IsNullOrEmpty(Environment.GetEnvironmentVariable("ASPNETCORE_URLS"));
+if (portConfigured)
+    app.Run();
+else
+    app.Run("http://0.0.0.0:5119");

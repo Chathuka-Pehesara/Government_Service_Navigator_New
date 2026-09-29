@@ -1,7 +1,7 @@
 import "@carbon/styles/css/styles.css"; // This fixes the unstyled layout![cite: 5]
 import { useState } from "react";
 import { keepPreviousData, useQuery } from "@tanstack/react-query";
-import { apiFetch, toQuery, type Paged } from "../utils/api";
+import { API_BASE_URL, apiFetch, toQuery, type Paged } from "../utils/api";
 import { queryKeys } from "../utils/queryClient";
 import { useDebouncedValue } from "../utils/useDebouncedValue";
 import CurrentUserBadge from "../components/CurrentUserBadge";
@@ -122,7 +122,7 @@ export default function AuditLogs() {
   const handleLogout = async () => {
     const token = localStorage.getItem("officerToken");
     try {
-      await fetch("http://localhost:5119/api/auth/logout", {
+      await fetch(`${API_BASE_URL}/api/auth/logout`, {
         method: "POST",
         headers: {
           "Content-Type": "application/json",

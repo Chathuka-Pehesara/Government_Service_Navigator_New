@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useState, useRef } from "react";
 import { v } from "../utils/validation";
-import { ApiError } from "../utils/api";
+import { API_BASE_URL, ApiError } from "../utils/api";
 import {
   Grid,
   Column,
@@ -135,7 +135,7 @@ function DepositSlipPreview({
     const token = localStorage.getItem("officerToken");
     const fullUrl = slipUrl.startsWith("http")
       ? slipUrl
-      : `http://localhost:5119${slipUrl.startsWith("/") ? "" : "/"}${slipUrl}`;
+      : `${API_BASE_URL}${slipUrl.startsWith("/") ? "" : "/"}${slipUrl}`;
 
     fetch(fullUrl, {
       headers: token ? { Authorization: `Bearer ${token}` } : {},
@@ -1695,7 +1695,7 @@ export default function FinanceDashboard() {
                         const token = localStorage.getItem("officerToken");
                         const full = raw.startsWith("http")
                           ? raw
-                          : `http://localhost:5119${raw.startsWith("/") ? "" : "/"}${raw}`;
+                          : `${API_BASE_URL}${raw.startsWith("/") ? "" : "/"}${raw}`;
                         const targetUrl =
                           token && !full.startsWith("data:")
                             ? `${full}${full.includes("?") ? "&" : "?"}token=${encodeURIComponent(token)}`

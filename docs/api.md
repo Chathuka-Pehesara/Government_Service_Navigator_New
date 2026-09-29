@@ -1,6 +1,6 @@
 # API Reference
 
-Base URL: `http://localhost:5119` (the API listens on a hardcoded port; the web dashboard reads `VITE_API_URL` in new code - see `docs/diagrams/system-architecture.md`). Swagger UI is available at `/swagger` when `ASPNETCORE_ENVIRONMENT=Development`.
+Base URL: `http://localhost:5119` locally, `https://gsn-api-dpa2agb6c5h7gyar.southeastasia-01.azurewebsites.net` when hosted (the API uses port 5119 unless `ASPNETCORE_HTTP_PORTS`/`ASPNETCORE_URLS` is set, as in Docker; the web dashboard reads `BASE_URL` - see `docs/diagrams/system-architecture.md`). Swagger UI is available at `/swagger` when `ASPNETCORE_ENVIRONMENT=Development`.
 
 All request/response bodies are JSON unless marked *multipart*. ASP.NET Core's default `System.Text.Json` camelCases property names in responses (e.g. the C# `FormName` property serializes as `"formName"`), which is reflected below.
 

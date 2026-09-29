@@ -6,6 +6,7 @@ import {
   InlineNotification
 } from "@carbon/react";
 import { parseApiError, v } from "../../utils/validation";
+import { API_BASE_URL } from "../../utils/api";
 
 interface ResetPasswordModalProps {
   isOpen: boolean;
@@ -31,7 +32,7 @@ export default function ResetPasswordModal({ isOpen, onClose, officer }: ResetPa
     setIsSubmitting(true);
 
     try {
-      const response = await fetch(`http://localhost:5119/api/admin/officers/${officer.id}/reset-password`, {
+      const response = await fetch(`${API_BASE_URL}/api/admin/officers/${officer.id}/reset-password`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ newPassword }),
@@ -50,7 +51,7 @@ export default function ResetPasswordModal({ isOpen, onClose, officer }: ResetPa
     } catch (error) {
       const message = error instanceof Error ? error.message : String(error);
       if (message === "Failed to fetch") {
-         setFormError("Backend is offline. Please ensure the server is running on port 5119.");
+         setFormError("Cannot reach the server. Please try again shortly.");
       } else {
          setFormError(`Request failed: ${message}`);
       }

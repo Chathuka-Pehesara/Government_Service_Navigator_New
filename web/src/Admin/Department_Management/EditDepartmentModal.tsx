@@ -14,6 +14,7 @@ import { hasErrors, parseApiError } from "../../utils/validation";
 import { logoFileError, validateDepartment, type DepartmentField } from "./departmentValidation";
 import { CATEGORIES } from "./RegisterDepartmentModal";
 import type { Department } from "./types";
+import { API_BASE_URL } from "../../utils/api";
 
 interface EditDepartmentModalProps {
   open: boolean;
@@ -112,7 +113,7 @@ export default function EditDepartmentModal({
         status,
       };
 
-      const res = await fetch(`http://localhost:5119/api/departments/${department.id}`, {
+      const res = await fetch(`${API_BASE_URL}/api/departments/${department.id}`, {
         method: "PUT",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify(payload),

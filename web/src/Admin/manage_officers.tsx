@@ -60,6 +60,7 @@ import EditOfficerModal from "./Manage_Officers/EditOfficerModel";
 import ResetPasswordModal from "./Manage_Officers/ResetPasswordModel";
 import SuspendAccountModal from "./Manage_Officers/SuspendAccountModel";
 import { DEPARTMENTS, getDepartmentSlug } from "../constants/departments";
+import { API_BASE_URL } from "../utils/api";
 
 const headers = [
   { key: "name", header: "Officer Name" },
@@ -133,8 +134,8 @@ export default function ManageOfficers() {
   const fetchOfficers = useCallback(async () => {
     try {
       const url = isDepartmentAdmin
-        ? `http://localhost:5119/api/admin/officers?department=${encodeURIComponent(scopedDepartment)}`
-        : "http://localhost:5119/api/admin/officers";
+        ? `${API_BASE_URL}/api/admin/officers?department=${encodeURIComponent(scopedDepartment)}`
+        : `${API_BASE_URL}/api/admin/officers`;
       const response = await fetch(url, {
         cache: "no-store"
       });
@@ -165,7 +166,7 @@ export default function ManageOfficers() {
   const handleLogout = async () => {
     const token = localStorage.getItem("officerToken");
     try {
-      await fetch("http://localhost:5119/api/auth/logout", {
+      await fetch(`${API_BASE_URL}/api/auth/logout`, {
         method: "POST",
         headers: {
           "Content-Type": "application/json",
@@ -197,7 +198,7 @@ export default function ManageOfficers() {
     setIsSubmitting(true);
 
     try {
-      const response = await fetch("http://localhost:5119/api/admin/officers", {
+      const response = await fetch(`${API_BASE_URL}/api/admin/officers`, {
         method: "POST",
         headers: {
           "Content-Type": "application/json",

@@ -40,6 +40,7 @@ import {
   DataStructured,
   Security
 } from "@carbon/icons-react";
+import { API_BASE_URL } from "../utils/api";
 
 interface VerificationTaskItem {
   id: number;
@@ -62,7 +63,7 @@ export default function BulkVerification() {
     // In a real scenario, this would fetch only tasks eligible for bulk approval
     const token = localStorage.getItem("officerToken");
     try {
-      const response = await fetch(`http://localhost:5119/api/Verification/tasks/pending`, {
+      const response = await fetch(`${API_BASE_URL}/api/Verification/tasks/pending`, {
         headers: {
           ...(token ? { Authorization: `Bearer ${token}` } : {})
         }
@@ -88,7 +89,7 @@ export default function BulkVerification() {
     setIsSubmitting(true);
     const token = localStorage.getItem("officerToken");
     try {
-      const response = await fetch(`http://localhost:5119/api/Verification/tasks/bulk-verify`, {
+      const response = await fetch(`${API_BASE_URL}/api/Verification/tasks/bulk-verify`, {
         method: "POST",
         headers: {
           "Content-Type": "application/json",

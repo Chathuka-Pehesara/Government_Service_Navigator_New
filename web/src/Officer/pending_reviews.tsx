@@ -49,6 +49,7 @@ import {
   TrashCan,
   Security
 } from "@carbon/icons-react";
+import { API_BASE_URL } from "../utils/api";
 
 // Table Data for Pending Reviews
 const headers = [
@@ -143,7 +144,7 @@ export default function PendingReviews() {
     const token = localStorage.getItem("officerToken");
     const fullReason = deleteNotes.trim() ? `${deleteReason}: ${deleteNotes.trim()}` : deleteReason;
     try {
-      const response = await fetch(`http://localhost:5119/api/Verification/tasks/${targetTask.id}?reason=${encodeURIComponent(fullReason)}`, {
+      const response = await fetch(`${API_BASE_URL}/api/Verification/tasks/${targetTask.id}?reason=${encodeURIComponent(fullReason)}`, {
         method: "DELETE",
         headers: {
           ...(token ? { Authorization: `Bearer ${token}` } : {})
@@ -172,7 +173,7 @@ export default function PendingReviews() {
   const fetchPendingTasks = useCallback(async () => {
     const token = localStorage.getItem("officerToken");
     try {
-      const response = await fetch(`http://localhost:5119/api/Verification/tasks/pending`, {
+      const response = await fetch(`${API_BASE_URL}/api/Verification/tasks/pending`, {
         headers: { ...(token ? { Authorization: `Bearer ${token}` } : {}) }
       });
       if (response.ok) {
@@ -232,7 +233,7 @@ export default function PendingReviews() {
   const handleLogout = async () => {
     const token = localStorage.getItem("officerToken");
     try {
-      await fetch("http://localhost:5119/api/auth/logout", {
+      await fetch(`${API_BASE_URL}/api/auth/logout`, {
         method: "POST",
         headers: {
           "Content-Type": "application/json",

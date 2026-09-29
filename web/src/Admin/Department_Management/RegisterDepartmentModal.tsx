@@ -12,6 +12,7 @@ import {
 import { Renew } from "@carbon/icons-react";
 import { hasErrors, parseApiError } from "../../utils/validation";
 import { logoFileError, validateDepartment, type DepartmentField } from "./departmentValidation";
+import { API_BASE_URL } from "../../utils/api";
 
 export const CATEGORIES = [
   "General",
@@ -58,7 +59,7 @@ export default function RegisterDepartmentModal({
   // Fetch next auto-generated code when modal opens
   const fetchNextCode = async () => {
     try {
-      const res = await fetch("http://localhost:5119/api/departments/next-code");
+      const res = await fetch(`${API_BASE_URL}/api/departments/next-code`);
       if (res.ok) {
         const data = await res.json();
         setDepartmentCode(data.nextCode);
@@ -129,7 +130,7 @@ export default function RegisterDepartmentModal({
         status,
       };
 
-      const res = await fetch("http://localhost:5119/api/departments", {
+      const res = await fetch(`${API_BASE_URL}/api/departments`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify(payload),

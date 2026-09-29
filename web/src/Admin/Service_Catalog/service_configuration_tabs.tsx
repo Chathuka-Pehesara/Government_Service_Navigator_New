@@ -61,6 +61,7 @@ import {
 import { parseApiError } from "../../utils/validation";
 import { documentError, feeError } from "./serviceCatalogValidation";
 import type { Department } from "../Department_Management/types";
+import { API_BASE_URL } from "../../utils/api";
 
 const docHeaders = [
   { key: "documentName", header: "Document Type" },
@@ -214,7 +215,7 @@ export default function ServiceConfigurationTabs() {
 
   const fetchAllTemplates = async () => {
     try {
-      const res = await fetch("http://localhost:5119/api/templates/all");
+      const res = await fetch(`${API_BASE_URL}/api/templates/all`);
       if (res.ok) {
         const data = await res.json();
         setAllAvailableTemplates(data || []);
@@ -226,7 +227,7 @@ export default function ServiceConfigurationTabs() {
 
   const fetchDepartments = async () => {
     try {
-      const res = await fetch("http://localhost:5119/api/departments");
+      const res = await fetch(`${API_BASE_URL}/api/departments`);
       if (res.ok) {
         const data = await res.json();
         if (Array.isArray(data)) {
@@ -330,7 +331,7 @@ export default function ServiceConfigurationTabs() {
     if (!svcId) return;
     try {
       setIsLoadingWorkflow(true);
-      const res = await fetch(`http://localhost:5119/api/templates/by-service/${svcId}`);
+      const res = await fetch(`${API_BASE_URL}/api/templates/by-service/${svcId}`);
       if (res.ok) {
         const data = await res.json();
         setStageTemplates(data || []);
@@ -354,7 +355,7 @@ export default function ServiceConfigurationTabs() {
       }
       const trimmedDepts = depts.slice(0, totalStages);
 
-      const res = await fetch(`http://localhost:5119/api/services/${selectedServiceId}/workflow`, {
+      const res = await fetch(`${API_BASE_URL}/api/services/${selectedServiceId}/workflow`, {
         method: "PUT",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
@@ -400,7 +401,7 @@ export default function ServiceConfigurationTabs() {
           depts.push(AVAILABLE_DEPARTMENTS[depts.length % AVAILABLE_DEPARTMENTS.length] || "Civil Department");
         }
         const trimmedDepts = depts.slice(0, totalStages);
-        await fetch(`http://localhost:5119/api/services/${selectedServiceId}/workflow`, {
+        await fetch(`${API_BASE_URL}/api/services/${selectedServiceId}/workflow`, {
           method: "PUT",
           headers: { "Content-Type": "application/json" },
           body: JSON.stringify({
@@ -419,7 +420,7 @@ export default function ServiceConfigurationTabs() {
     if (!svcId) return;
     try {
       setKnowledgeLoading(true);
-      const res = await fetch(`http://localhost:5119/api/RagSetup/service-knowledge/${svcId}`);
+      const res = await fetch(`${API_BASE_URL}/api/RagSetup/service-knowledge/${svcId}`);
       if (res.ok) {
         const data = await res.json();
         setKnowledgeChunks(data);
@@ -449,7 +450,7 @@ export default function ServiceConfigurationTabs() {
       if (policyText.trim()) formData.append("policyText", policyText);
       if (policyFile) formData.append("file", policyFile);
 
-      const res = await fetch("http://localhost:5119/api/RagSetup/upload-policy", {
+      const res = await fetch(`${API_BASE_URL}/api/RagSetup/upload-policy`, {
         method: "POST",
         body: formData,
       });
@@ -488,7 +489,7 @@ export default function ServiceConfigurationTabs() {
   const handleClearKnowledge = async () => {
     if (!selectedServiceId) return;
     try {
-      const res = await fetch(`http://localhost:5119/api/RagSetup/service-knowledge/${selectedServiceId}`, {
+      const res = await fetch(`${API_BASE_URL}/api/RagSetup/service-knowledge/${selectedServiceId}`, {
         method: "DELETE",
       });
       if (res.ok) {
@@ -507,7 +508,7 @@ export default function ServiceConfigurationTabs() {
   const handleIngestLocalDocs = async () => {
     try {
       setIsUploadingKnowledge(true);
-      const res = await fetch("http://localhost:5119/api/RagSetup/ingest-local-documents", {
+      const res = await fetch(`${API_BASE_URL}/api/RagSetup/ingest-local-documents`, {
         method: "POST",
       });
       if (res.ok) {
@@ -527,7 +528,7 @@ export default function ServiceConfigurationTabs() {
 
   // 1. Fetch all services on mount
     useEffect(() => {
-    fetch("http://localhost:5119/api/services")
+    fetch(`${API_BASE_URL}/api/services`)
       .then((res) => res.json())
       .then((data) => {
         const activeServices = data.filter((srv: ServiceOption) => srv.status === "Active");
@@ -585,7 +586,7 @@ export default function ServiceConfigurationTabs() {
 
       setIsLoading(true);
       try {
-        const res = await fetch(`http://localhost:5119/api/services/${selectedServiceId}`);
+        const res = await fetch(`${API_BASE_URL}/api/services/${selectedServiceId}`);
         const data = await res.json();
         const formattedDocs = (data.documentRequirements || []).map(
           (d: Omit<DocumentRequirement, "id"> & { id: number }) => ({
@@ -680,7 +681,7 @@ export default function ServiceConfigurationTabs() {
       }));
 
       const response = await fetch(
-        `http://localhost:5119/api/services/${selectedServiceId}/documents`,
+        `${API_BASE_URL}/api/services/${selectedServiceId}/documents`,
         {
           method: "PUT",
           headers: { "Content-Type": "application/json" },
@@ -720,7 +721,7 @@ export default function ServiceConfigurationTabs() {
   const handleDeleteDocument = async (docId: string) => {
     if (!docId.startsWith("temp_") && !isNaN(Number(docId))) {
       try {
-        await fetch(`http://localhost:5119/api/services/documents/${docId}`, {
+        await fetch(`${API_BASE_URL}/api/services/documents/${docId}`, {
           method: "DELETE",
         });
       } catch (error) {
@@ -802,7 +803,7 @@ export default function ServiceConfigurationTabs() {
       }));
 
       const response = await fetch(
-        `http://localhost:5119/api/services/${selectedServiceId}/fees`,
+        `${API_BASE_URL}/api/services/${selectedServiceId}/fees`,
         {
           method: "PUT",
           headers: { "Content-Type": "application/json" },
@@ -841,7 +842,7 @@ export default function ServiceConfigurationTabs() {
   const handleDeleteFee = async (feeId: string) => {
     if (!feeId.startsWith("temp_") && !isNaN(Number(feeId))) {
       try {
-        await fetch(`http://localhost:5119/api/services/fees/${feeId}`, {
+        await fetch(`${API_BASE_URL}/api/services/fees/${feeId}`, {
           method: "DELETE",
         });
       } catch (error) {
@@ -916,7 +917,7 @@ export default function ServiceConfigurationTabs() {
   const handleLogout = async () => {
     const token = localStorage.getItem("officerToken");
     try {
-      await fetch("http://localhost:5119/api/auth/logout", {
+      await fetch(`${API_BASE_URL}/api/auth/logout`, {
         method: "POST",
         headers: {
           "Content-Type": "application/json",

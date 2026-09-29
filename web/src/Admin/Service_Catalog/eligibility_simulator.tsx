@@ -39,6 +39,7 @@ import {
   Document,
 } from "@carbon/icons-react";
 import { v } from "../../utils/validation";
+import { API_BASE_URL } from "../../utils/api";
 
 interface Service {
   id: number;
@@ -103,7 +104,7 @@ export default function EligibilitySimulator() {
 
   // 1. Fetch services on mount to populate the procedure dropdown
    useEffect(() => {
-    fetch("http://localhost:5119/api/services")
+    fetch(`${API_BASE_URL}/api/services`)
       .then((res) => res.json())
       .then((data) => {
         const activeServices = data.filter((srv: Service) => srv.status === "Active");
@@ -147,7 +148,7 @@ export default function EligibilitySimulator() {
 
     try {
       const response = await fetch(
-        "http://localhost:5119/api/services/eligibility-score",
+        `${API_BASE_URL}/api/services/eligibility-score`,
         {
           method: "POST",
           headers: { "Content-Type": "application/json" },
@@ -185,7 +186,7 @@ export default function EligibilitySimulator() {
   const handleLogout = async () => {
     const token = localStorage.getItem("officerToken");
     try {
-      await fetch("http://localhost:5119/api/auth/logout", {
+      await fetch(`${API_BASE_URL}/api/auth/logout`, {
         method: "POST",
         headers: {
           "Content-Type": "application/json",

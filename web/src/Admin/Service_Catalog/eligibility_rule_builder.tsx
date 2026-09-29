@@ -39,6 +39,7 @@ import {
 } from "@carbon/icons-react";
 import { parseApiError } from "../../utils/validation";
 import { rulesError } from "./serviceCatalogValidation";
+import { API_BASE_URL } from "../../utils/api";
 
 interface Service {
   id: number;
@@ -97,7 +98,7 @@ export default function EligibilityRuleBuilder() {
   } | null>(null);
 
     useEffect(() => {
-    fetch("http://localhost:5119/api/services")
+    fetch(`${API_BASE_URL}/api/services`)
       .then((res) => res.json())
       .then((data) => {
         const activeServices = data.filter((srv: Service) => srv.status === "Active");
@@ -123,7 +124,7 @@ export default function EligibilityRuleBuilder() {
     const loadRules = async () => {
       setIsLoading(true);
       try {
-        const res = await fetch(`http://localhost:5119/api/services/${selectedServiceId}`);
+        const res = await fetch(`${API_BASE_URL}/api/services/${selectedServiceId}`);
         const data = await res.json();
         setRules(data.eligibilityRules || []);
       } catch (error) {
@@ -175,7 +176,7 @@ export default function EligibilityRuleBuilder() {
       }));
 
       const response = await fetch(
-        `http://localhost:5119/api/services/${selectedServiceId}/eligibility-rules`,
+        `${API_BASE_URL}/api/services/${selectedServiceId}/eligibility-rules`,
         {
           method: "PUT",
           headers: { "Content-Type": "application/json" },
@@ -211,7 +212,7 @@ export default function EligibilityRuleBuilder() {
   const handleLogout = async () => {
     const token = localStorage.getItem("officerToken");
     try {
-      await fetch("http://localhost:5119/api/auth/logout", {
+      await fetch(`${API_BASE_URL}/api/auth/logout`, {
         method: "POST",
         headers: {
           "Content-Type": "application/json",

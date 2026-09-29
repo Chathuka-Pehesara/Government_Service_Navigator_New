@@ -2,7 +2,7 @@ import '@carbon/styles/css/styles.css';
 import { readApiError, v } from '../utils/validation';
 import { useState } from 'react';
 import { keepPreviousData, useQuery, useQueryClient } from '@tanstack/react-query';
-import { apiFetch, toQuery, type Paged } from '../utils/api';
+import { API_BASE_URL, apiFetch, toQuery, type Paged } from '../utils/api';
 import { queryKeys } from '../utils/queryClient';
 import { useDebouncedValue } from '../utils/useDebouncedValue';
 import {
@@ -166,7 +166,7 @@ export default function VerifiedRecords() {
     setIsSaving(true);
     const token = localStorage.getItem('officerToken');
     try {
-      const response = await fetch(`http://localhost:5119/api/Verification/tasks/${editingRecord.id}/decision`, {
+      const response = await fetch(`${API_BASE_URL}/api/Verification/tasks/${editingRecord.id}/decision`, {
         method: 'PUT',
         headers: {
           'Content-Type': 'application/json',
@@ -217,7 +217,7 @@ export default function VerifiedRecords() {
   const handleLogout = async () => {
     const token = localStorage.getItem("officerToken");
     try {
-      await fetch("http://localhost:5119/api/auth/logout", {
+      await fetch(`${API_BASE_URL}/api/auth/logout`, {
         method: "POST",
         headers: {
           "Content-Type": "application/json",

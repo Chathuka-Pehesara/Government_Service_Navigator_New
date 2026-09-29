@@ -36,6 +36,7 @@ import {
 import { getStoredUser } from "../../utils/currentUser";
 import { getCategoryForDepartment } from "../../constants/departments";
 import type { Department } from "../../Admin/Department_Management/types";
+import { API_BASE_URL } from "../../utils/api";
 
 export type FieldType = 
   | 'text' | 'textarea' | 'number' | 'select' | 'multiselect' 
@@ -175,7 +176,7 @@ export default function TemplateBuilder() {
 
   // Fetch departments from backend
   useEffect(() => {
-    fetch("http://localhost:5119/api/departments")
+    fetch(`${API_BASE_URL}/api/departments`)
       .then((res) => res.json())
       .then((data) => {
         if (Array.isArray(data)) {
@@ -198,7 +199,7 @@ export default function TemplateBuilder() {
   }, [currentUser]);
 
   useEffect(() => {
-    fetch("http://localhost:5119/api/services")
+    fetch(`${API_BASE_URL}/api/services`)
       .then((res) => res.json())
       .then((data) => {
         setServices(data.filter((srv: ServiceOption) => srv.status === "Active"));
@@ -215,7 +216,7 @@ export default function TemplateBuilder() {
         return;
       }
       setIsLoadingServiceDetail(true);
-      fetch(`http://localhost:5119/api/services/${linkedServiceId}`)
+      fetch(`${API_BASE_URL}/api/services/${linkedServiceId}`)
         .then((res) => res.json())
         .then((data) => setLinkedServiceDetail(data))
         .catch((error) => {
@@ -254,7 +255,7 @@ export default function TemplateBuilder() {
 
   const fetchTemplateData = async (id: string) => {
     try {
-      const response = await fetch(`http://localhost:5119/api/templates/${id}`);
+      const response = await fetch(`${API_BASE_URL}/api/templates/${id}`);
       if (response.ok) {
         const data = await response.json();
         setFormName(data.formName || "");
@@ -328,7 +329,7 @@ export default function TemplateBuilder() {
   const fetchAllTemplates = async () => {
     setIsLoadingTemplates(true);
     try {
-      const res = await fetch("http://localhost:5119/api/templates/all");
+      const res = await fetch(`${API_BASE_URL}/api/templates/all`);
       if (res.ok) {
         const data = await res.json();
         if (Array.isArray(data)) {
@@ -406,7 +407,7 @@ export default function TemplateBuilder() {
     if (!deletingTemplate) return;
     setIsDeleting(true);
     try {
-      const res = await fetch(`http://localhost:5119/api/templates/${deletingTemplate.id}`, {
+      const res = await fetch(`${API_BASE_URL}/api/templates/${deletingTemplate.id}`, {
         method: "DELETE",
       });
       if (res.ok || res.status === 204) {
@@ -430,7 +431,7 @@ export default function TemplateBuilder() {
 
   const handleUpdateStatus = async (id: string, newStatus: "Active" | "Inactive") => {
     try {
-      const res = await fetch(`http://localhost:5119/api/templates/${id}/status`, {
+      const res = await fetch(`${API_BASE_URL}/api/templates/${id}/status`, {
         method: "PATCH",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ status: newStatus }),
@@ -525,8 +526,8 @@ export default function TemplateBuilder() {
       };
 
       const url = templateId 
-        ? `http://localhost:5119/api/templates/update/${templateId}` 
-        : "http://localhost:5119/api/templates/create";
+        ? `${API_BASE_URL}/api/templates/update/${templateId}` 
+        : `${API_BASE_URL}/api/templates/create`;
       const method = templateId ? "PUT" : "POST";
 
       const response = await fetch(url, {

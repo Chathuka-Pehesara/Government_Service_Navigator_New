@@ -58,6 +58,7 @@ import {
 import RegisterDepartmentModal, { CATEGORIES } from "./Department_Management/RegisterDepartmentModal";
 import EditDepartmentModal from "./Department_Management/EditDepartmentModal";
 import type { Department } from "./Department_Management/types";
+import { API_BASE_URL } from "../utils/api";
 
 export type { Department };
 
@@ -100,7 +101,7 @@ export default function DepartmentManagement() {
   const fetchDepartments = useCallback(async () => {
     try {
       setIsLoading(true);
-      const res = await fetch("http://localhost:5119/api/departments");
+      const res = await fetch(`${API_BASE_URL}/api/departments`);
       if (!res.ok) throw new Error("Failed to load departments.");
       const data = await res.json();
       setDepartments(data);
@@ -128,7 +129,7 @@ export default function DepartmentManagement() {
         return;
       }
 
-      const res = await fetch(`http://localhost:5119/api/departments/${dept.id}/status`, {
+      const res = await fetch(`${API_BASE_URL}/api/departments/${dept.id}/status`, {
         method: "PATCH",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ status: newStatus }),
@@ -151,7 +152,7 @@ export default function DepartmentManagement() {
     if (!deletingDept) return;
     try {
       setIsDeleteSubmitting(true);
-      const res = await fetch(`http://localhost:5119/api/departments/${deletingDept.id}`, {
+      const res = await fetch(`${API_BASE_URL}/api/departments/${deletingDept.id}`, {
         method: "DELETE",
       });
       const data = await res.json();
@@ -171,7 +172,7 @@ export default function DepartmentManagement() {
   const handleLogout = async () => {
     const token = localStorage.getItem("officerToken");
     try {
-      await fetch("http://localhost:5119/api/auth/logout", {
+      await fetch(`${API_BASE_URL}/api/auth/logout`, {
         method: "POST",
         headers: {
           "Content-Type": "application/json",

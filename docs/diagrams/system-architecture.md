@@ -143,13 +143,13 @@ See `docs/api.md` for the per-endpoint breakdown and `docs/adr/0004-client-side-
 | Redis | `REDIS_URL` | Optional. Empty = in-process cache, single instance. Keep it in the same region as the API; a distant Redis adds its round trip to every request |
 | DB pool | `DB_MAX_POOL_SIZE` | Default 50 per instance. Use Neon's pooled (`-pooler`) connection string |
 | Rate limit | `RATE_LIMIT_PER_MINUTE` | Default 120 per caller. Raise it for k6 load tests, where all virtual users share one token |
-| Web API base | `VITE_API_URL` (web build) | Used by `web/src/utils/api.ts` and the realtime bridge; older pages still hardcode `http://localhost:5119` |
+| Web API base | `BASE_URL` (web build, `web/.env.production`) | Passed in by `web/vite.config.ts` and exported as `API_BASE_URL` from `web/src/utils/api.ts`; every page uses it |
 
 CORS allows any origin, header and method. HTTPS redirection is commented out.
 
 ## Client → API base URLs
 
-- **React:** `web/src/utils/api.ts` reads `VITE_API_URL` (falling back to `http://localhost:5119`), and so do the pages converted to TanStack Query and the realtime bridge. Many older page components still hardcode `http://localhost:5119` as a literal, so changing the variable alone does not move the whole dashboard yet.
+- **React:** `web/src/utils/api.ts` exports `API_BASE_URL` from `BASE_URL` (falling back to `http://localhost:5119`), and every page and the realtime bridge use it. `web/.env.production` points production builds at the hosted Azure API.
 - **Flutter:** no environment variable. `mobile/lib/config/app_config.dart` picks one per platform: `http://10.0.2.2:5119/api` on the Android emulator, `http://localhost:5119/api` everywhere else. A physical device needs this file edited to the host's LAN IP. The realtime hub URL is derived from the same value.
 
 ## Build & delivery

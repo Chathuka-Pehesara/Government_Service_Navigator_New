@@ -32,6 +32,7 @@ import {
 import CurrentUserBadge from "../../components/CurrentUserBadge";
 import TemplateBuilder from "./TemplateBuilder";
 import { getStoredUser, getAdminOverviewHref, canManageServices } from "../../utils/currentUser";
+import { API_BASE_URL } from "../../utils/api";
 
 export default function ApplicationCreate() {
   const [currentUser] = useState(getStoredUser);
@@ -42,7 +43,7 @@ export default function ApplicationCreate() {
   const handleLogout = async () => {
     const token = localStorage.getItem("officerToken");
     try {
-      await fetch("http://localhost:5119/api/auth/logout", {
+      await fetch(`${API_BASE_URL}/api/auth/logout`, {
         method: "POST",
         headers: {
           "Content-Type": "application/json",

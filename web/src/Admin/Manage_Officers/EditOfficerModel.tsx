@@ -9,6 +9,7 @@ import {
 } from "@carbon/react";
 import { DEPARTMENTS } from "../../constants/departments";
 import { hasErrors, parseApiError, v, validateForm } from "../../utils/validation";
+import { API_BASE_URL } from "../../utils/api";
 
 interface Officer {
   id: string;
@@ -80,7 +81,7 @@ export default function EditOfficerModal({ isOpen, onClose, onSuccess, officer }
 
     try {
       // NOTE: You will need to create this PUT endpoint in your backend AdminController
-      const response = await fetch(`http://localhost:5119/api/admin/officers/${officer.id}`, {
+      const response = await fetch(`${API_BASE_URL}/api/admin/officers/${officer.id}`, {
         method: "PUT",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify(formData),

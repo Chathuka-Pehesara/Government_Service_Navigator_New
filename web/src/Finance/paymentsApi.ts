@@ -1,4 +1,4 @@
-import { apiFetch } from "../utils/api";
+import { API_BASE_URL, apiFetch } from "../utils/api";
 
 // ── Types ────────────────────────────────────────────────────────────────────
 
@@ -162,7 +162,7 @@ export function rejectBankTransfer(
 export async function openInstallmentReceipt(installmentId: number): Promise<void> {
   const token = localStorage.getItem("officerToken");
   const response = await fetch(
-    `http://localhost:5119/api/installment-plans/installments/${installmentId}/receipt`,
+    `${API_BASE_URL}/api/installment-plans/installments/${installmentId}/receipt`,
     { headers: token ? { Authorization: `Bearer ${token}` } : {} }
   );
   if (!response.ok) throw new Error(`Could not load the receipt (HTTP ${response.status}).`);

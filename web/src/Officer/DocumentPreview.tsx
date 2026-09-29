@@ -1,7 +1,8 @@
 import { useEffect, useState } from "react";
 import { InlineLoading, Link } from "@carbon/react";
+import { API_BASE_URL } from "../utils/api";
 
-const BASE_URL = "http://localhost:5119";
+const BASE_URL = API_BASE_URL;
 
 interface Props {
   documentId: string;

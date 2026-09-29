@@ -48,6 +48,7 @@ import {
 import { DEPARTMENTS, getCategoryForDepartment, getDepartmentSlug } from "../../constants/departments";
 import { parseApiError } from "../../utils/validation";
 import { serviceError } from "./serviceCatalogValidation";
+import { API_BASE_URL } from "../../utils/api";
 
 const headers = [
   { key: "serviceId", header: "Service ID" },
@@ -108,7 +109,7 @@ export default function ServiceCatalogManager() {
   });
 
   const fetchServices = () => {
-    fetch("http://localhost:5119/api/services")
+    fetch(`${API_BASE_URL}/api/services`)
       .then((res) => res.json())
       .then((data) => {
         const formattedData = data.map(
@@ -210,8 +211,8 @@ export default function ServiceCatalogManager() {
     try {
       const method = isEditMode ? "PUT" : "POST";
       const endpoint = isEditMode
-        ? `http://localhost:5119/api/services/${currentServiceId}`
-        : "http://localhost:5119/api/services";
+        ? `${API_BASE_URL}/api/services/${currentServiceId}`
+        : `${API_BASE_URL}/api/services`;
 
       // WorkflowDepartments is stored as a JSON string in the backend model,
       // so serialize the array before sending.
@@ -255,7 +256,7 @@ export default function ServiceCatalogManager() {
     }
 
     try {
-      const response = await fetch(`http://localhost:5119/api/services/${id}`, {
+      const response = await fetch(`${API_BASE_URL}/api/services/${id}`, {
         method: "DELETE",
       });
 
@@ -294,7 +295,7 @@ export default function ServiceCatalogManager() {
   const handleLogout = async () => {
     const token = localStorage.getItem("officerToken");
     try {
-      await fetch("http://localhost:5119/api/auth/logout", {
+      await fetch(`${API_BASE_URL}/api/auth/logout`, {
         method: "POST",
         headers: {
           "Content-Type": "application/json",

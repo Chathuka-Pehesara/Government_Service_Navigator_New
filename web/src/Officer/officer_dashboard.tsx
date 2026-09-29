@@ -44,6 +44,7 @@ import {
   TrashCan,
   Security
 } from "@carbon/icons-react";
+import { API_BASE_URL } from "../utils/api";
 
 const headers = [
   { key: "appId", header: "Application ID" },
@@ -118,7 +119,7 @@ export default function OfficerDashboard() {
     const token = localStorage.getItem("officerToken");
     const fullReason = deleteNotes.trim() ? `${deleteReason}: ${deleteNotes.trim()}` : deleteReason;
     try {
-      const response = await fetch(`http://localhost:5119/api/Verification/tasks/${targetRow.id}?reason=${encodeURIComponent(fullReason)}`, {
+      const response = await fetch(`${API_BASE_URL}/api/Verification/tasks/${targetRow.id}?reason=${encodeURIComponent(fullReason)}`, {
         method: "DELETE",
         headers: {
           ...(token ? { Authorization: `Bearer ${token}` } : {})
@@ -150,7 +151,7 @@ export default function OfficerDashboard() {
 
     const fetchQueue = async () => {
       try {
-        const response = await fetch("http://localhost:5119/api/verification/tasks/pending", {
+        const response = await fetch(`${API_BASE_URL}/api/verification/tasks/pending`, {
           headers: authHeaders,
         });
         if (response.ok) {
@@ -179,7 +180,7 @@ export default function OfficerDashboard() {
 
     const fetchStats = async () => {
       try {
-        const response = await fetch("http://localhost:5119/api/verification/stats", {
+        const response = await fetch(`${API_BASE_URL}/api/verification/stats`, {
           headers: authHeaders,
         });
         if (response.ok) {
@@ -213,7 +214,7 @@ export default function OfficerDashboard() {
   const handleLogout = async () => {
     const token = localStorage.getItem("officerToken");
     try {
-      await fetch("http://localhost:5119/api/auth/logout", {
+      await fetch(`${API_BASE_URL}/api/auth/logout`, {
         method: "POST",
         headers: {
           "Content-Type": "application/json",

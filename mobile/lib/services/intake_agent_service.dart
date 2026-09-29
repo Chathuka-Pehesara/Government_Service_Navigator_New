@@ -1,25 +1,10 @@
 import 'dart:convert';
-import 'dart:io';
-import 'package:flutter/foundation.dart';
 import 'package:http/http.dart' as http;
+import '../config/app_config.dart';
 import '../models/intake_plan_model.dart';
 
 class IntakeAgentService {
-  // Resolves localhost safely across Web, iOS Simulator, and Android Emulator
-  static String get _backendUrl {
-    if (kIsWeb) {
-      // Safe fallback for Chrome/Web
-      return 'http://localhost:5119/api/intakeagent/ask';
-    }
-
-    // It is now safe to check the OS because we know we aren't on the web
-    if (Platform.isAndroid) {
-      return 'http://10.0.2.2:5119/api/intakeagent/ask';
-    }
-
-    // macOS Desktop or iOS Simulator
-    return 'http://localhost:5119/api/intakeagent/ask';
-  }
+  static String get _backendUrl => '${AppConfig.baseUrl}/intakeagent/ask';
 
   /// Sends the citizen's plain-language need to the intake agent and returns the matched plan.
   static Future<IntakePlanModel> ask(String text) async {

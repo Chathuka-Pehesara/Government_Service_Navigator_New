@@ -39,6 +39,7 @@ import {
   CheckmarkOutline,
   DataStructured
 } from "@carbon/icons-react";
+import { API_BASE_URL } from "../utils/api";
 
 const STATUS_OPTIONS: { value: string; label: string; bg: string; color: string }[] = [
   { value: "Active", label: "Active", bg: "#defbe6", color: "#0e6027" },
@@ -91,7 +92,7 @@ export default function ApplicationsList() {
     const fetchTemplates = async () => {
       try {
         const token = localStorage.getItem("officerToken");
-        const response = await fetch("http://localhost:5119/api/templates/all", {
+        const response = await fetch(`${API_BASE_URL}/api/templates/all`, {
           headers: {
             "Authorization": `Bearer ${token}`
           }
@@ -130,7 +131,7 @@ export default function ApplicationsList() {
   const handleLogout = async () => {
     const token = localStorage.getItem("officerToken");
     try {
-      await fetch("http://localhost:5119/api/auth/logout", {
+      await fetch(`${API_BASE_URL}/api/auth/logout`, {
         method: "POST",
         headers: {
           "Content-Type": "application/json",
@@ -150,7 +151,7 @@ export default function ApplicationsList() {
     setUpdatingStatusId(id);
     try {
       const token = localStorage.getItem("officerToken");
-      const response = await fetch(`http://localhost:5119/api/templates/${id}/status`, {
+      const response = await fetch(`${API_BASE_URL}/api/templates/${id}/status`, {
         method: "PATCH",
         headers: {
           "Content-Type": "application/json",
@@ -229,7 +230,7 @@ export default function ApplicationsList() {
     setDeleteError(null);
     try {
       const token = localStorage.getItem("officerToken");
-      const response = await fetch(`http://localhost:5119/api/templates/${deleteTarget.id}`, {
+      const response = await fetch(`${API_BASE_URL}/api/templates/${deleteTarget.id}`, {
         method: "DELETE",
         headers: {
           "Authorization": `Bearer ${token}`

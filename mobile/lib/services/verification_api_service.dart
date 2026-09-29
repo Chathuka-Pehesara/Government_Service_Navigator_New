@@ -1,22 +1,11 @@
 import 'dart:convert';
-import 'dart:io' show Platform;
 import 'package:flutter/foundation.dart';
 import 'package:http/http.dart' as http;
 import '../config/app_config.dart';
 import '../models/verification_models.dart';
 
 class VerificationApiService {
-  static String get baseUrl {
-    if (kIsWeb) {
-      return 'http://localhost:5119/api/verification';
-    }
-    try {
-      if (Platform.isAndroid) {
-        return 'http://10.0.2.2:5119/api/verification';
-      }
-    } catch (_) {}
-    return 'http://localhost:5119/api/verification';
-  }
+  static String get baseUrl => '${AppConfig.baseUrl}/verification';
 
   /// Fetches the signed-in citizen's own applications (scoped server-side by the token's NIC)
   static Future<List<ApplicationItemModel>> fetchApplications({String? token}) async {

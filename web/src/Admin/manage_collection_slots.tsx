@@ -51,6 +51,7 @@ import {
   Logout,
   Settings
 } from "@carbon/icons-react";
+import { API_BASE_URL } from "../utils/api";
 
 interface DailySlot {
   slotId: number;
@@ -334,7 +335,7 @@ export default function ManageCollectionSlots() {
         : "";
 
       const res = await fetch(
-        `http://localhost:5119/api/admin/collection-slots/daily-schedule?days=${scheduleDays}${deptQuery}`,
+        `${API_BASE_URL}/api/admin/collection-slots/daily-schedule?days=${scheduleDays}${deptQuery}`,
         { headers: getHeaders() }
       );
       if (res.ok) {
@@ -369,7 +370,7 @@ export default function ManageCollectionSlots() {
         ? `?department=${encodeURIComponent(deptTarget)}`
         : "";
 
-      const res = await fetch(`http://localhost:5119/api/admin/collection-slots${deptQuery}`, { headers: getHeaders() });
+      const res = await fetch(`${API_BASE_URL}/api/admin/collection-slots${deptQuery}`, { headers: getHeaders() });
       if (res.ok) {
         const data = await res.json();
         setSlots(data);
@@ -393,7 +394,7 @@ export default function ManageCollectionSlots() {
           ? `&department=${encodeURIComponent(selectedDeptFilter)}`
           : "";
 
-      const res = await fetch(`http://localhost:5119/api/admin/collection-slots/bookings?scope=all${deptQuery}`, { headers: getHeaders() });
+      const res = await fetch(`${API_BASE_URL}/api/admin/collection-slots/bookings?scope=all${deptQuery}`, { headers: getHeaders() });
       if (res.ok) {
         const data = await res.json();
         setBookings(data);
@@ -483,8 +484,8 @@ export default function ManageCollectionSlots() {
 
     try {
       const url = editingSlot 
-        ? `http://localhost:5119/api/admin/collection-slots/${editingSlot.id}` 
-        : "http://localhost:5119/api/admin/collection-slots";
+        ? `${API_BASE_URL}/api/admin/collection-slots/${editingSlot.id}` 
+        : `${API_BASE_URL}/api/admin/collection-slots`;
       const method = editingSlot ? "PUT" : "POST";
 
       const res = await fetch(url, {
@@ -509,7 +510,7 @@ export default function ManageCollectionSlots() {
   const handleDeleteSlot = async (id: number) => {
     if (!window.confirm("Are you sure you want to delete this time slot?")) return;
     try {
-      const res = await fetch(`http://localhost:5119/api/admin/collection-slots/${id}`, {
+      const res = await fetch(`${API_BASE_URL}/api/admin/collection-slots/${id}`, {
         method: "DELETE",
         headers: getHeaders(),
       });
@@ -544,7 +545,7 @@ export default function ManageCollectionSlots() {
       : holidayReason;
 
     try {
-      const res = await fetch("http://localhost:5119/api/admin/collection-slots/holidays", {
+      const res = await fetch(`${API_BASE_URL}/api/admin/collection-slots/holidays`, {
         method: "POST",
         headers: getHeaders(),
         body: JSON.stringify({
@@ -566,7 +567,7 @@ export default function ManageCollectionSlots() {
   const handleRemoveHoliday = async (holidayId: number, dateStr: string) => {
     if (!window.confirm(`Are you sure you want to remove the holiday on ${dateStr} and resume counter slots?`)) return;
     try {
-      const res = await fetch(`http://localhost:5119/api/admin/collection-slots/holidays/${holidayId}`, {
+      const res = await fetch(`${API_BASE_URL}/api/admin/collection-slots/holidays/${holidayId}`, {
         method: "DELETE",
         headers: getHeaders()
       });
@@ -612,7 +613,7 @@ export default function ManageCollectionSlots() {
   const handleLogout = async () => {
     const token = localStorage.getItem("officerToken");
     try {
-      await fetch("http://localhost:5119/api/auth/logout", {
+      await fetch(`${API_BASE_URL}/api/auth/logout`, {
         method: "POST",
         headers: {
           "Content-Type": "application/json",

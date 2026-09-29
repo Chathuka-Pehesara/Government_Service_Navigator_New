@@ -5,10 +5,12 @@
 
 import { parseApiError } from "./validation";
 
-// Backend origin from VITE_API_URL (see .env.example). Older pages still hardcode
-// http://localhost:5119; new code should use apiFetch or API_BASE_URL instead.
-export const API_BASE_URL: string =
-  (import.meta.env.VITE_API_URL as string | undefined)?.replace(/\/$/, "") || "http://localhost:5119";
+// Injected by vite.config.ts from BASE_URL in .env / .env.production
+declare const __BASE_URL__: string;
+
+// Backend origin from BASE_URL (see .env.example). New code should use apiFetch or
+// API_BASE_URL instead of hardcoding the server address.
+export const API_BASE_URL: string = __BASE_URL__.replace(/\/$/, "") || "http://localhost:5119";
 const BASE_URL = API_BASE_URL;
 
 // One page of a list endpoint called with ?page= (backend PagedResult<T>)

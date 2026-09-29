@@ -1,5 +1,6 @@
 import { useState } from "react";
 import { Modal, InlineNotification } from "@carbon/react";
+import { API_BASE_URL } from "../../utils/api";
 
 interface SuspendAccountModalProps {
   isOpen: boolean;
@@ -25,8 +26,8 @@ export default function SuspendAccountModal({ isOpen, onClose, onSuccess, office
     }
     try {
       const endpoint = isCurrentlySuspended 
-        ? `http://localhost:5119/api/admin/officers/${officer.id}/activate`
-        : `http://localhost:5119/api/admin/officers/${officer.id}/suspend`;
+        ? `${API_BASE_URL}/api/admin/officers/${officer.id}/activate`
+        : `${API_BASE_URL}/api/admin/officers/${officer.id}/suspend`;
 
       const response = await fetch(endpoint, {
         method: "PATCH", 
@@ -49,7 +50,7 @@ export default function SuspendAccountModal({ isOpen, onClose, onSuccess, office
     } catch (error) {
       const message = error instanceof Error ? error.message : String(error);
       if (message === "Failed to fetch") {
-         setFormError("Backend is offline. Please ensure the server is running on port 5119.");
+         setFormError("Cannot reach the server. Please try again shortly.");
       } else {
          setFormError(`Request failed: ${message}`);
       }

@@ -1,19 +1,10 @@
 import 'dart:convert';
-import 'dart:io';
-import 'package:flutter/foundation.dart';
 import 'package:http/http.dart' as http;
+import '../config/app_config.dart';
 import '../models/eligibility_agent_model.dart';
 
 class EligibilityAgentService {
-  static String get _baseUrl {
-    if (kIsWeb) {
-      return 'http://localhost:5119/api/eligibilityagent';
-    }
-    if (Platform.isAndroid) {
-      return 'http://10.0.2.2:5119/api/eligibilityagent';
-    }
-    return 'http://localhost:5119/api/eligibilityagent';
-  }
+  static String get _baseUrl => '${AppConfig.baseUrl}/eligibilityagent';
 
   static Future<EligibilityAgentResponse> evaluateEligibility({
     required String serviceName,

@@ -144,7 +144,7 @@ export default function DepartmentAdminDashboard() {
   const handleLogout = async () => {
     const token = localStorage.getItem("officerToken");
     try {
-      await fetch("http://localhost:5119/api/auth/logout", {
+      await fetch(`${API_BASE_URL}/api/auth/logout`, {
         method: "POST",
         headers: {
           "Content-Type": "application/json",
@@ -175,10 +175,10 @@ export default function DepartmentAdminDashboard() {
         // 1. Fetch Department Officers & All System Officers for name resolution
         const [deptOfficersRes, allOfficersRes] = await Promise.allSettled([
           fetch(
-            `http://localhost:5119/api/admin/officers?department=${encodeURIComponent(departmentName!)}`,
+            `${API_BASE_URL}/api/admin/officers?department=${encodeURIComponent(departmentName!)}`,
             { headers: authHeaders }
           ),
-          fetch("http://localhost:5119/api/admin/officers", { headers: authHeaders }),
+          fetch(`${API_BASE_URL}/api/admin/officers`, { headers: authHeaders }),
         ]);
 
         let deptOfficers: OfficerSummary[] = [];
