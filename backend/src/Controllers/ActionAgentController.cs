@@ -146,6 +146,7 @@ public class ActionAgentController : ControllerBase
         {
             resolvedDept = await ResolveDepartmentForApplicationAsync(request.ApplicationId, request.ServiceName);
         }
+        resolvedDept = NormalizeDepartmentName(resolvedDept);
 
         // 2. One booking per application: a new request moves the existing booking instead of adding another
         var existing = await FindActiveBookingAsync(request.ApplicationId);
@@ -187,8 +188,22 @@ public class ActionAgentController : ControllerBase
         return Ok(response);
     }
 
+    private static string NormalizeDepartmentName(string? dept)
+    {
+        if (string.IsNullOrWhiteSpace(dept)) return "Department of Public Administration";
+        var lower = dept.Trim().ToLowerInvariant();
+        if (lower.Contains("police") || lower.Contains("clearance")) return "Police Department";
+        if (lower.Contains("immigration") || lower.Contains("passport")) return "Department of Immigration & Emigration";
+        if (lower.Contains("motor") || lower.Contains("traffic") || lower.Contains("driving")) return "Department of Motor Traffic";
+        if (lower.Contains("registration of persons") || lower.Contains("nic") || lower.Contains("identity")) return "Department of Registration of Persons";
+        if (lower.Contains("birth") || lower.Contains("marriage") || lower.Contains("death") || lower.Contains("registrar")) return "Registrar General's Department";
+        if (lower.Contains("secretariat") || lower.Contains("public administration")) return "Divisional Secretariat";
+        return dept.Trim();
+    }
+
     private async Task<List<DepartmentSlotInfo>> LoadConfiguredSlotsForDepartmentAsync(string departmentName)
     {
+        departmentName = NormalizeDepartmentName(departmentName);
         var slots = new List<DepartmentSlotInfo>();
         try
         {
@@ -204,14 +219,18 @@ public class ActionAgentController : ControllerBase
                            s.""MaxCapacity"", s.""IsActive"",
                            COALESCE((
                                SELECT COUNT(*)::int FROM ""CollectionBookings"" b
-                               WHERE LOWER(b.""DepartmentName"") LIKE LOWER('%' || s.""DepartmentName"" || '%')
+                               WHERE (LOWER(b.""DepartmentName"") LIKE LOWER('%' || s.""DepartmentName"" || '%')
+                                      OR LOWER(s.""DepartmentName"") LIKE LOWER('%' || b.""DepartmentName"" || '%'))
                                  AND b.""Status"" = 'Confirmed'
                                  AND b.""BookedDate"" = " + CollectionSlotSql.NextDateOfSlotDay + @"
                                  AND " + CollectionSlotSql.BookingStartTime + @" = SUBSTRING(CAST(s.""StartTime"" AS varchar) FROM 1 FOR 5)
                            ), 0) AS ""BookedCount"",
                            COALESCE(s.""DepartmentName"", @deptVal)
                     FROM ""CollectionTimeSlots"" s
-                    WHERE LOWER(s.""DepartmentName"") LIKE LOWER(@dept) AND s.""IsActive"" = TRUE
+                    WHERE s.""IsActive"" = TRUE 
+                      AND (LOWER(s.""DepartmentName"") LIKE LOWER(@dept) 
+                           OR LOWER(@deptVal) LIKE '%' || LOWER(s.""DepartmentName"") || '%'
+                           OR (LOWER(@deptVal) LIKE '%police%' AND LOWER(s.""DepartmentName"") LIKE '%police%'))
                     ORDER BY s.""DayOfWeek"", s.""StartTime"";
                 ";
                 var p = cmd.CreateParameter();
@@ -425,7 +444,7 @@ public class ActionAgentController : ControllerBase
         if (lower.Contains("driving") || lower.Contains("license") || lower.Contains("motor"))
             return "Department of Motor Traffic";
         if (lower.Contains("police") || lower.Contains("clearance"))
-            return "Sri Lanka Police Headquarters";
+            return "Police Department";
         if (lower.Contains("birth") || lower.Contains("marriage") || lower.Contains("death") || lower.Contains("registrar"))
             return "Registrar General's Department";
 

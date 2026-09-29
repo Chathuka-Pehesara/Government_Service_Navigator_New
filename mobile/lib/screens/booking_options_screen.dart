@@ -54,7 +54,7 @@ class _BookingOptionsScreenState extends ConsumerState<BookingOptionsScreen> {
       return 'Department of Motor Traffic';
     }
     if (lower.contains('police') || lower.contains('clearance')) {
-      return 'Sri Lanka Police Headquarters';
+      return 'Police Department';
     }
     if (lower.contains('birth') || lower.contains('certificate')) {
       return 'Registrar General\'s Department';

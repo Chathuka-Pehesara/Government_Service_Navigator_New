@@ -501,7 +501,7 @@ public class ActionToolAgent : IActionToolAgent
         if (lower.Contains("driving") || lower.Contains("license") || lower.Contains("motor"))
             return "Department of Motor Traffic";
         if (lower.Contains("police") || lower.Contains("clearance"))
-            return "Sri Lanka Police Headquarters";
+            return "Police Department";
         if (lower.Contains("birth") || lower.Contains("marriage") || lower.Contains("death") || lower.Contains("registrar"))
             return "Registrar General's Department";
 
@@ -522,13 +522,15 @@ The citizen submitted: ""{input}""
 Parse the citizen's preferred date and time into a JSON object:
 {{
   ""targetDate"": ""yyyy-MM-dd"",
-  ""hour"": 14,
-  ""minute"": 30,
+  ""hour"": 10,
+  ""minute"": 0,
   ""hasTime"": true
 }}
 Rules:
 - Never return a date in the past. If 'tomorrow', date is {nowLocal.AddDays(1):yyyy-MM-dd}.
-- If user gives only day of week (e.g. 'Monday'), pick upcoming date.
+- If user gives only day of week (e.g. 'Wednesday'), pick the upcoming date.
+- Government collection counters operate strictly daytime hours (09:00 - 15:30).
+- If the user specifies morning times like '9', '9:30', '10', '11' or ranges like '9-12 am', 'between 9-12 am', '9 to 12', parse as daytime morning hour (e.g. hour=9 or 10, minute=0 or 30). NEVER parse daytime morning requests as night (e.g. do NOT output hour=21 for 9:30 unless user explicitly typed 'pm' or 'night').
 - If user mentions 'morning' without exact hour, set hour=10, minute=0.
 - If user mentions 'afternoon' without exact hour, set hour=14, minute=0.
 - Output ONLY valid JSON.";
@@ -549,6 +551,14 @@ Rules:
                         int hour = root.TryGetProperty("hour", out var hElem) ? hElem.GetInt32() : 10;
                         int minute = root.TryGetProperty("minute", out var mElem) ? mElem.GetInt32() : 0;
                         bool hasTime = !root.TryGetProperty("hasTime", out var htElem) || htElem.GetBoolean();
+
+                        var lowerIn = input.ToLowerInvariant();
+                        // If LLM returned a night hour (18..23, e.g. 21 for 9:30) and user did not explicitly request PM/night, convert to morning daytime
+                        if (hour >= 18 && hour <= 23 && !lowerIn.Contains("pm") && !lowerIn.Contains("night"))
+                        {
+                            hour -= 12;
+                        }
+
                         return (parsedDate, hour, minute, hasTime);
                     }
                 }
@@ -575,32 +585,52 @@ Rules:
         int targetMinute = 0;
         bool detectedTime = false;
 
-        var timeMatch = System.Text.RegularExpressions.Regex.Match(input, @"(\d{1,2})(?::(\d{2}))?\s*(am|pm)?", System.Text.RegularExpressions.RegexOptions.IgnoreCase);
-        if (timeMatch.Success)
+        // Check for time ranges like "9-12 am", "between 9-12", "9 to 12"
+        var rangeMatch = System.Text.RegularExpressions.Regex.Match(input, @"(?:between\s+)?(\d{1,2})(?:\s*[:.]\s*(\d{2}))?\s*(?:-|to)\s*(\d{1,2})(?:\s*[:.]\s*(\d{2}))?\s*(am|pm)?", System.Text.RegularExpressions.RegexOptions.IgnoreCase);
+        if (rangeMatch.Success)
         {
-            if (int.TryParse(timeMatch.Groups[1].Value, out var h))
+            if (int.TryParse(rangeMatch.Groups[1].Value, out var startH))
             {
-                var isPm = timeMatch.Groups[3].Value.Equals("pm", StringComparison.OrdinalIgnoreCase);
-                var isAm = timeMatch.Groups[3].Value.Equals("am", StringComparison.OrdinalIgnoreCase);
-                if (isPm && h < 12) h += 12;
-                if (isAm && h == 12) h = 0;
-                targetHour = h;
+                var isPm = rangeMatch.Groups[5].Value.Equals("pm", StringComparison.OrdinalIgnoreCase);
+                if (isPm && startH < 12) startH += 12;
+                targetHour = startH;
                 detectedTime = true;
             }
-            if (timeMatch.Groups[2].Success && int.TryParse(timeMatch.Groups[2].Value, out var m))
+        }
+        else
+        {
+            var timeMatch = System.Text.RegularExpressions.Regex.Match(input, @"(\d{1,2})(?:[:.](\d{2}))?\s*(am|pm)?", System.Text.RegularExpressions.RegexOptions.IgnoreCase);
+            if (timeMatch.Success)
             {
-                targetMinute = m;
+                if (int.TryParse(timeMatch.Groups[1].Value, out var h))
+                {
+                    var isPm = timeMatch.Groups[3].Value.Equals("pm", StringComparison.OrdinalIgnoreCase);
+                    var isAm = timeMatch.Groups[3].Value.Equals("am", StringComparison.OrdinalIgnoreCase);
+                    if (!isPm && !isAm)
+                    {
+                        if (h >= 1 && h <= 5) isPm = true;
+                        if (h >= 7 && h <= 11) isAm = true;
+                    }
+                    if (isPm && h < 12) h += 12;
+                    if (isAm && h == 12) h = 0;
+                    targetHour = h;
+                    detectedTime = true;
+                }
+                if (timeMatch.Groups[2].Success && int.TryParse(timeMatch.Groups[2].Value, out var m))
+                {
+                    targetMinute = m;
+                }
             }
-        }
-        else if (lower.Contains("morning"))
-        {
-            targetHour = 10;
-            detectedTime = true;
-        }
-        else if (lower.Contains("afternoon"))
-        {
-            targetHour = 14;
-            detectedTime = true;
+            else if (lower.Contains("morning"))
+            {
+                targetHour = 10;
+                detectedTime = true;
+            }
+            else if (lower.Contains("afternoon"))
+            {
+                targetHour = 14;
+                detectedTime = true;
+            }
         }
 
         return (targetDate, targetHour, targetMinute, detectedTime);
