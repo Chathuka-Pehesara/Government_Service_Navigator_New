@@ -1,6 +1,7 @@
 using Government_Service_Navigator.Backend.DTOs.Requests;
 using Government_Service_Navigator.Backend.DTOs.Responses;
 using Government_Service_Navigator.Backend.Services.Interfaces;
+using Government_Service_Navigator.Backend.Validation;
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
 using System.Security.Claims;
@@ -138,6 +139,9 @@ namespace Government_Service_Navigator.Backend.Controllers
         public async Task<IActionResult> Reject(int id, [FromBody] RefundDecisionDto dto)
         {
             if (!await CanManageAsync(id)) return NotFound();
+            // The rejection email shows this note as the reason
+            if (string.IsNullOrWhiteSpace(dto.Note))
+                return BadRequest(ValidationError.Body("Give a reason for rejecting the refund.", "note"));
             var email = GetUserEmail();
             try
             {

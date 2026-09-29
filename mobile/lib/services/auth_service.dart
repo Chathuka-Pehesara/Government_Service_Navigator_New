@@ -36,7 +36,7 @@ class AuthService {
       return AuthResult(
         success: data['success'] == true,
         token: data['token'],
-        errorMessage: data['errorMessage'],
+        errorMessage: data['errorMessage'] ?? data['message'],
         user: data['user'],
       );
     } catch (e, stackTrace) {
@@ -76,7 +76,7 @@ class AuthService {
       return AuthResult(
         success: data['success'] == true,
         token: data['token'],
-        errorMessage: data['errorMessage'],
+        errorMessage: data['errorMessage'] ?? data['message'],
         user: data['user'],
       );
     } catch (e, stackTrace) {

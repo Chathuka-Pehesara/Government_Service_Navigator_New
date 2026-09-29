@@ -5,6 +5,7 @@ using Microsoft.AspNetCore.Mvc;
 using Microsoft.EntityFrameworkCore;
 using Government_Service_Navigator.Backend.Data.Context;
 using System.ComponentModel.DataAnnotations;
+using Government_Service_Navigator.Backend.Validation;
 
 namespace Government_Service_Navigator.Backend.Controllers
 {
@@ -342,14 +343,28 @@ namespace Government_Service_Navigator.Backend.Controllers
             return Ok(bookings);
         }
 
+        // Another slot of the same department on the same day whose hours overlap [start, end)
+        private async Task<string?> FindOverlappingSlotAsync(string department, int dayOfWeek, string start, string end, int? excludeId)
+        {
+            return await _context.Database.SqlQueryRaw<string>(@"
+                SELECT SUBSTRING(CAST(""StartTime"" AS varchar) FROM 1 FOR 5) || ' - ' || SUBSTRING(CAST(""EndTime"" AS varchar) FROM 1 FOR 5) AS ""Value""
+                FROM ""CollectionTimeSlots""
+                WHERE LOWER(""DepartmentName"") = LOWER({0}) AND ""DayOfWeek"" = {1}
+                  AND ""StartTime"" < {3}::time AND ""EndTime"" > {2}::time
+                  AND ""Id"" <> {4}
+                LIMIT 1", department.Trim(), dayOfWeek, start, end, excludeId ?? 0)
+                .FirstOrDefaultAsync();
+        }
+
         [HttpPost]
         public async Task<IActionResult> CreateSlot([FromBody] CollectionTimeSlotDto dto)
         {
-            if (dto.DayOfWeek < 1 || dto.DayOfWeek > 6)
-                return BadRequest("DayOfWeek must be between 1 (Monday) and 6 (Saturday). Sundays are holidays.");
-
             if (string.IsNullOrWhiteSpace(dto.DepartmentName))
-                return BadRequest("DepartmentName is required for collection slots.");
+                return BadRequest(ValidationError.Body("Department is required for collection slots.", "departmentName"));
+
+            var overlap = await FindOverlappingSlotAsync(dto.DepartmentName, dto.DayOfWeek, dto.StartTime!, dto.EndTime!, null);
+            if (overlap != null)
+                return BadRequest(ValidationError.Body($"This time overlaps the existing {overlap} slot on the same day.", "startTime"));
 
             // ::time safely casts the string payload directly into a PostgreSQL time object
             var sql = @"
@@ -365,8 +380,17 @@ namespace Government_Service_Navigator.Backend.Controllers
         [HttpPut("{id}")]
         public async Task<IActionResult> UpdateSlot(int id, [FromBody] CollectionTimeSlotDto dto)
         {
-            if (dto.DayOfWeek < 1 || dto.DayOfWeek > 6)
-                return BadRequest("DayOfWeek must be between 1 (Monday) and 6 (Saturday). Sundays are holidays.");
+            // An update may leave the department out, so check overlaps against the slot's stored department
+            var department = string.IsNullOrWhiteSpace(dto.DepartmentName)
+                ? await _context.Database.SqlQueryRaw<string>(
+                    @"SELECT ""DepartmentName"" AS ""Value"" FROM ""CollectionTimeSlots"" WHERE ""Id"" = {0}", id).FirstOrDefaultAsync()
+                : dto.DepartmentName;
+            if (department == null)
+                return NotFound(ValidationError.Body("Time slot not found."));
+
+            var overlap = await FindOverlappingSlotAsync(department, dto.DayOfWeek, dto.StartTime!, dto.EndTime!, id);
+            if (overlap != null)
+                return BadRequest(ValidationError.Body($"This time overlaps the existing {overlap} slot on the same day.", "startTime"));
 
             var sql = @"
                 UPDATE ""CollectionTimeSlots"" 
@@ -421,15 +445,46 @@ namespace Government_Service_Navigator.Backend.Controllers
         public bool IsActive { get; set; }
     }
 
-    public class CollectionTimeSlotDto
+    public class CollectionTimeSlotDto : IValidatableObject
     {
+        // Counters open no earlier than 06:00 and close by 20:00; a slot is at least 15 minutes
+        public static readonly TimeSpan EarliestStart = new(6, 0, 0);
+        public static readonly TimeSpan LatestEnd = new(20, 0, 0);
+        public const int MinMinutes = 15;
+
+        [Range(1, int.MaxValue, ErrorMessage = "Department id must be a positive number.")]
         public int? DepartmentId { get; set; }
+
+        [MaxLength(150, ErrorMessage = "Department name must be at most 150 characters.")]
         public string? DepartmentName { get; set; }
-        [Range(1, 6)]
+
+        [Range(1, 6, ErrorMessage = "Day must be Monday to Saturday. Sundays are holidays.")]
         public int DayOfWeek { get; set; }
+
+        [Required(ErrorMessage = "Start time is required.")]
+        [TimeOfDay]
         public string? StartTime { get; set; }
+
+        [Required(ErrorMessage = "End time is required.")]
+        [TimeOfDay]
         public string? EndTime { get; set; }
+
+        [Range(1, 500, ErrorMessage = "Capacity must be between 1 and 500.")]
         public int MaxCapacity { get; set; } = 5;
+
         public bool IsActive { get; set; } = true;
+
+        public IEnumerable<ValidationResult> Validate(ValidationContext validationContext)
+        {
+            if (!TimeSpan.TryParse(StartTime, out var start) || !TimeSpan.TryParse(EndTime, out var end)) yield break;
+
+            if (end <= start)
+                yield return new ValidationResult("End time must be after the start time.", new[] { nameof(EndTime) });
+            else if ((end - start).TotalMinutes < MinMinutes)
+                yield return new ValidationResult($"A slot must be at least {MinMinutes} minutes long.", new[] { nameof(EndTime) });
+
+            if (start < EarliestStart || end > LatestEnd)
+                yield return new ValidationResult("Slots must be between 06:00 and 20:00.", new[] { nameof(StartTime) });
+        }
     }
 }

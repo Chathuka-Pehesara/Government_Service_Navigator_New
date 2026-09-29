@@ -5,6 +5,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:http/http.dart' as http;
 import '../config/app_config.dart';
 import '../providers/session_provider.dart';
+import '../utils/validators.dart';
 import '../theme/app_colors.dart';
 import 'post_service_form_screen.dart';
 
@@ -75,10 +76,14 @@ class _BookingOptionsScreenState extends ConsumerState<BookingOptionsScreen> {
 
   Future<void> _bookAppointment([String? overrideTime]) async {
     final timeToBook = (overrideTime ?? _timeController.text).trim();
-    if (timeToBook.isEmpty) {
+    // Same limits as the backend's AppointmentBookingRequestDto
+    final timeError = timeToBook.isEmpty
+        ? 'Please enter your preferred appointment day and time.'
+        : Validators.text(timeToBook, field: 'Preferred time', min: 2, max: 200);
+    if (timeError != null) {
       ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(
-          content: Text('Please enter your preferred appointment time.'),
+        SnackBar(
+          content: Text(timeError),
           behavior: SnackBarBehavior.floating,
         ),
       );
@@ -322,6 +327,7 @@ class _BookingOptionsScreenState extends ConsumerState<BookingOptionsScreen> {
             const SizedBox(height: 6),
             TextField(
               controller: _timeController,
+              maxLength: 200,
               decoration: InputDecoration(
                 hintText: 'e.g., Tomorrow at 2:30 PM, Monday 10am, or Friday afternoon...',
                 filled: true,

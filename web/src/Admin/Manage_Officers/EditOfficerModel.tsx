@@ -8,6 +8,7 @@ import {
   InlineNotification
 } from "@carbon/react";
 import { DEPARTMENTS } from "../../constants/departments";
+import { hasErrors, parseApiError, v, validateForm } from "../../utils/validation";
 
 interface Officer {
   id: string;
@@ -40,6 +41,7 @@ function getStoredOfficerUser(): { department?: string; role?: string } {
 export default function EditOfficerModal({ isOpen, onClose, onSuccess, officer }: EditOfficerModalProps) {
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [formError, setFormError] = useState<string | null>(null);
+  const [fieldErrors, setFieldErrors] = useState<Partial<Record<"fullName" | "department" | "role", string>>>({});
 
   const [currentUser] = useState(getStoredOfficerUser);
   const isDepartmentAdmin = (currentUser.role || "").toLowerCase().includes("admin") && !!currentUser.department;
@@ -66,6 +68,14 @@ export default function EditOfficerModal({ isOpen, onClose, onSuccess, officer }
   const handleSubmit = async () => {
     if (!officer) return;
     setFormError(null);
+    // Same rules as the backend's UpdateOfficerRequest
+    const errors = validateForm({
+      fullName: [formData.fullName, v.personName("Full name")],
+      department: [formData.department, v.required("Department")],
+      role: [formData.role, v.required("Role")],
+    });
+    setFieldErrors(errors);
+    if (hasErrors(errors)) return;
     setIsSubmitting(true);
 
     try {
@@ -80,8 +90,13 @@ export default function EditOfficerModal({ isOpen, onClose, onSuccess, officer }
         onSuccess(); // Refresh table
         onClose(); // Close modal
       } else {
-        const errorData = await response.json();
-        setFormError(errorData.message || "Failed to update officer profile.");
+        const body = await response.text();
+        try {
+          setFieldErrors(JSON.parse(body)?.fields ?? {});
+        } catch {
+          // not JSON
+        }
+        setFormError(parseApiError(body, "Failed to update officer profile."));
       }
     } catch {
       setFormError("Network error. Could not connect to the server.");
@@ -98,7 +113,7 @@ export default function EditOfficerModal({ isOpen, onClose, onSuccess, officer }
       modalHeading="Edit Officer Profile"
       primaryButtonText={isSubmitting ? "Saving..." : "Save Changes"}
       secondaryButtonText="Cancel"
-      primaryButtonDisabled={isSubmitting || !formData.fullName || !formData.department}
+      primaryButtonDisabled={isSubmitting}
     >
       <p style={{ marginBottom: '1.5rem', color: '#525252' }}>
         Update the details for <strong>{officer?.email}</strong>.
@@ -115,6 +130,9 @@ export default function EditOfficerModal({ isOpen, onClose, onSuccess, officer }
           value={formData.fullName}
           onChange={(e) => setFormData({ ...formData, fullName: e.target.value })}
           disabled={isSubmitting}
+          maxLength={100}
+          invalid={!!fieldErrors.fullName}
+          invalidText={fieldErrors.fullName}
         />
         <Select
           id="edit-department"
@@ -128,6 +146,8 @@ export default function EditOfficerModal({ isOpen, onClose, onSuccess, officer }
             }));
           }}
           disabled={isSubmitting || isDepartmentAdmin}
+          invalid={!!fieldErrors.department}
+          invalidText={fieldErrors.department}
         >
           <SelectItem value="" text="Choose a department" />
           {DEPARTMENTS.map((dept) => (

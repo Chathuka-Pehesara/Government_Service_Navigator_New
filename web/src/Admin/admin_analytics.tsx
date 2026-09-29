@@ -1,4 +1,5 @@
 import "@carbon/styles/css/styles.css";
+import { v } from "../utils/validation";
 import { useState, useEffect, useCallback } from "react";
 import CurrentUserBadge from "../components/CurrentUserBadge";
 import { getStoredUser, getAdminOverviewHref } from "../utils/currentUser";
@@ -173,6 +174,8 @@ export default function AdminAnalytics() {
   // ── Save snapshot modal ────────────────────────────────────────────────────
   const [saveModalOpen, setSaveModalOpen] = useState(false);
   const [snapshotTitle, setSnapshotTitle] = useState("");
+  const [titleError, setTitleError] = useState<string | null>(null);
+  const [yearError, setYearError] = useState<string | null>(null);
   const [saving, setSaving] = useState(false);
 
   // ── Delete confirmation ────────────────────────────────────────────────────
@@ -213,6 +216,9 @@ export default function AdminAnalytics() {
         const [yr, mo] = monthInput.split("-").map(Number);
         result = await getMonthlyAnalytics(yr, mo);
       } else {
+        const yearProblem = v.integer("Year", 2000, new Date().getFullYear())(yearInput);
+        setYearError(yearProblem);
+        if (yearProblem) return;
         result = await getYearlyAnalytics(parseInt(yearInput, 10));
       }
       setStats(result);
@@ -253,7 +259,11 @@ export default function AdminAnalytics() {
 
   // ── Save snapshot ──────────────────────────────────────────────────────────
   async function handleSaveSnapshot() {
-    if (!stats || !snapshotTitle.trim()) return;
+    if (!stats) return;
+    // Same rule as the backend's SaveReportSnapshotDto
+    const problem = v.text("Snapshot title", { min: 3, max: 200 })(snapshotTitle);
+    setTitleError(problem);
+    if (problem) return;
     setSaving(true);
     setSnapsBanner(null);
     try {
@@ -448,9 +458,11 @@ export default function AdminAnalytics() {
                     labelText="Year"
                     value={yearInput}
                     min="2000"
-                    max="2099"
+                    max={String(new Date().getFullYear())}
                     onChange={(e) => setYearInput(e.target.value)}
                     style={{ maxWidth: "120px" }}
+                    invalid={!!yearError}
+                    invalidText={yearError ?? undefined}
                   />
                 )}
                 <Button kind="secondary" size="md" onClick={fetchStats} disabled={statsLoading}>
@@ -624,6 +636,9 @@ export default function AdminAnalytics() {
               placeholder="e.g. September 2026 Weekly Summary"
               value={snapshotTitle}
               onChange={(e) => setSnapshotTitle(e.target.value)}
+              maxLength={200}
+              invalid={!!titleError}
+              invalidText={titleError ?? undefined}
             />
           </Modal>
 

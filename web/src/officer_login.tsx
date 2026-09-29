@@ -11,25 +11,26 @@ import {
   Stack
 } from "@carbon/react";
 import { getDepartmentSlug } from "./constants/departments";
+import { hasErrors, v, validateForm } from "./utils/validation";
 
 export default function OfficerLoginPage() {
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
   const [isLoading, setIsLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [fieldErrors, setFieldErrors] = useState<{ email?: string; password?: string }>({});
 
   async function handleSubmit(e: FormEvent) {
     e.preventDefault();
     setError(null);
 
-    if (!email.includes("@")) {
-      setError("Enter a valid email address.");
-      return;
-    }
-    if (password.length < 6) {
-      setError("Password must be at least 6 characters.");
-      return;
-    }
+    // Presence only for the password: accounts created before the strength rule must still sign in
+    const errors = validateForm({
+      email: [email, v.email()],
+      password: [password, v.loginPassword()],
+    });
+    setFieldErrors(errors);
+    if (hasErrors(errors)) return;
 
     setIsLoading(true);
     try {
@@ -147,6 +148,9 @@ export default function OfficerLoginPage() {
                 value={email}
                 onChange={(e) => setEmail(e.target.value)}
                 disabled={isLoading}
+                maxLength={254}
+                invalid={!!fieldErrors.email}
+                invalidText={fieldErrors.email}
               />
 
               <PasswordInput
@@ -156,6 +160,9 @@ export default function OfficerLoginPage() {
                 value={password}
                 onChange={(e) => setPassword(e.target.value)}
                 disabled={isLoading}
+                maxLength={128}
+                invalid={!!fieldErrors.password}
+                invalidText={fieldErrors.password}
               />
 
               {error && (

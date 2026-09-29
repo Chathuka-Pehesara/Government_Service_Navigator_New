@@ -7,7 +7,9 @@ using Government_Service_Navigator.AgenticAi.State;
 using Government_Service_Navigator.AgenticAi.Tools.PrefillApplication;
 using Government_Service_Navigator.Backend.Data.Context;
 using Government_Service_Navigator.Backend.Models.Entities;
+using Government_Service_Navigator.Backend.Validation;
 using Microsoft.AspNetCore.Mvc;
+using System.ComponentModel.DataAnnotations;
 using Microsoft.EntityFrameworkCore;
 using System.Data;
 using System.Text.Json;
@@ -550,15 +552,42 @@ public class ActionAgentController : ControllerBase
     }
 }
 
-public class AppointmentBookingRequestDto
+public class AppointmentBookingRequestDto : IValidatableObject
 {
+    [Required(ErrorMessage = "Application id is required.")]
+    [RegularExpression(@"^(?i:APP-)?[0-9]{1,10}$", ErrorMessage = "Application id must look like APP-1234.")]
     public string ApplicationId { get; set; } = string.Empty;
+
+    [Required(ErrorMessage = "Service name is required.")]
+    [MaxLength(200, ErrorMessage = "Service name must be at most 200 characters.")]
     public string ServiceName { get; set; } = string.Empty;
+
+    // Empty or the "CITIZEN" placeholder means "work it out" (ResolveCitizenNicAsync)
     public string? CitizenNic { get; set; } = "CITIZEN";
+
+    [Required(ErrorMessage = "Enter your preferred day and time.")]
+    [StringLength(200, MinimumLength = 2, ErrorMessage = "Preferred time must be 2-200 characters.")]
+    [PlainText]
     public string PreferredTimeInput { get; set; } = string.Empty;
+
+    [MaxLength(150, ErrorMessage = "Department name must be at most 150 characters.")]
     public string? DepartmentName { get; set; }
+
+    [Range(1, int.MaxValue, ErrorMessage = "Service id must be a positive number.")]
     public int? ServiceProcedureId { get; set; }
+
+    [Range(1, 50, ErrorMessage = "Stage must be between 1 and 50.")]
     public int? Stage { get; set; }
+
+    public IEnumerable<ValidationResult> Validate(ValidationContext validationContext)
+    {
+        if (!string.IsNullOrWhiteSpace(CitizenNic)
+            && !CitizenNic.Equals("CITIZEN", StringComparison.OrdinalIgnoreCase)
+            && SriLankaNic.Validate(CitizenNic) is { } error)
+        {
+            yield return new ValidationResult(error, new[] { nameof(CitizenNic) });
+        }
+    }
 }
 
 public class ActionAgentQueryDto
@@ -569,8 +598,10 @@ public class ActionAgentQueryDto
     public string CitizenNic { get; set; } = string.Empty;
     public string FullName { get; set; } = string.Empty;
     public string Email { get; set; } = string.Empty;
+    [Range(0, 120, ErrorMessage = "Age must be between 0 and 120.")]
     public int Age { get; set; }
     public string CitizenshipStatus { get; set; } = "Sri Lankan";
+    [Range(0, 1_000_000_000, ErrorMessage = "Annual income cannot be negative.")]
     public decimal AnnualIncome { get; set; }
     public string EmploymentStatus { get; set; } = string.Empty;
     public List<string>? ProvidedDocuments { get; set; } = new();

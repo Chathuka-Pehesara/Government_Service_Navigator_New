@@ -3,6 +3,7 @@ import { useState, useEffect } from "react";
 import CurrentUserBadge from "../components/CurrentUserBadge";
 import { getStoredUser, getAdminOverviewHref, isDeptAdmin, isSystemAdmin } from "../utils/currentUser";
 import { getDepartmentSlug, DEPARTMENTS } from "../constants/departments";
+import { hasErrors, parseApiError, v, validateForm } from "../utils/validation";
 import {
   Header,
   HeaderContainer,
@@ -122,6 +123,7 @@ export default function ManageCollectionSlots() {
   const [startTime, setStartTime] = useState<string>("09:00");
   const [endTime, setEndTime] = useState<string>("11:30");
   const [maxCapacity, setMaxCapacity] = useState<string>("15");
+  const [slotErrors, setSlotErrors] = useState<Partial<Record<"startTime" | "endTime" | "maxCapacity", string>>>({});
   const [isActive, setIsActive] = useState<boolean>(true);
 
   useEffect(() => {
@@ -140,10 +142,10 @@ export default function ManageCollectionSlots() {
   const parseSafeError = async (res: Response, defaultMessage: string) => {
     try {
       const text = await res.text();
-      if (text.includes("System.Runtime") || text.includes("Npgsql.") || text.length > 200) {
+      if (text.includes("System.Runtime") || text.includes("Npgsql.")) {
         return "An internal server error occurred (500). Please check backend logs.";
       }
-      return text || defaultMessage;
+      return parseApiError(text, defaultMessage);
     } catch {
       return defaultMessage;
     }
@@ -212,10 +214,49 @@ export default function ManageCollectionSlots() {
       setMaxCapacity("15");
       setIsActive(true);
     }
+    setSlotErrors({});
     setIsModalOpen(true);
   };
 
+  // "HH:mm" -> minutes since midnight
+  const toMinutes = (t: string) => {
+    const [h, m] = t.split(":").map(Number);
+    return h * 60 + m;
+  };
+
+  // Same rules as the backend's CollectionTimeSlotDto, plus the overlap check it makes on save
+  const validateSlot = () => {
+    const errors = validateForm({
+      startTime: [startTime, v.time("Start time")],
+      endTime: [endTime, v.time("End time")],
+      maxCapacity: [maxCapacity, v.integer("Capacity", 1, 500)],
+    });
+    if (!errors.startTime && !errors.endTime) {
+      const start = toMinutes(startTime);
+      const end = toMinutes(endTime);
+      if (end <= start) errors.endTime = "End time must be after the start time.";
+      else if (end - start < 15) errors.endTime = "A slot must be at least 15 minutes long.";
+      else if (start < 6 * 60 || end > 20 * 60) errors.startTime = "Slots must be between 06:00 and 20:00.";
+      else {
+        const clash = slots.find(
+          (s) =>
+            s.id !== editingSlot?.id &&
+            s.dayOfWeek === Number(dayOfWeek) &&
+            (s.departmentName || "").toLowerCase() === slotDepartment.toLowerCase() &&
+            toMinutes(s.startTime.substring(0, 5)) < end &&
+            toMinutes(s.endTime.substring(0, 5)) > start
+        );
+        if (clash) {
+          errors.startTime = `Overlaps the existing ${clash.startTime.substring(0, 5)} - ${clash.endTime.substring(0, 5)} slot on this day.`;
+        }
+      }
+    }
+    setSlotErrors(errors);
+    return !hasErrors(errors);
+  };
+
   const handleSave = async () => {
+    if (!validateSlot()) return;
     const payload = {
       departmentName: slotDepartment,
       dayOfWeek: Number(dayOfWeek),
@@ -716,6 +757,8 @@ export default function ManageCollectionSlots() {
                   value={startTime}
                   onChange={(e) => setStartTime(e.target.value)}
                   style={{ flex: 1 }}
+                  invalid={!!slotErrors.startTime}
+                  invalidText={slotErrors.startTime}
                 />
                 <TextInput
                   id="end-time"
@@ -724,6 +767,8 @@ export default function ManageCollectionSlots() {
                   value={endTime}
                   onChange={(e) => setEndTime(e.target.value)}
                   style={{ flex: 1 }}
+                  invalid={!!slotErrors.endTime}
+                  invalidText={slotErrors.endTime}
                 />
               </div>
 
@@ -731,10 +776,13 @@ export default function ManageCollectionSlots() {
                 id="max-capacity"
                 type="number"
                 min={1}
+                max={500}
                 labelText="Maximum Counter Capacity"
-                helperText="Maximum number of citizen collection appointments permitted for this counter slot."
+                helperText="Maximum number of citizen collection appointments permitted for this counter slot (1-500)."
                 value={maxCapacity}
                 onChange={(e) => setMaxCapacity(e.target.value)}
+                invalid={!!slotErrors.maxCapacity}
+                invalidText={slotErrors.maxCapacity}
               />
 
               <Toggle

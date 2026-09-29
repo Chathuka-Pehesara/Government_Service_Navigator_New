@@ -5,6 +5,7 @@ import {
   Stack,
   InlineNotification
 } from "@carbon/react";
+import { parseApiError, v } from "../../utils/validation";
 
 interface ResetPasswordModalProps {
   isOpen: boolean;
@@ -17,11 +18,16 @@ export default function ResetPasswordModal({ isOpen, onClose, officer }: ResetPa
   const [formError, setFormError] = useState<string | null>(null);
   const [successMsg, setSuccessMsg] = useState<string | null>(null);
   const [newPassword, setNewPassword] = useState("");
+  const [passwordError, setPasswordError] = useState<string | null>(null);
 
   const handleSubmit = async () => {
     if (!officer) return;
     setFormError(null);
     setSuccessMsg(null);
+    // Same rule as the backend's ResetPasswordRequest
+    const error = v.strongPassword()(newPassword);
+    setPasswordError(error);
+    if (error) return;
     setIsSubmitting(true);
 
     try {
@@ -39,14 +45,7 @@ export default function ResetPasswordModal({ isOpen, onClose, officer }: ResetPa
           setSuccessMsg(null);
         }, 1500);
       } else {
-        let errorMessage = "Failed to reset password.";
-        try {
-          const errorData = await response.json();
-          errorMessage = errorData.message || (errorData.errors && JSON.stringify(errorData.errors)) || errorMessage;
-        } catch {
-          errorMessage = `Server Error: ${response.status} ${response.statusText}. Check backend console.`;
-        }
-        setFormError(errorMessage);
+        setFormError(parseApiError(await response.text(), `Failed to reset password (${response.status}).`));
       }
     } catch (error) {
       const message = error instanceof Error ? error.message : String(error);
@@ -68,7 +67,7 @@ export default function ResetPasswordModal({ isOpen, onClose, officer }: ResetPa
       modalHeading="Reset Officer Password"
       primaryButtonText={isSubmitting ? "Resetting..." : "Reset Password"}
       secondaryButtonText="Cancel"
-      primaryButtonDisabled={isSubmitting || newPassword.length < 6 || !!successMsg}
+      primaryButtonDisabled={isSubmitting || !newPassword || !!successMsg}
     >
       <p style={{ marginBottom: '1.5rem', color: '#525252' }}>
         You are overriding the password for <strong>{officer?.name}</strong>. They will be logged out of all active sessions.
@@ -85,10 +84,14 @@ export default function ResetPasswordModal({ isOpen, onClose, officer }: ResetPa
         <PasswordInput
           id="new-password"
           labelText="New Temporary Password"
-          placeholder="Enter at least 6 characters"
+          placeholder="Create a strong password"
+          helperText="At least 8 characters with an uppercase letter, a lowercase letter and a number."
           value={newPassword}
           onChange={(e) => setNewPassword(e.target.value)}
           disabled={isSubmitting || !!successMsg}
+          maxLength={64}
+          invalid={!!passwordError}
+          invalidText={passwordError ?? undefined}
         />
       </Stack>
     </Modal>

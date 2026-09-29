@@ -10,6 +10,7 @@ using Government_Service_Navigator.AgenticAi.Schemas;
 using Government_Service_Navigator.AgenticAi.State;
 using Government_Service_Navigator.AgenticAi.Tools.CheckDuplicateApplication;
 using Government_Service_Navigator.Backend.Data.Context;
+using DA = System.ComponentModel.DataAnnotations;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.EntityFrameworkCore;
 
@@ -341,9 +342,13 @@ public class ValidateDraftDto
     public string? ServiceName { get; set; }
     public string? CitizenNic { get; set; }
     public string? CitizenName { get; set; }
+    [DA.Range(0, 120, ErrorMessage = "Age must be between 0 and 120.")]
     public int CitizenAge { get; set; }
+    [DA.Range(0, 1_000_000_000, ErrorMessage = "Income cannot be negative.")]
     public decimal CitizenIncome { get; set; }
+    [DA.Range(0, 10_000_000, ErrorMessage = "Fee must be between 0 and 10,000,000.")]
     public decimal CalculatedFee { get; set; }
+    [DA.Range(1, 50, ErrorMessage = "Stage must be between 1 and 50.")]
     public int Stage { get; set; } = 1;
     public Dictionary<string, string>? FormFields { get; set; }
     public List<string>? AttachedDocumentNames { get; set; }
@@ -358,7 +363,9 @@ public class DraftDecisionOrderRequestDto
     public string? CitizenNic { get; set; }
     public string? CitizenName { get; set; }
     public decimal CalculatedFee { get; set; }
+    [DA.AllowedValues("Approval", "RevisionRequired", "Rejection", ErrorMessage = "Determination must be Approval, RevisionRequired or Rejection.")]
     public string DeterminationType { get; set; } = "Approval"; // "Approval", "RevisionRequired", "Rejection"
+    [DA.MaxLength(5000, ErrorMessage = "Officer notes must be at most 5000 characters.")]
     public string? OfficerNotes { get; set; }
     public List<string>? AttachedDocumentNames { get; set; }
 }
@@ -369,6 +376,7 @@ public class DraftRemediationNoticeRequestDto
     public string? ServiceName { get; set; }
     public string? CitizenNic { get; set; }
     public string? CitizenName { get; set; }
+    [DA.MaxLength(100, ErrorMessage = "At most 100 defects can be listed.")]
     public List<string>? Defects { get; set; }
 }
 

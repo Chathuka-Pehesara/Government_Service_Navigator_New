@@ -7,6 +7,7 @@ import '../../models/refund.dart';
 import '../../providers/payment_providers.dart';
 import '../../providers/refund_providers.dart';
 import '../../providers/service_providers.dart';
+import '../../utils/validators.dart';
 import 'refund_detail_screen.dart';
 
 class RefundRequestScreen extends ConsumerStatefulWidget {
@@ -323,12 +324,8 @@ class _RefundRequestScreenState extends ConsumerState<RefundRequestScreen> {
                         ),
                         border: InputBorder.none,
                       ),
-                      validator: (val) {
-                        if (val == null || val.trim().length < 10) {
-                          return 'Reason must be at least 10 characters long';
-                        }
-                        return null;
-                      },
+                      maxLength: 1000,
+                      validator: (val) => Validators.text(val, field: 'Reason', min: 10, max: 1000),
                     ),
                   ),
                 ),

@@ -48,6 +48,37 @@ Tokens are HMAC-SHA256-signed with `JWT_KEY` and expire after **7 days** (hardco
 
 ---
 
+## Validation
+
+Request bodies are validated before a controller runs. Every validation failure is a `400` with one shape, which the mobile app (`service_api_client.dart`, `auth_service.dart`) and the web (`apiFetch`, `parseApiError` in `web/src/utils/validation.ts`) both read:
+
+```json
+{ "message": "all problems in one line", "errors": ["..."], "fields": { "email": "Enter a valid email address..." } }
+```
+
+The rules live in `backend/src/Validation` and are mirrored in `mobile/lib/utils/validators.dart` and `web/src/utils/validation.ts` - change all three together.
+
+| Rule | Accepts |
+|---|---|
+| NIC (`[SriLankaNic]`) | Old format 9 digits + V/X (`881234567V`, year 19YY) or new format 12 digits (`198812345678`). The day-of-year digits must be 001-366 (men) or 501-866 (women), day 060 only in a leap year, and the birth date cannot be in the future |
+| Email (`[Email]`) | `name@domain.tld`, at most 254 characters. Login keeps the looser `[EmailAddress]` so older accounts still sign in |
+| Phone (`[SriLankaPhone]`) | `0XXXXXXXXX`, `+94XXXXXXXXX` or `0094XXXXXXXXX` (spaces and dashes ignored). Department contact numbers also accept hotlines such as `1919` |
+| Password (`[StrongPassword]`) | 8-64 characters with an uppercase letter, a lowercase letter and a number, no spaces. Applies to registration, new officers and password resets - not to login |
+| Name (`[PersonName]`) | 2-100 letters in any script (Sinhala and Tamil included), spaces, dots, apostrophes, hyphens |
+| Money (`[Money]`) | More than 0, at most 10,000,000, at most 2 decimal places. Service fees may be 0 |
+| Free text (`[PlainText]`) | No HTML tags; each field has its own length limit |
+
+Other checks worth knowing:
+
+- Registration rejects a second account with the same NIC or email (email is compared case-insensitively and stored lower-case).
+- Application answers (`submit`, `submit-stage`) must suit the template field: numbers, dates between 1900 and 2100, dropdown answers from the listed options, and text fields whose label mentions NIC, email or phone must hold a valid one (`ApplicationAnswersValidator`). Invalid answers come back as `invalidFields: { label: message }`.
+- Templates: labels must be unique among input fields (answers are stored by label) and dropdowns need at least one option.
+- Collection slots: 06:00-20:00, end after start, at least 15 minutes, capacity 1-500, and no overlap with another slot of the same department on the same day.
+- A reason is required when rejecting a refund, rejecting a manual payment, or rejecting / sending back an application.
+- The service catalog endpoints bind EF entities directly, so they are checked in code (`ServiceCatalogValidator`) instead of with attributes, which would change the database model.
+
+---
+
 ## Auth - `AuthController`, `api/auth`
 
 | Method | Path | Auth | Body → Response |

@@ -167,6 +167,36 @@ builder.Services.AddScoped<IAuthService, AuthService>();
 builder.Services.AddControllers().AddJsonOptions(options =>
 {
     options.JsonSerializerOptions.ReferenceHandler = System.Text.Json.Serialization.ReferenceHandler.IgnoreCycles;
+})
+.ConfigureApiBehaviorOptions(options =>
+{
+    // One shape for every validation failure, which the mobile and web clients both read:
+    // { message: "all errors in one line", errors: ["..."], fields: { "email": "..." } }
+    options.InvalidModelStateResponseFactory = context =>
+    {
+        var fields = new Dictionary<string, string>();
+        var errors = new List<string>();
+        foreach (var (key, entry) in context.ModelState)
+        {
+            // "$.amount" means the JSON value for amount couldn't be read; "$" or "" is the whole body
+            var isJsonError = key.StartsWith('$');
+            var field = key.TrimStart('$', '.');
+            foreach (var error in entry.Errors)
+            {
+                var message = isJsonError || error.Exception != null
+                    ? (field.Length == 0 ? "The request body is missing or is not valid JSON." : $"{field} has an invalid value.")
+                    : error.ErrorMessage;
+                if (!errors.Contains(message)) errors.Add(message);
+                if (field.Length > 0) fields.TryAdd(char.ToLowerInvariant(field[0]) + field[1..], message);
+            }
+        }
+        return new Microsoft.AspNetCore.Mvc.BadRequestObjectResult(new
+        {
+            message = string.Join(" ", errors),
+            errors,
+            fields
+        });
+    };
 });
 builder.Services.AddScoped<IAdminService, AdminService>();
 builder.Services.AddScoped<IVerificationService, VerificationService>();

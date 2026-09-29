@@ -58,6 +58,8 @@ import {
   View,
   CheckmarkFilled,
 } from "@carbon/icons-react";
+import { parseApiError } from "../../utils/validation";
+import { documentError, feeError } from "./serviceCatalogValidation";
 import type { Department } from "../Department_Management/types";
 
 const docHeaders = [
@@ -646,7 +648,12 @@ export default function ServiceConfigurationTabs() {
   };
 
   const handleSaveDocument = async () => {
-    if (!docForm.documentName) return;
+    const otherNames = documents.filter((d) => !isDocEditMode || d.id !== currentDocId).map((d) => d.documentName);
+    const problem = documentError(docForm, otherNames);
+    if (problem) {
+      setNotification({ type: "error", title: "Check the document", subtitle: problem });
+      return;
+    }
 
     let updatedDocs = [...documents];
     if (isDocEditMode) {
@@ -699,11 +706,10 @@ export default function ServiceConfigurationTabs() {
           subtitle: "Document requirements updated successfully!",
         });
       } else {
-        const errData = await response.json();
         setNotification({
           type: "error",
           title: "Database Error",
-          subtitle: errData.message || "Failed to save documents.",
+          subtitle: parseApiError(await response.text(), "Failed to save documents."),
         });
       }
     } catch (error) {
@@ -757,6 +763,16 @@ export default function ServiceConfigurationTabs() {
   };
 
   const handleSaveFee = async () => {
+    const effective = new Date(feeForm.effectiveDate);
+    const problem =
+      feeError(feeForm) ??
+      (isNaN(effective.getTime()) || effective.getFullYear() < 2000 || effective.getFullYear() > 2100
+        ? "Effective date must be a valid date."
+        : null);
+    if (problem) {
+      setNotification({ type: "error", title: "Check the fee", subtitle: problem });
+      return;
+    }
     let updatedFees = [...fees];
     if (isFeeEditMode) {
       updatedFees = updatedFees.map((f) =>
@@ -809,6 +825,12 @@ export default function ServiceConfigurationTabs() {
           type: "success",
           title: "Success",
           subtitle: "Fee schedules updated successfully!",
+        });
+      } else {
+        setNotification({
+          type: "error",
+          title: "Error",
+          subtitle: parseApiError(await response.text(), "Failed to save the fee schedule."),
         });
       }
     } catch (error) {

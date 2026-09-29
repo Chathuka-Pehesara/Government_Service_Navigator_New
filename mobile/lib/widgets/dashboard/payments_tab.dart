@@ -19,6 +19,7 @@ import '../../screens/payments/installment_plan_screen.dart';
 import '../../screens/refunds/refund_request_screen.dart';
 import '../../screens/refunds/my_refunds_screen.dart';
 import '../../services/service_api_client.dart';
+import '../../utils/validators.dart';
 
 class PaymentsDashboardTab extends ConsumerStatefulWidget {
   const PaymentsDashboardTab({super.key});
@@ -167,13 +168,14 @@ class _PaymentsDashboardTabState extends ConsumerState<PaymentsDashboardTab> {
             session.user?['citizenNic']?.toString() ??
             '');
 
-    if (amount == null || amount <= 0) {
-      setState(() => _errorMessage = 'Please enter a valid payment amount (> 0).');
-      return;
-    }
-
-    if (nic.isEmpty) {
-      setState(() => _errorMessage = 'Citizen NIC number is required for official financial records.');
+    // Same rules as the backend's DepartmentPaymentDto
+    final problem = Validators.amount(amountText) ??
+        Validators.nic(nic) ??
+        Validators.email(session.email) ??
+        Validators.text(_notesController.text, field: 'Notes', max: 1000, required: false) ??
+        Validators.text(_bankSlipRefController.text, field: 'Transfer reference', max: 200, required: false);
+    if (problem != null || amount == null) {
+      setState(() => _errorMessage = problem ?? 'Please enter a valid payment amount.');
       return;
     }
 
@@ -227,7 +229,7 @@ class _PaymentsDashboardTabState extends ConsumerState<PaymentsDashboardTab> {
         serviceName: _selectedService,
         amount: amount,
         paymentMethod: _selectedMethod == 'Online' ? 'Online' : 'Manual',
-        citizenNic: nic,
+        citizenNic: SriLankaNic.normalize(nic),
         userEmail: session.email,
         citizenName: session.fullName ?? 'Citizen',
         manualSlipUrl: _selectedMethod == 'Bank Transfer' ? slipDetail : null,
@@ -768,7 +770,10 @@ class _PaymentsDashboardTabState extends ConsumerState<PaymentsDashboardTab> {
           const SizedBox(height: 8),
           TextField(
             controller: _nicController,
+            maxLength: 12,
+            textCapitalization: TextCapitalization.characters,
             decoration: InputDecoration(
+              counterText: '',
               prefixIcon: const Icon(CupertinoIcons.person_crop_rectangle, size: 18, color: AppColors.secondaryLabel),
               hintText: 'e.g. 199512345678 or 951234567V',
               hintStyle: const TextStyle(fontSize: 13, color: AppColors.secondaryLabel),
@@ -1012,7 +1017,9 @@ class _PaymentsDashboardTabState extends ConsumerState<PaymentsDashboardTab> {
                   const SizedBox(height: 6),
                   TextField(
                     controller: _bankSlipRefController,
+                    maxLength: 200,
                     decoration: InputDecoration(
+                      counterText: '',
                       prefixIcon: const Icon(CupertinoIcons.doc_text, size: 16, color: AppColors.secondaryLabel),
                       hintText: 'Enter Deposit Slip / Transfer Reference No.',
                       hintStyle: const TextStyle(fontSize: 12, color: AppColors.secondaryLabel),

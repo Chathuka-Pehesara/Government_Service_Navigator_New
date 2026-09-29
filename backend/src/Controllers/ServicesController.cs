@@ -6,6 +6,7 @@ using Government_Service_Navigator.Backend.Models.Entities;
 using Government_Service_Navigator.Backend.DTOs;
 using Government_Service_Navigator.Backend.Data.Context;
 using Government_Service_Navigator.Backend.Services;
+using Government_Service_Navigator.Backend.Validation;
 using Microsoft.Extensions.Caching.Hybrid;
 
 namespace Government_Service_Navigator.Backend.Controllers
@@ -29,6 +30,9 @@ namespace Government_Service_Navigator.Backend.Controllers
 [HttpPost]
 public async Task<IActionResult> CreateService([FromBody] ServiceProcedure service)
 {
+    var problems = ServiceCatalogValidator.Service(service);
+    if (problems.Count > 0) return BadRequest(ValidationError.Body(problems));
+
     try
     {
         var createdService = await _catalogService.CreateServiceAsync(service);
@@ -69,6 +73,9 @@ public async Task<IActionResult> CreateService([FromBody] ServiceProcedure servi
         [HttpPut("{id}/eligibility-rules")]
         public async Task<IActionResult> UpdateEligibilityRules(int id, [FromBody] List<EligibilityRule> rules)
         {
+            var problems = ServiceCatalogValidator.EligibilityRules(rules);
+            if (problems.Count > 0) return BadRequest(ValidationError.Body(problems));
+
             try
             {
                 var updatedService = await _catalogService.UpdateEligibilityRulesAsync(id, rules);
@@ -93,6 +100,9 @@ public async Task<IActionResult> CreateService([FromBody] ServiceProcedure servi
         [HttpPut("{id}")]
         public async Task<IActionResult> UpdateService(int id, [FromBody] ServiceProcedure updatedService)
         {
+            var problems = ServiceCatalogValidator.Service(updatedService);
+            if (problems.Count > 0) return BadRequest(ValidationError.Body(problems));
+
             var service = await _catalogService.UpdateServiceAsync(id, updatedService);
             if (service == null) return NotFound("Service procedure not found.");
 
@@ -119,6 +129,9 @@ public async Task<IActionResult> CreateService([FromBody] ServiceProcedure servi
         [HttpPut("{id}/documents")]
         public async Task<IActionResult> UpdateDocumentRequirements(int id, [FromBody] List<DocumentRequirement> documents)
         {
+            var problems = ServiceCatalogValidator.Documents(documents);
+            if (problems.Count > 0) return BadRequest(ValidationError.Body(problems));
+
             try
             {
                 var updatedService = await _catalogService.UpdateDocumentRequirementsAsync(id, documents);
@@ -144,6 +157,9 @@ public async Task<IActionResult> CreateService([FromBody] ServiceProcedure servi
         [HttpPut("{id}/fees")]
         public async Task<IActionResult> UpdateFeeSchedules(int id, [FromBody] List<FeeSchedule> fees)
         {
+            var problems = ServiceCatalogValidator.Fees(fees);
+            if (problems.Count > 0) return BadRequest(ValidationError.Body(problems));
+
             try
             {
                 var updatedService = await _catalogService.UpdateFeeSchedulesAsync(id, fees);
@@ -272,6 +288,9 @@ public async Task<IActionResult> CreateService([FromBody] ServiceProcedure servi
         [HttpPut("{id}/workflow")]
         public async Task<IActionResult> UpdateWorkflow(int id, [FromBody] UpdateWorkflowRequest request)
         {
+            var problems = ServiceCatalogValidator.Workflow(request.TotalStages, request.WorkflowDepartments);
+            if (problems.Count > 0) return BadRequest(ValidationError.Body(problems));
+
             var updated = await _catalogService.UpdateWorkflowAsync(id, request.TotalStages, request.WorkflowDepartments);
             if (updated == null) return NotFound("Service procedure not found.");
             return Ok(updated);

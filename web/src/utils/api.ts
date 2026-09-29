@@ -3,6 +3,8 @@
 // in the domain-specific API modules below should use `apiFetch` so the auth
 // header is never forgotten.
 
+import { parseApiError } from "./validation";
+
 // Backend origin from VITE_API_URL (see .env.example). Older pages still hardcode
 // http://localhost:5119; new code should use apiFetch or API_BASE_URL instead.
 export const API_BASE_URL: string =
@@ -30,10 +32,16 @@ export function toQuery(params: Record<string, string | number | undefined | nul
 
 export class ApiError extends Error {
   status: number;
-  constructor(status: number, message: string) {
+  // Raw response body, for callers that need more than the message (e.g. { details })
+  body: string;
+  // Field -> message from a backend validation failure ({ fields }), for showing errors inline
+  fields: Record<string, string>;
+  constructor(status: number, message: string, body = "", fields: Record<string, string> = {}) {
     super(message);
     this.status = status;
     this.name = "ApiError";
+    this.body = body;
+    this.fields = fields;
   }
 }
 
@@ -56,14 +64,19 @@ export async function apiFetch<T>(
   const response = await fetch(`${BASE_URL}${path}`, merged);
 
   if (!response.ok) {
-    let message = `HTTP ${response.status}`;
+    let body = "";
     try {
-      const body = await response.text();
-      if (body) message = body;
+      body = await response.text();
     } catch {
-      // ignore parse errors — the status code is sufficient
+      // ignore read errors - the status code is sufficient
     }
-    throw new ApiError(response.status, message);
+    let fields: Record<string, string> = {};
+    try {
+      fields = JSON.parse(body)?.fields ?? {};
+    } catch {
+      // not JSON
+    }
+    throw new ApiError(response.status, parseApiError(body, `HTTP ${response.status}`), body, fields);
   }
 
   // 204 No Content — nothing to parse; callers that expect void type this as Promise<void>

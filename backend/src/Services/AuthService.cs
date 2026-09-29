@@ -12,6 +12,7 @@ using Government_Service_Navigator.Backend.DTOs.Requests;
 using Government_Service_Navigator.Backend.DTOs.Responses;
 using Government_Service_Navigator.Backend.Models.Entities;
 using Government_Service_Navigator.Backend.Services.Interfaces;
+using Government_Service_Navigator.Backend.Validation;
 using BCrypt.Net;
 
 namespace Government_Service_Navigator.Backend.Services
@@ -31,16 +32,25 @@ namespace Government_Service_Navigator.Backend.Services
 
         public async Task<AuthResponse> RegisterAsync(RegisterRequest request)
         {
-            if (await _context.Users.AnyAsync(u => u.Email == request.Email))
+            var email = request.Email.Trim().ToLowerInvariant();
+            var nic = SriLankaNic.Normalize(request.NicNumber);
+
+            if (await _context.Users.AnyAsync(u => u.Email.ToLower() == email))
             {
                 return new AuthResponse { Success = false, ErrorMessage = "User with this email already exists." };
             }
 
+            // One account per citizen: the NIC identifies their applications and bookings
+            if (await _context.Users.AnyAsync(u => u.NicNumber.ToUpper() == nic))
+            {
+                return new AuthResponse { Success = false, ErrorMessage = "An account with this NIC number already exists." };
+            }
+
             var user = new User
             {
-                Email = request.Email,
-                FullName = request.FullName,
-                NicNumber = request.NicNumber,
+                Email = email,
+                FullName = request.FullName.Trim(),
+                NicNumber = nic,
                 PasswordHash = BCrypt.Net.BCrypt.HashPassword(request.Password)
             };
 
@@ -65,7 +75,8 @@ namespace Government_Service_Navigator.Backend.Services
 
         public async Task<AuthResponse> LoginAsync(LoginRequest request)
         {
-            var user = await _context.Users.FirstOrDefaultAsync(u => u.Email == request.Email);
+            var email = request.Email.Trim().ToLowerInvariant();
+            var user = await _context.Users.FirstOrDefaultAsync(u => u.Email.ToLower() == email);
 
             if (user == null || !BCrypt.Net.BCrypt.Verify(request.Password, user.PasswordHash))
             {

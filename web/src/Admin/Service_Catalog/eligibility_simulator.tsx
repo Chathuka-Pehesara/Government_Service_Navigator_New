@@ -38,6 +38,7 @@ import {
   WarningFilled,
   Document,
 } from "@carbon/icons-react";
+import { v } from "../../utils/validation";
 
 interface Service {
   id: number;
@@ -85,6 +86,7 @@ export default function EligibilitySimulator() {
   const [selectedCategoryFilter, setSelectedCategoryFilter] = useState<string>("All");
 
   // Citizen profile test input state
+  const [profileErrors, setProfileErrors] = useState<{ age?: string; citizenship?: string }>({});
   const [profile, setProfile] = useState({
     age: "20",
     citizenship: "Sri Lankan",
@@ -125,6 +127,12 @@ export default function EligibilitySimulator() {
   const handleEvaluate = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!selectedServiceId) return;
+    const errors = {
+      age: v.integer("Age", 0, 120)(profile.age) ?? undefined,
+      citizenship: v.text("Citizenship", { max: 50 })(profile.citizenship) ?? undefined,
+    };
+    setProfileErrors(errors);
+    if (errors.age || errors.citizenship) return;
 
     setIsEvaluating(true);
     setEvaluationResult(null);
@@ -463,9 +471,13 @@ export default function EligibilitySimulator() {
                     labelText="Citizen Age"
                     type="number"
                     value={profile.age}
+                    min={0}
+                    max={120}
                     onChange={(e) =>
                       setProfile({ ...profile, age: e.target.value })
                     }
+                    invalid={!!profileErrors.age}
+                    invalidText={profileErrors.age}
                   />
 
                   <TextInput
@@ -475,6 +487,9 @@ export default function EligibilitySimulator() {
                     onChange={(e) =>
                       setProfile({ ...profile, citizenship: e.target.value })
                     }
+                    maxLength={50}
+                    invalid={!!profileErrors.citizenship}
+                    invalidText={profileErrors.citizenship}
                   />
 
                   <Button

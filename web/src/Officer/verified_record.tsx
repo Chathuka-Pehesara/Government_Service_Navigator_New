@@ -1,4 +1,5 @@
 import '@carbon/styles/css/styles.css';
+import { readApiError, v } from '../utils/validation';
 import { useState } from 'react';
 import { keepPreviousData, useQuery, useQueryClient } from '@tanstack/react-query';
 import { apiFetch, toQuery, type Paged } from '../utils/api';
@@ -134,6 +135,7 @@ export default function VerifiedRecords() {
   const [viewingRecord, setViewingRecord] = useState<any>(null);
   const [editStatus, setEditStatus] = useState('Approved');
   const [editComments, setEditComments] = useState('');
+  const [editError, setEditError] = useState<string | null>(null);
   const [isSaving, setIsSaving] = useState(false);
   const [page, setPage] = useState(1);
   const [pageSize, setPageSize] = useState(25);
@@ -156,6 +158,11 @@ export default function VerifiedRecords() {
 
   const handleSaveEdit = async () => {
     if (!editingRecord) return;
+    // Same rules as the backend's VerificationDecisionRequest: the citizen must be told what to fix
+    const needsReason = editStatus === 'Rejected' || editStatus === 'Revised';
+    const error = v.text('Comments', { min: needsReason ? 5 : 0, max: 2000, required: needsReason })(editComments);
+    setEditError(error);
+    if (error) return;
     setIsSaving(true);
     const token = localStorage.getItem('officerToken');
     try {
@@ -174,10 +181,11 @@ export default function VerifiedRecords() {
         await queryClient.invalidateQueries({ queryKey: queryKeys.tasks });
         setEditingRecord(null);
       } else {
-        console.error('Failed to update');
+        setEditError(await readApiError(response, 'Failed to update the decision.'));
       }
     } catch (e) {
       console.error(e);
+      setEditError('Could not connect to the server.');
     } finally {
       setIsSaving(false);
     }
@@ -424,6 +432,7 @@ export default function VerifiedRecords() {
                                     onClick={() => {
                                       setEditingRecord(row);
                                       setEditStatus(row.cells.find((c: DataCell) => c.info.header === 'status')?.value || 'Approved');
+                                      setEditError(null);
                                       setEditComments((row as unknown as VerifiedRecordRow).comments || '');
                                     }}
                                     style={{ marginRight: '0.5rem' }}
@@ -482,7 +491,7 @@ export default function VerifiedRecords() {
                 onChange={(e) => setEditStatus(e.target.value)}
               >
                 <SelectItem value="Approved" text="Approved" />
-                <SelectItem value="Suspended" text="Suspended" />
+                <SelectItem value="Revised" text="Revision Requested" />
                 <SelectItem value="Rejected" text="Rejected" />
               </Select>
             </div>
@@ -490,8 +499,12 @@ export default function VerifiedRecords() {
               <TextInput
                 id="edit-comments"
                 labelText="Comments/Reasons"
+                helperText="Required when rejecting or requesting a revision."
                 value={editComments}
                 onChange={(e) => setEditComments(e.target.value)}
+                maxLength={2000}
+                invalid={!!editError}
+                invalidText={editError ?? undefined}
               />
             </div>
           </Modal>

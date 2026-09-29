@@ -8,6 +8,7 @@ import '../theme/app_colors.dart';
 import '../widgets/service_roadmap_tracker.dart';
 import 'payments/payment_screen.dart';
 import 'application_form_screen.dart';
+import '../utils/validators.dart';
 
 class VerificationDetailScreen extends ConsumerStatefulWidget {
   /// The application as it looked in the list; newer data from [myApplicationsProvider] wins.
@@ -1121,6 +1122,7 @@ class _VerificationDetailScreenState extends ConsumerState<VerificationDetailScr
               TextField(
                 controller: noteController,
                 maxLines: 3,
+                maxLength: 2000,
                 decoration: InputDecoration(
                   hintText: 'e.g. Attached the newly certified survey plan with eastern boundary coordinates...',
                   hintStyle: const TextStyle(fontSize: 12.5, color: AppColors.secondaryLabel),
@@ -1146,6 +1148,11 @@ class _VerificationDetailScreenState extends ConsumerState<VerificationDetailScr
                       ? null
                       : () async {
                           final messenger = ScaffoldMessenger.of(context);
+                          final noteError = Validators.text(noteController.text, field: 'Revision note', min: 5, max: 2000);
+                          if (noteError != null) {
+                            messenger.showSnackBar(SnackBar(content: Text(noteError)));
+                            return;
+                          }
                           setModalState(() => isSubmitting = true);
                           final submitted = await VerificationApiService.submitRevision(
                             applicationId: _app.applicationId,

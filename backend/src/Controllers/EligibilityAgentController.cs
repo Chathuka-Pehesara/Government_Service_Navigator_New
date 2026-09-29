@@ -4,6 +4,7 @@ using Government_Service_Navigator.AgenticAi.Agents.EligibilityDocumentAgent;
 using Government_Service_Navigator.AgenticAi.Agents.EligibilityDocumentAgent.DTOs;
 using Government_Service_Navigator.AgenticAi.Orchestration;
 using Government_Service_Navigator.AgenticAi.State;
+using DA = System.ComponentModel.DataAnnotations;
 using Microsoft.AspNetCore.Mvc;
 
 namespace Government_Service_Navigator.Backend.Controllers;
@@ -95,13 +96,20 @@ public class EligibilityAgentController : ControllerBase
 
 public class EligibilityAgentQueryDto
 {
+    [DA.MaxLength(200, ErrorMessage = "Service name must be at most 200 characters.")]
     public string ServiceName { get; set; } = string.Empty;
     public int? ServiceId { get; set; }
+    [DA.Range(0, 120, ErrorMessage = "Age must be between 0 and 120.")]
     public int Age { get; set; } = 25;
+    [DA.MaxLength(50, ErrorMessage = "Citizenship status must be at most 50 characters.")]
     public string CitizenshipStatus { get; set; } = "Sri Lankan";
+    [DA.Range(0, 1_000_000_000, ErrorMessage = "Annual income cannot be negative.")]
     public decimal AnnualIncome { get; set; } = 0;
+    [DA.MaxLength(50, ErrorMessage = "Employment status must be at most 50 characters.")]
     public string EmploymentStatus { get; set; } = "Employed";
+    [DA.MaxLength(100, ErrorMessage = "At most 100 documents can be listed.")]
     public List<string>? ProvidedDocuments { get; set; } = new();
+    [DA.MaxLength(5000, ErrorMessage = "Plan summary must be at most 5000 characters.")]
     public string? PlanSummary { get; set; }
     public int ApplicationId { get; set; }
     public string? CitizenNic { get; set; }

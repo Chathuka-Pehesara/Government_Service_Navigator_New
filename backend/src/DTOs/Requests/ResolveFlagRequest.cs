@@ -4,8 +4,8 @@ namespace Government_Service_Navigator.Backend.DTOs.Requests
 {
     public class ResolveFlagRequest
     {
-        // Allowed values: "Reviewed", "Dismissed"
-        [Required]
+        [Required(ErrorMessage = "Status is required.")]
+        [AllowedValues("Reviewed", "Dismissed", ErrorMessage = "Status must be Reviewed or Dismissed.")]
         public string Status { get; set; } = string.Empty;
     }
 }

@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:flutter/cupertino.dart';
 import '../../theme/app_colors.dart';
+import '../utils/validators.dart';
 
 class PostServiceFormScreen extends StatefulWidget {
   final String applicationId;
@@ -21,6 +22,7 @@ class PostServiceFormScreen extends StatefulWidget {
 }
 
 class _PostServiceFormScreenState extends State<PostServiceFormScreen> {
+  final _formKey = GlobalKey<FormState>();
   final TextEditingController _addressController = TextEditingController();
   final TextEditingController _phoneController = TextEditingController();
   
@@ -41,12 +43,7 @@ class _PostServiceFormScreenState extends State<PostServiceFormScreen> {
   }
 
   void _submitDetails() {
-    if (_addressController.text.trim().isEmpty || _phoneController.text.trim().isEmpty) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('Please enter both delivery address and mobile number.')),
-      );
-      return;
-    }
+    if (!_formKey.currentState!.validate()) return;
 
     setState(() => _isLoading = true);
     
@@ -74,7 +71,9 @@ class _PostServiceFormScreenState extends State<PostServiceFormScreen> {
   }
 
   Widget _buildFormView() {
-    return ListView(
+    return Form(
+      key: _formKey,
+      child: ListView(
       padding: const EdgeInsets.all(16.0),
       children: [
         Text(
@@ -95,9 +94,11 @@ class _PostServiceFormScreenState extends State<PostServiceFormScreen> {
         
         const Text('Delivery Address', style: TextStyle(fontSize: 12, fontWeight: FontWeight.w600, color: AppColors.secondaryLabel)),
         const SizedBox(height: 8),
-        TextField(
+        TextFormField(
           controller: _addressController,
           maxLines: 4,
+          maxLength: 300,
+          validator: (v) => Validators.text(v, field: 'Delivery address', min: 10, max: 300),
           decoration: InputDecoration(
             hintText: 'Enter full residential or office address...',
             filled: true,
@@ -112,9 +113,10 @@ class _PostServiceFormScreenState extends State<PostServiceFormScreen> {
 
         const Text('Mobile Number', style: TextStyle(fontSize: 12, fontWeight: FontWeight.w600, color: AppColors.secondaryLabel)),
         const SizedBox(height: 8),
-        TextField(
+        TextFormField(
           controller: _phoneController,
           keyboardType: TextInputType.phone,
+          validator: Validators.phone,
           decoration: InputDecoration(
             hintText: 'e.g., 077 123 4567',
             filled: true,
@@ -140,6 +142,7 @@ class _PostServiceFormScreenState extends State<PostServiceFormScreen> {
             : const Text('Confirm Delivery Details', style: TextStyle(color: Colors.white, fontWeight: FontWeight.bold, fontSize: 14)),
         ),
       ],
+      ),
     );
   }
 
