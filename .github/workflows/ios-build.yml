@@ -47,13 +47,20 @@ jobs:
       - name: Precache iOS artifacts
         run: flutter precache --ios
 
-      # No Podfile is committed; --config-only generates ios/Podfile and
-      # Generated.xcconfig so the workspace can be built with xcodebuild.
+      # Generates Generated.xcconfig (and ios/Podfile only when a plugin still
+      # needs CocoaPods) so the workspace can be built with xcodebuild.
       - name: Configure iOS project
         run: flutter build ios --config-only --simulator --debug
 
+      # Plugins are resolved through Swift Package Manager when they all support
+      # it, in which case Flutter writes no Podfile and there is nothing to install.
       - name: Install CocoaPods
-        run: cd ios && pod install
+        run: |
+          if [ -f ios/Podfile ]; then
+            cd ios && pod install
+          else
+            echo "No Podfile generated - plugins use Swift Package Manager, skipping pod install."
+          fi
 
       # Flutter only supports Debug builds on the simulator (Release is AOT for devices).
       - name: Build iOS App
