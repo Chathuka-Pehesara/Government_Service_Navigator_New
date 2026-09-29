@@ -1,17 +1,23 @@
 import 'dart:convert';
 import 'package:flutter/material.dart';
 import 'package:flutter/cupertino.dart';
+import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:http/http.dart' as http;
 import '../config/app_config.dart';
+import '../providers/session_provider.dart';
 import '../theme/app_colors.dart';
 import 'post_service_form_screen.dart';
 
-class BookingOptionsScreen extends StatefulWidget {
+class BookingOptionsScreen extends ConsumerStatefulWidget {
   final String applicationId;
   final String serviceName;
   final String? citizenNic;
   final VoidCallback? onPostalSubmitted;
   final ValueChanged<Map<String, dynamic>>? onAppointmentBooked;
+
+  /// The application already has a booking. Only its time can change; the backend
+  /// moves the existing booking instead of creating a second one.
+  final bool isReschedule;
 
   const BookingOptionsScreen({
     super.key,
@@ -20,14 +26,15 @@ class BookingOptionsScreen extends StatefulWidget {
     this.citizenNic,
     this.onPostalSubmitted,
     this.onAppointmentBooked,
+    this.isReschedule = false,
   });
 
   @override
-  State<BookingOptionsScreen> createState() => _BookingOptionsScreenState();
+  ConsumerState<BookingOptionsScreen> createState() => _BookingOptionsScreenState();
 }
 
-class _BookingOptionsScreenState extends State<BookingOptionsScreen> {
-  String? _selectedOption;
+class _BookingOptionsScreenState extends ConsumerState<BookingOptionsScreen> {
+  late String? _selectedOption = widget.isReschedule ? 'book' : null;
   final TextEditingController _timeController = TextEditingController();
 
   bool _isBooking = false;
@@ -85,14 +92,22 @@ class _BookingOptionsScreenState extends State<BookingOptionsScreen> {
 
     try {
       final department = _getAssignedDepartment();
+      // The department admin identifies the booking by NIC, so always send the signed-in citizen's
+      final session = ref.read(sessionProvider);
+      final sessionNic = (session.user?['nicNumber'] ?? session.user?['nic'] ?? session.user?['citizenNic'])?.toString();
+      final citizenNic = widget.citizenNic ?? ((sessionNic?.isNotEmpty ?? false) ? sessionNic : null);
+
       final url = Uri.parse('${AppConfig.baseUrl}/actionagent/book-appointment');
       final response = await http.post(
         url,
-        headers: {'Content-Type': 'application/json'},
+        headers: {
+          'Content-Type': 'application/json',
+          if (session.token.isNotEmpty) 'Authorization': 'Bearer ${session.token}',
+        },
         body: jsonEncode({
           'applicationId': widget.applicationId,
           'serviceName': widget.serviceName,
-          'citizenNic': widget.citizenNic ?? 'CITIZEN',
+          'citizenNic': citizenNic ?? 'CITIZEN',
           'preferredTimeInput': timeToBook,
           'departmentName': department,
         }),
@@ -133,7 +148,7 @@ class _BookingOptionsScreenState extends State<BookingOptionsScreen> {
 
     return Scaffold(
       appBar: AppBar(
-        title: const Text('Collection Options'),
+        title: Text(widget.isReschedule ? 'Change Booking Time' : 'Collection Options'),
         backgroundColor: Colors.transparent,
         elevation: 0,
       ),
@@ -177,35 +192,43 @@ class _BookingOptionsScreenState extends State<BookingOptionsScreen> {
               ),
             ),
             const SizedBox(height: 24),
-            const Text(
-              'How would you like to receive your documents?',
-              style: TextStyle(fontSize: 14, fontWeight: FontWeight.w600),
-            ),
-            const SizedBox(height: 12),
+            if (widget.isReschedule)
+              const Text(
+                'You already have a booking for this service. Enter a new day and time to move it - '
+                'your booking reference stays the same.',
+                style: TextStyle(fontSize: 13, color: AppColors.secondaryLabel),
+              )
+            else ...[
+              const Text(
+                'How would you like to receive your documents?',
+                style: TextStyle(fontSize: 14, fontWeight: FontWeight.w600),
+              ),
+              const SizedBox(height: 12),
 
-            RadioListTile<String>(
-              title: const Text('Get it with post service'),
-              subtitle: const Text('Delivered directly to your registered address.'),
-              value: 'post',
-              groupValue: _selectedOption,
-              activeColor: AppColors.primary,
-              onChanged: (value) {
-                setState(() => _selectedOption = value);
-                _handlePostService();
-              },
-            ),
-            const SizedBox(height: 8),
+              RadioListTile<String>(
+                title: const Text('Get it with post service'),
+                subtitle: const Text('Delivered directly to your registered address.'),
+                value: 'post',
+                groupValue: _selectedOption,
+                activeColor: AppColors.primary,
+                onChanged: (value) {
+                  setState(() => _selectedOption = value);
+                  _handlePostService();
+                },
+              ),
+              const SizedBox(height: 8),
 
-            RadioListTile<String>(
-              title: const Text('Make a booking (Agent 3)'),
-              subtitle: const Text('Collect in person at the department office on a free slot.'),
-              value: 'book',
-              groupValue: _selectedOption,
-              activeColor: AppColors.primary,
-              onChanged: (value) {
-                setState(() => _selectedOption = value);
-              },
-            ),
+              RadioListTile<String>(
+                title: const Text('Make a booking (Agent 3)'),
+                subtitle: const Text('Collect in person at the department office on a free slot.'),
+                value: 'book',
+                groupValue: _selectedOption,
+                activeColor: AppColors.primary,
+                onChanged: (value) {
+                  setState(() => _selectedOption = value);
+                },
+              ),
+            ],
 
             if (_selectedOption == 'book') ...[
               const SizedBox(height: 16),
@@ -357,12 +380,15 @@ class _BookingOptionsScreenState extends State<BookingOptionsScreen> {
                         Text('Agent 3 Checking Department Slots...', style: TextStyle(fontWeight: FontWeight.bold)),
                       ],
                     )
-                  : const Row(
+                  : Row(
                       mainAxisAlignment: MainAxisAlignment.center,
                       children: [
-                        Icon(Icons.calendar_month_rounded, size: 18),
-                        SizedBox(width: 8),
-                        Text('Book Appointment with Agent 3', style: TextStyle(fontWeight: FontWeight.bold)),
+                        const Icon(Icons.calendar_month_rounded, size: 18),
+                        const SizedBox(width: 8),
+                        Text(
+                          widget.isReschedule ? 'Change Booking Time' : 'Book Appointment with Agent 3',
+                          style: const TextStyle(fontWeight: FontWeight.bold),
+                        ),
                       ],
                     ),
             ),

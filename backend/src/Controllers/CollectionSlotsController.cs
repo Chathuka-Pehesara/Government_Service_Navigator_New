@@ -89,8 +89,10 @@ namespace Government_Service_Navigator.Backend.Controllers
                                    SELECT COUNT(*)::int FROM ""CollectionBookings"" b 
                                    WHERE LOWER(b.""DepartmentName"") LIKE LOWER('%' || s.""DepartmentName"" || '%')
                                      AND b.""Status"" = 'Confirmed'
-                                     AND b.""BookedSlotTime"" LIKE '%' || SUBSTRING(CAST(s.""StartTime"" AS varchar) FROM 1 FOR 5) || '%'
-                               ), 0) AS ""BookedCount""
+                                     AND b.""BookedDate"" = " + CollectionSlotSql.NextDateOfSlotDay + @"
+                                     AND " + CollectionSlotSql.BookingStartTime + @" = SUBSTRING(CAST(s.""StartTime"" AS varchar) FROM 1 FOR 5)
+                               ), 0) AS ""BookedCount"",
+                               CAST(" + CollectionSlotSql.NextDateOfSlotDay + @" AS varchar) AS ""NextDate""
                         FROM ""CollectionTimeSlots"" s
                         WHERE LOWER(s.""DepartmentName"") LIKE LOWER(@dept)
                         ORDER BY s.""DayOfWeek"", s.""StartTime"";
@@ -109,8 +111,10 @@ namespace Government_Service_Navigator.Backend.Controllers
                                    SELECT COUNT(*)::int FROM ""CollectionBookings"" b 
                                    WHERE LOWER(b.""DepartmentName"") LIKE LOWER('%' || COALESCE(s.""DepartmentName"", '') || '%')
                                      AND b.""Status"" = 'Confirmed'
-                                     AND b.""BookedSlotTime"" LIKE '%' || SUBSTRING(CAST(s.""StartTime"" AS varchar) FROM 1 FOR 5) || '%'
-                               ), 0) AS ""BookedCount""
+                                     AND b.""BookedDate"" = " + CollectionSlotSql.NextDateOfSlotDay + @"
+                                     AND " + CollectionSlotSql.BookingStartTime + @" = SUBSTRING(CAST(s.""StartTime"" AS varchar) FROM 1 FOR 5)
+                               ), 0) AS ""BookedCount"",
+                               CAST(" + CollectionSlotSql.NextDateOfSlotDay + @" AS varchar) AS ""NextDate""
                         FROM ""CollectionTimeSlots"" s
                         ORDER BY COALESCE(s.""DepartmentName"", 'General'), s.""DayOfWeek"", s.""StartTime"";
                     ";
@@ -129,7 +133,8 @@ namespace Government_Service_Navigator.Backend.Controllers
                         IsActive = reader.GetBoolean(5),
                         DepartmentName = reader.GetString(6),
                         DepartmentId = reader.IsDBNull(7) ? null : reader.GetInt32(7),
-                        BookedCount = reader.GetInt32(8)
+                        BookedCount = reader.GetInt32(8),
+                        NextDate = reader.GetString(9)
                     });
                 }
             }
@@ -383,6 +388,23 @@ namespace Government_Service_Navigator.Backend.Controllers
         }
     }
 
+    /// <summary>
+    /// SQL fragments shared by the slot list and the booking agent. Slots repeat weekly, so a
+    /// booking only counts against a slot on its own date and start time.
+    /// </summary>
+    public static class CollectionSlotSql
+    {
+        // Counters run on Sri Lanka time, whatever the database server's time zone is
+        public const string Today = @"(NOW() AT TIME ZONE 'Asia/Colombo')::date";
+
+        // Next date (today included) that falls on slot s's weekday; DayOfWeek 1 = Monday, same as ISODOW
+        public const string NextDateOfSlotDay =
+            "(" + Today + @" + ((s.""DayOfWeek"" - EXTRACT(ISODOW FROM " + Today + @")::int + 7) % 7))";
+
+        // Start of the booked range, e.g. '09:00' from 'Monday, 06 Oct 2026 09:00 - 11:30 (Sri Lanka Time)'
+        public const string BookingStartTime = @"SUBSTRING(b.""BookedSlotTime"" FROM '(\d{2}:\d{2}) - ')";
+    }
+
     public class CollectionTimeSlot
     {
         public int Id { get; set; }
@@ -393,6 +415,8 @@ namespace Government_Service_Navigator.Backend.Controllers
         public string? EndTime { get; set; }
         public int MaxCapacity { get; set; }
         public int BookedCount { get; set; }
+        // BookedCount is for this date: the next time the slot's weekday comes round (today included)
+        public string? NextDate { get; set; }
         public int RemainingCapacity => Math.Max(0, MaxCapacity - BookedCount);
         public bool IsActive { get; set; }
     }

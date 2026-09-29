@@ -57,6 +57,8 @@ interface CollectionSlot {
   maxCapacity: number;
   bookedCount?: number;
   remainingCapacity?: number;
+  // yyyy-MM-dd the counts are for: the next time this weekday comes round
+  nextDate?: string;
   isActive: boolean;
   departmentName?: string;
   departmentId?: number;
@@ -76,7 +78,7 @@ const headers = [
   { key: "timeWindow", header: "Time Window" },
   { key: "department", header: "Department" },
   { key: "capacity", header: "Max Capacity" },
-  { key: "booked", header: "Booked" },
+  { key: "booked", header: "Booked (next date)" },
   { key: "remaining", header: "Remaining" },
   { key: "status", header: "Status" },
   { key: "actions", header: "Actions" },
@@ -294,7 +296,9 @@ export default function ManageCollectionSlots() {
       timeWindow: `${s.startTime.substring(0, 5)} - ${s.endTime.substring(0, 5)}`,
       department: s.departmentName || "General",
       capacity: s.maxCapacity.toString(),
-      booked: `${booked} / ${s.maxCapacity}`,
+      booked: s.nextDate
+        ? `${booked} / ${s.maxCapacity} on ${new Date(`${s.nextDate}T00:00:00`).toLocaleDateString("en-GB", { day: "2-digit", month: "short" })}`
+        : `${booked} / ${s.maxCapacity}`,
       remaining: remaining.toString(),
       status: s.isActive ? "Active" : "Inactive",
     };

@@ -416,6 +416,24 @@ CREATE INDEX IF NOT EXISTS ""IX_RefundRequests_DepartmentName"" ON ""RefundReque
             Console.WriteLine($"Refund department column note: {rdEx.Message}");
         }
 
+        // Older bookings were saved with the "CITIZEN" placeholder; take the NIC from their application
+        try
+        {
+            context.Database.ExecuteSqlRaw(@"
+UPDATE ""CollectionBookings"" b
+SET ""CitizenNic"" = s.""CitizenNic""
+FROM ""ApplicationSubmissions"" s
+WHERE s.""Id"" = b.""ApplicationId""
+  AND (b.""CitizenNic"" IS NULL OR b.""CitizenNic"" = '' OR UPPER(b.""CitizenNic"") = 'CITIZEN')
+  AND COALESCE(s.""CitizenNic"", '') <> '';
+");
+        }
+        catch (Exception cbEx)
+        {
+            // CollectionBookings is created on first use, so it may not exist yet
+            Console.WriteLine($"Booking NIC backfill note: {cbEx.Message}");
+        }
+
         // Tokens revoked before Redis was enabled must stay revoked
         try
         {
