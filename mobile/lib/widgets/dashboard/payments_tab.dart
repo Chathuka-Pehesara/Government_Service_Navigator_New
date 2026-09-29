@@ -1296,104 +1296,11 @@ class _PaymentsDashboardTabState extends ConsumerState<PaymentsDashboardTab> {
             final recent = payments.take(3).toList();
             return Column(
               children: recent.map((payment) {
-                final statusStr = payment.status ?? 'Pending';
-                final isPaid = statusStr.toLowerCase() == 'paid';
-                final isPending = statusStr.toLowerCase().contains('pending');
-                final statusColor = isPaid ? AppColors.success : (isPending ? AppColors.warning : AppColors.danger);
-                
-                final refIntent = payment.stripePaymentIntentId;
-                final createdDateStr = payment.createdDate;
-                
-                // Format consistent visual ID (PAY-YYYYMMDD-XXXXXX)
-                String refDisplay;
-                if (refIntent != null && refIntent.startsWith('PAY-')) {
-                  refDisplay = refIntent;
-                } else {
-                  // Extract YYYYMMDD from the createdDate or fallback to today
-                  final datePart = (createdDateStr != null && createdDateStr.length >= 10)
-                      ? createdDateStr.substring(0, 10).replaceAll('-', '')
-                      : DateTime.now().toIso8601String().substring(0, 10).replaceAll('-', '');
-                  
-                  // Pad the payment ID to 6 digits to match the visual length
-                  final idPart = payment.id.toString().padLeft(6, '0');
-                  refDisplay = 'PAY-$datePart-$idPart';
-                }
-
-                final dateDisplay = (createdDateStr != null && createdDateStr.contains('T'))
-                    ? createdDateStr.split('T')[0]
-                    : (createdDateStr ?? 'Recent');
-
-                return Container(
-
-                  margin: const EdgeInsets.only(bottom: 8),
-                  padding: const EdgeInsets.all(14),
-                  decoration: BoxDecoration(
-                    color: AppColors.cardBg,
-                    borderRadius: BorderRadius.circular(14),
-                    border: Border.all(color: AppColors.divider, width: 0.8),
-                  ),
-                  child: Row(
-                    children: [
-                      Container(
-                        width: 38,
-                        height: 38,
-                        decoration: BoxDecoration(
-                          color: statusColor.withValues(alpha: 0.1),
-                          borderRadius: BorderRadius.circular(10),
-                        ),
-                        child: Icon(
-                          isPaid ? CupertinoIcons.checkmark_seal_fill : (isPending ? CupertinoIcons.clock : CupertinoIcons.clear_circled),
-                          color: statusColor,
-                          size: 18,
-                        ),
-                      ),
-                      const SizedBox(width: 12),
-                      Expanded(
-                        child: Column(
-                          crossAxisAlignment: CrossAxisAlignment.start,
-                          children: [
-                            Text(
-                              refDisplay,
-                              style: const TextStyle(fontSize: 13, fontWeight: FontWeight.bold, color: AppColors.dark),
-                              overflow: TextOverflow.ellipsis,
-                            ),
-                            const SizedBox(height: 2),
-                            Text(
-                              '${payment.method ?? 'Payment'} · $dateDisplay',
-                              style: const TextStyle(fontSize: 11.5, color: AppColors.secondaryLabel),
-                            ),
-                          ],
-                        ),
-                      ),
-                      Column(
-                        crossAxisAlignment: CrossAxisAlignment.end,
-                        children: [
-                          Text(
-                            'LKR ${payment.amount.toStringAsFixed(2)}',
-                            style: const TextStyle(fontSize: 13.5, fontWeight: FontWeight.bold, color: AppColors.dark),
-                          ),
-                          const SizedBox(height: 2),
-                          Text(
-                            statusStr.toUpperCase(),
-                            style: TextStyle(fontSize: 10, fontWeight: FontWeight.bold, color: statusColor),
-                          ),
-                        ],
-                      ),
-                      const SizedBox(width: 8),
-                      CupertinoButton(
-                        padding: EdgeInsets.zero,
-                        minimumSize: const Size(24, 24),
-                        onPressed: () {
-                          Navigator.of(context).push(
-                            CupertinoPageRoute(
-                              builder: (_) => PaymentLedgerScreen(paymentId: payment.id),
-                            ),
-                          );
-                        },
-                        child: const Icon(CupertinoIcons.chevron_right, size: 14, color: AppColors.secondaryLabel),
-                      ),
-                    ],
-                  ),
+                return _RealtimePaymentItemCard(
+                  initialPayment: payment,
+                  onReturned: () {
+                    ref.invalidate(myPaymentsProvider);
+                  },
                 );
               }).toList(),
             );
@@ -1531,3 +1438,123 @@ class _PaymentsDashboardTabState extends ConsumerState<PaymentsDashboardTab> {
     );
   }
 }
+
+/// Helper widget that resolves real-time payment status updates from the parent payments provider
+class _RealtimePaymentItemCard extends ConsumerWidget {
+  final Payment initialPayment;
+  final VoidCallback onReturned;
+
+  const _RealtimePaymentItemCard({
+    required this.initialPayment,
+    required this.onReturned,
+  });
+
+  @override
+  Widget build(BuildContext context, WidgetRef ref) {
+    // Watch the master payments list provider to stay synchronized with real-time updates
+    final paymentsAsync = ref.watch(myPaymentsProvider);
+    
+    // Find the latest matching payment from the provider list, or fall back to initial item
+    final payment = paymentsAsync.value?.firstWhere(
+          (p) => p.id == initialPayment.id,
+          orElse: () => initialPayment,
+        ) ?? initialPayment;
+
+    final statusStr = payment.status ?? 'Pending';
+    final isPaid = statusStr.toLowerCase() == 'paid' || statusStr.toLowerCase() == 'verified';
+    final isPending = statusStr.toLowerCase().contains('pending');
+    final statusColor = isPaid ? AppColors.success : (isPending ? AppColors.warning : AppColors.danger);
+
+    final refIntent = payment.stripePaymentIntentId;
+    final createdDateStr = payment.createdDate;
+
+    String refDisplay;
+    if (refIntent != null && refIntent.startsWith('PAY-')) {
+      refDisplay = refIntent;
+    } else {
+      final datePart = (createdDateStr != null && createdDateStr.length >= 10)
+          ? createdDateStr.substring(0, 10).replaceAll('-', '')
+          : DateTime.now().toIso8601String().substring(0, 10).replaceAll('-', '');
+      final idPart = payment.id.toString().padLeft(6, '0');
+      refDisplay = 'PAY-$datePart-$idPart';
+    }
+
+    final dateDisplay = (createdDateStr != null && createdDateStr.contains('T'))
+        ? createdDateStr.split('T')[0]
+        : (createdDateStr ?? 'Recent');
+
+    return Container(
+      margin: const EdgeInsets.only(bottom: 8),
+      padding: const EdgeInsets.all(14),
+      decoration: BoxDecoration(
+        color: AppColors.cardBg,
+        borderRadius: BorderRadius.circular(14),
+        border: Border.all(color: AppColors.divider, width: 0.8),
+      ),
+      child: Row(
+        children: [
+          Container(
+            width: 38,
+            height: 38,
+            decoration: BoxDecoration(
+              color: statusColor.withValues(alpha: 0.1),
+              borderRadius: BorderRadius.circular(10),
+            ),
+            child: Icon(
+              isPaid ? CupertinoIcons.checkmark_seal_fill : (isPending ? CupertinoIcons.clock : CupertinoIcons.clear_circled),
+              color: statusColor,
+              size: 18,
+            ),
+          ),
+          const SizedBox(width: 12),
+          Expanded(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text(
+                  refDisplay,
+                  style: const TextStyle(fontSize: 13, fontWeight: FontWeight.bold, color: AppColors.dark),
+                  overflow: TextOverflow.ellipsis,
+                ),
+                const SizedBox(height: 2),
+                Text(
+                  '${payment.method ?? 'Payment'} · $dateDisplay',
+                  style: const TextStyle(fontSize: 11.5, color: AppColors.secondaryLabel),
+                ),
+              ],
+            ),
+          ),
+          Column(
+            crossAxisAlignment: CrossAxisAlignment.end,
+            children: [
+              Text(
+                'LKR ${payment.amount.toStringAsFixed(2)}',
+                style: const TextStyle(fontSize: 13.5, fontWeight: FontWeight.bold, color: AppColors.dark),
+              ),
+              const SizedBox(height: 2),
+              Text(
+                statusStr.toUpperCase(),
+                style: TextStyle(fontSize: 10, fontWeight: FontWeight.bold, color: statusColor),
+              ),
+            ],
+          ),
+          const SizedBox(width: 8),
+          CupertinoButton(
+            padding: EdgeInsets.zero,
+            minimumSize: const Size(24, 24),
+            onPressed: () async {
+              await Navigator.of(context).push(
+                CupertinoPageRoute(
+                  builder: (_) => PaymentLedgerScreen(paymentId: payment.id),
+                ),
+              );
+              onReturned();
+            },
+            child: const Icon(CupertinoIcons.chevron_right, size: 14, color: AppColors.secondaryLabel),
+          ),
+        ],
+      ),
+    );
+  }
+}
+

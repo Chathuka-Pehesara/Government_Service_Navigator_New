@@ -188,15 +188,36 @@ export default function AuditLogs() {
                     >
                       Financial Verifications
                     </SideNavLink>
+                    <SideNavLink renderIcon={Catalog} href="/admin/services">
+                      Service Catalog (View)
+                    </SideNavLink>
+                    <SideNavLink
+                      renderIcon={UserMultiple}
+                      href="/admin/manage-officers"
+                    >
+                      Manage Officers
+                    </SideNavLink>
+                    <SideNavLink
+                      renderIcon={Calendar}
+                      href="/admin/collection-slots"
+                    >
+                      Collection Slots
+                    </SideNavLink>
+                    <SideNavLink
+                      renderIcon={Security}
+                      href="/admin/audit-logs"
+                      isActive
+                    >
+                      Audit Logs
+                    </SideNavLink>
                   </>
                 )}
 
-                <SideNavLink renderIcon={Catalog} href="/admin/services">
-                  {isSysAdmin ? "Service Catalog" : "Service Catalog (View)"}
-                </SideNavLink>
-
                 {isSysAdmin && (
                   <>
+                    <SideNavLink renderIcon={Catalog} href="/admin/services">
+                      Service Catalog
+                    </SideNavLink>
                     <SideNavLink renderIcon={Rule} href="/admin/services/rules">
                       Eligibility Rules
                     </SideNavLink>
@@ -219,43 +240,37 @@ export default function AuditLogs() {
                       Eligibility Simulator
                     </SideNavLink>
                     <SideNavLink
+                      renderIcon={Categories}
+                      href="/admin/departments"
+                    >
+                      Department Management
+                    </SideNavLink>
+                    <SideNavLink
+                      renderIcon={UserMultiple}
+                      href="/admin/manage-officers"
+                    >
+                      Manage Officers
+                    </SideNavLink>
+                    <SideNavLink
                       renderIcon={Calendar}
                       href="/admin/collection-slots"
                     >
                       Collection Slots
                     </SideNavLink>
+                    <SideNavLink
+                      renderIcon={Security}
+                      href="/admin/audit-logs"
+                      isActive
+                    >
+                      Audit Logs
+                    </SideNavLink>
+                    <SideNavLink
+                      renderIcon={Settings}
+                      href="/admin/system-settings"
+                    >
+                      System Settings
+                    </SideNavLink>
                   </>
-                )}
-
-                {isSysAdmin && (
-                  <SideNavLink
-                    renderIcon={Categories}
-                    href="/admin/departments"
-                  >
-                    Department Management
-                  </SideNavLink>
-                )}
-
-                <SideNavLink
-                  renderIcon={UserMultiple}
-                  href="/admin/manage-officers"
-                >
-                  Manage Officers
-                </SideNavLink>
-                <SideNavLink
-                  renderIcon={Security}
-                  href="/admin/audit-logs"
-                  isActive
-                >
-                  Audit Logs
-                </SideNavLink>
-                {isSysAdmin && (
-                  <SideNavLink
-                    renderIcon={Settings}
-                    href="/admin/system-settings"
-                  >
-                    System Settings
-                  </SideNavLink>
                 )}
 
                 {/* Logout Button */}

@@ -45,7 +45,11 @@ import {
   Money,
   CheckmarkOutline,
   CloseOutline,
-  Notification
+  Notification,
+  UserMultiple,
+  Security,
+  Logout,
+  Settings
 } from "@carbon/icons-react";
 
 interface DailySlot {
@@ -487,6 +491,25 @@ export default function ManageCollectionSlots() {
   const todaySchedule = dailySchedule.find((d) => d.isToday);
   const activeNowSlot = todaySchedule?.slots.find((s) => s.isRealtimeActive);
 
+  const handleLogout = async () => {
+    const token = localStorage.getItem("officerToken");
+    try {
+      await fetch("http://localhost:5119/api/auth/logout", {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          ...(token ? { Authorization: `Bearer ${token}` } : {}),
+        },
+      });
+    } catch (error) {
+      console.error("Logout failed:", error);
+    } finally {
+      localStorage.removeItem("officerToken");
+      localStorage.removeItem("officerUser");
+      window.location.href = "/officer/login";
+    }
+  };
+
   return (
     <HeaderContainer
       render={({ isSideNavExpanded, onClickSideNavExpand }) => (
@@ -514,10 +537,12 @@ export default function ManageCollectionSlots() {
 
             <SideNav aria-label="Side navigation" expanded={isSideNavExpanded}>
               <SideNavItems>
+                {/* 1. Overview */}
                 <SideNavLink renderIcon={Dashboard} href={overviewHref}>
                   Overview
                 </SideNavLink>
 
+                {/* For Department Admins: All 8 core sections always visible */}
                 {!isSysAdmin && deptSlug && (
                   <>
                     <SideNavLink renderIcon={Document} href={`/admin/${deptSlug}/dashboard?view=verifications`}>
@@ -526,29 +551,63 @@ export default function ManageCollectionSlots() {
                     <SideNavLink renderIcon={Money} href={`/admin/${deptSlug}/dashboard?view=financial`}>
                       Financial Verifications
                     </SideNavLink>
+                    <SideNavLink renderIcon={Catalog} href="/admin/services">
+                      Service Catalog (View)
+                    </SideNavLink>
+                    <SideNavLink renderIcon={UserMultiple} href="/admin/manage-officers">
+                      Manage Officers
+                    </SideNavLink>
                     <SideNavLink renderIcon={Calendar} href="/admin/collection-slots" isActive>
                       Collection Slots
+                    </SideNavLink>
+                    <SideNavLink renderIcon={Security} href="/admin/audit-logs">
+                      Audit Logs
                     </SideNavLink>
                   </>
                 )}
 
-                <SideNavLink renderIcon={Catalog} href="/admin/services">
-                  {isSysAdmin ? "Service Catalog" : "Service Catalog (View)"}
-                </SideNavLink>
-
+                {/* For System Admins */}
                 {isSysAdmin && (
                   <>
+                    <SideNavLink renderIcon={Catalog} href="/admin/services">
+                      Service Catalog
+                    </SideNavLink>
                     <SideNavLink renderIcon={Rule} href="/admin/services/rules">
                       Eligibility Rules
                     </SideNavLink>
                     <SideNavLink renderIcon={Categories} href="/admin/services/config">
                       Service Configuration
                     </SideNavLink>
+                    <SideNavLink renderIcon={Document} href="/admin/services/builder">
+                      Template Builder
+                    </SideNavLink>
+                    <SideNavLink renderIcon={Rule} href="/admin/services/simulator">
+                      Eligibility Simulator
+                    </SideNavLink>
+                    <SideNavLink renderIcon={Categories} href="/admin/departments">
+                      Department Management
+                    </SideNavLink>
+                    <SideNavLink renderIcon={UserMultiple} href="/admin/manage-officers">
+                      Manage Officers
+                    </SideNavLink>
                     <SideNavLink renderIcon={Calendar} href="/admin/collection-slots" isActive>
                       Collection Slots
                     </SideNavLink>
+                    <SideNavLink renderIcon={Security} href="/admin/audit-logs">
+                      Audit Logs
+                    </SideNavLink>
+                    <SideNavLink renderIcon={Settings} href="/admin/system-settings">
+                      System Settings
+                    </SideNavLink>
                   </>
                 )}
+
+                {/* Sign Out */}
+                <div style={{ marginTop: "auto", borderTop: "1px solid #393939" }}>
+                  <SideNavLink renderIcon={Logout} onClick={handleLogout} style={{ cursor: "pointer" }}>
+                    Sign Out
+                  </SideNavLink>
+                </div>
               </SideNavItems>
             </SideNav>
           </Header>
