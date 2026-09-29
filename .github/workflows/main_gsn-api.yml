@@ -1,0 +1,61 @@
+# Builds the root Dockerfile (backend + agentic-ai, which the backend compiles in as a
+# class library), pushes the image to Azure Container Registry and runs it on the
+# Azure Web App "gsn-api".
+# Docs for the Azure Web Apps Deploy action: https://github.com/Azure/webapps-deploy
+
+name: Build and deploy gsn-api container to Azure
+
+on:
+  push:
+    branches:
+      - main
+    paths:
+      - "backend/**"
+      - "agentic-ai/**"
+      - "Dockerfile"
+      - ".dockerignore"
+      - ".github/workflows/main_gsn-api.yml"
+  workflow_dispatch:
+
+concurrency:
+  group: deploy-gsn-api
+  cancel-in-progress: false
+
+env:
+  ACR_NAME: gsnacr          # Azure Container Registry name (without .azurecr.io)
+  IMAGE_NAME: gsn-api
+  WEBAPP_NAME: gsn-api
+
+jobs:
+  build-and-deploy:
+    runs-on: ubuntu-latest
+    permissions:
+      id-token: write # required for the OIDC login below
+      contents: read
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Login to Azure
+        uses: azure/login@v2
+        with:
+          client-id: ${{ secrets.AZUREAPPSERVICE_CLIENTID_30331CE85CA04C0EAC1E065C32E14C9F }}
+          tenant-id: ${{ secrets.AZUREAPPSERVICE_TENANTID_D61515071A9841968AADD152FECD61E7 }}
+          subscription-id: ${{ secrets.AZUREAPPSERVICE_SUBSCRIPTIONID_35D02326A6F94D5DB3ED206C4199453F }}
+
+      # The image contains appsettings.json, so it must stay in a private registry.
+      - name: Login to Azure Container Registry
+        run: az acr login --name ${{ env.ACR_NAME }}
+
+      - name: Build and push image
+        run: |
+          IMAGE=${{ env.ACR_NAME }}.azurecr.io/${{ env.IMAGE_NAME }}
+          docker build -t $IMAGE:${{ github.sha }} -t $IMAGE:latest .
+          docker push $IMAGE:${{ github.sha }}
+          docker push $IMAGE:latest
+
+      - name: Deploy image to Azure Web App
+        uses: azure/webapps-deploy@v3
+        with:
+          app-name: ${{ env.WEBAPP_NAME }}
+          images: ${{ env.ACR_NAME }}.azurecr.io/${{ env.IMAGE_NAME }}:${{ github.sha }}
