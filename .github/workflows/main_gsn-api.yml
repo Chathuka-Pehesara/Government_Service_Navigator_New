@@ -24,6 +24,7 @@ jobs:
           dotnet-version: '10.x'
 
       - name: Build with dotnet
+        working-directory: ./backend/src
         run: dotnet build --configuration Release
 
       - name: dotnet publish
