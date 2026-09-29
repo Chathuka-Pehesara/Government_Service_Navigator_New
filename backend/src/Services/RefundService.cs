@@ -7,6 +7,8 @@ namespace Government_Service_Navigator.Backend.Services
 {
     public class RefundService : IRefundService
     {
+        public const int RefundWindowDays = 7;
+
         private readonly AppDbContext _context;
         private readonly INotificationService _notificationService;
 
@@ -17,7 +19,8 @@ namespace Government_Service_Navigator.Backend.Services
         }
 
         // Methods implemented in upcoming commits.
-        public async Task<RefundRequest> CreateRefundRequestAsync(int paymentId, decimal amount, string reason, string requestedByEmail)
+        // The refund is always for the full paid amount; the citizen can't choose it.
+        public async Task<RefundRequest> CreateRefundRequestAsync(int paymentId, string reason, string requestedByEmail)
         {
             var payment = await _context.Payments.FindAsync(paymentId);
 
@@ -26,17 +29,24 @@ namespace Government_Service_Navigator.Backend.Services
                 throw new KeyNotFoundException($"Payment {paymentId} not found.");
             }
 
+            if (!string.Equals(payment.UserEmail, requestedByEmail, StringComparison.OrdinalIgnoreCase))
+            {
+                // Same response as a missing payment, so other citizens' payment ids aren't revealed
+                throw new KeyNotFoundException($"Payment {paymentId} not found.");
+            }
+
             if (payment.Status != "Paid")
             {
                 throw new InvalidOperationException("Only paid payments are eligible for a refund request.");
             }
 
-            if (payment.PaidDate == null || (DateTime.UtcNow - payment.PaidDate.Value).TotalDays > 3)
+            if (payment.PaidDate == null || (DateTime.UtcNow - payment.PaidDate.Value).TotalDays > RefundWindowDays)
             {
-                throw new InvalidOperationException("Refund window has expired. Refunds are only allowed within 3 days of payment.");
+                throw new InvalidOperationException($"Refund window has expired. Refunds are only allowed within {RefundWindowDays} days of payment.");
             }
 
-                        var hasActiveRefund = await _context.RefundRequests.AnyAsync(r =>
+            // Only a rejected or failed refund lets the citizen ask again
+            var hasActiveRefund = await _context.RefundRequests.AnyAsync(r =>
                 r.PaymentId == paymentId &&
                 (r.Status == RefundStatus.Pending || r.Status == RefundStatus.Approved || r.Status == RefundStatus.Processing));
 
@@ -44,11 +54,23 @@ namespace Government_Service_Navigator.Backend.Services
             {
                 throw new InvalidOperationException("An active refund request already exists for this payment.");
             }
+
+            if (await _context.RefundRequests.AnyAsync(r => r.PaymentId == paymentId && r.Status == RefundStatus.Completed))
+            {
+                throw new InvalidOperationException("This payment has already been refunded.");
+            }
         
+            var departmentName = await _context.ApplicationSubmissions
+                .Where(s => s.Id == payment.ApplicationId)
+                .Select(s => s.CurrentDepartment)
+                .FirstOrDefaultAsync();
+
             var refund = new RefundRequest
             {
                 PaymentId = paymentId,
-                RefundAmount = amount,
+                DepartmentName = departmentName,
+                Payment = payment,
+                RefundAmount = payment.Amount,
                 Reason = reason,
                 RequestedByEmail = requestedByEmail,
                 Status = RefundStatus.Pending
@@ -57,7 +79,7 @@ namespace Government_Service_Navigator.Backend.Services
             _context.RefundRequests.Add(refund);
             await _context.SaveChangesAsync();
 
-                        await _notificationService.NotifyRefundStatusAsync(requestedByEmail, refund.Id, "Pending", null);
+            await _notificationService.NotifyRefundRequestedAsync(requestedByEmail, refund);
 
             _context.AuditLogs.Add(new AuditLog
             {
@@ -74,11 +96,28 @@ namespace Government_Service_Navigator.Backend.Services
         }
 
 
-        public async Task<List<RefundRequest>> GetAllAsync(string? status)
+        // A refund belongs to the department captured on it at creation time.
+        private static IQueryable<RefundRequest> InDepartment(IQueryable<RefundRequest> query, string department)
+        {
+            var targetDept = department.Trim();
+            return query.Where(r => r.DepartmentName != null && EF.Functions.ILike(r.DepartmentName, targetDept));
+        }
+
+        public async Task<bool> IsInDepartmentAsync(int refundId, string department)
+        {
+            return await InDepartment(_context.RefundRequests.Where(r => r.Id == refundId), department).AnyAsync();
+        }
+
+        public async Task<List<RefundRequest>> GetAllAsync(string? status, string? department)
         {
             var query = _context.RefundRequests
                 .Include(r => r.Payment)
                 .AsQueryable();
+
+            if (department != null)
+            {
+                query = InDepartment(query, department);
+            }
 
             if (!string.IsNullOrWhiteSpace(status) &&
                 Enum.TryParse<RefundStatus>(status, ignoreCase: true, out var parsedStatus))
@@ -147,7 +186,10 @@ namespace Government_Service_Navigator.Backend.Services
 
         public async Task<RefundRequest> RejectAsync(int id, string decidedByEmail, string? note)
         {
-            var refund = await _context.RefundRequests.FindAsync(id);
+            // Payment is needed for the email (currency, and whether the refund window is still open)
+            var refund = await _context.RefundRequests
+                .Include(r => r.Payment)
+                .FirstOrDefaultAsync(r => r.Id == id);
 
             if (refund == null)
             {
@@ -166,7 +208,7 @@ namespace Government_Service_Navigator.Backend.Services
 
             await _context.SaveChangesAsync();
 
-                        await _notificationService.NotifyRefundStatusAsync(refund.RequestedByEmail, refund.Id, "Rejected", note);
+            await _notificationService.NotifyRefundRejectedAsync(refund.RequestedByEmail, refund);
 
             _context.AuditLogs.Add(new AuditLog
             {
@@ -236,7 +278,7 @@ namespace Government_Service_Navigator.Backend.Services
 
             await _context.SaveChangesAsync();
 
-                        await _notificationService.NotifyRefundStatusAsync(refund.RequestedByEmail, refund.Id, "Completed", null);
+            await _notificationService.NotifyRefundCompletedAsync(refund.RequestedByEmail, refund);
 
             _context.AuditLogs.Add(new AuditLog
             {

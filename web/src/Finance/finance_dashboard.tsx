@@ -1,4 +1,6 @@
 import { useEffect, useMemo, useState } from "react";
+import { v } from "../utils/validation";
+import { ApiError } from "../utils/api";
 import {
   Grid,
   Column,
@@ -250,6 +252,7 @@ export default function FinanceDashboard() {
   const [searchTerm, setSearchTerm] = useState("");
   const [selectedPayment, setSelectedPayment] = useState<Payment | null>(null);
   const [notes, setNotes] = useState("");
+  const [notesError, setNotesError] = useState<string | null>(null);
   const [banner, setBanner] = useState<{
     kind: "success" | "error" | "info";
     message: string;
@@ -474,8 +477,18 @@ export default function FinanceDashboard() {
     setIsEditingStatus(false);
   }
 
+  // Same rules as the backend's VerifyManualPaymentDto / UpdatePaymentStatusDto: a rejection needs a reason
+  function checkNotes(rejecting: boolean): boolean {
+    const error = rejecting
+      ? v.text("Reason for rejection", { min: 5, max: 1000 })(notes)
+      : v.text("Notes", { max: 1000, required: false })(notes);
+    setNotesError(error);
+    return !error;
+  }
+
   async function handleSaveEditedStatus() {
     if (!selectedPayment) return;
+    if (!checkNotes(editStatusValue === "Rejected")) return;
     const officerName = getDisplayName(getStoredUser());
     const backendStatus =
       editStatusValue === "Verified"
@@ -487,6 +500,11 @@ export default function FinanceDashboard() {
     try {
       await updatePaymentStatusApi(selectedPayment.id, backendStatus, notes);
     } catch (err) {
+      // A validation failure means nothing was saved, so don't show the change
+      if (err instanceof ApiError && err.status === 400) {
+        setBanner({ kind: "error", message: err.message });
+        return;
+      }
       console.warn("Backend updatePaymentStatus API notice:", err);
     }
 
@@ -519,13 +537,18 @@ export default function FinanceDashboard() {
 
   async function handleDecision(decision: "Verified" | "Rejected") {
     if (!selectedPayment) return;
-    const officerName = getDisplayName(getStoredUser());
     const isApproved = decision === "Verified";
+    if (!checkNotes(!isApproved)) return;
+    const officerName = getDisplayName(getStoredUser());
 
     // Call live backend endpoint
     try {
       await verifyPaymentApi(selectedPayment.id, isApproved, notes);
     } catch (err) {
+      if (err instanceof ApiError && err.status === 400) {
+        setBanner({ kind: "error", message: err.message });
+        return;
+      }
       console.warn("Backend verify API returned notice:", err);
     }
 
@@ -1794,6 +1817,10 @@ export default function FinanceDashboard() {
                   onChange={(e) => setNotes(e.target.value)}
                   rows={3}
                   style={{ marginBottom: "1rem" }}
+                  maxCount={1000}
+                  enableCounter
+                  invalid={!!notesError}
+                  invalidText={notesError ?? undefined}
                 />
                 <div style={{ display: "flex", gap: "0.75rem" }}>
                   <Button kind="primary" onClick={handleSaveEditedStatus}>
@@ -1817,6 +1844,11 @@ export default function FinanceDashboard() {
                   onChange={(e) => setNotes(e.target.value)}
                   disabled={selectedPayment.status !== "Pending"}
                   rows={3}
+                  maxCount={1000}
+                  enableCounter
+                  helperText="Required when rejecting: the citizen is told this reason."
+                  invalid={!!notesError}
+                  invalidText={notesError ?? undefined}
                 />
 
                 {selectedPayment.status === "Pending" ? (

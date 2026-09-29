@@ -1,4 +1,5 @@
 import "@carbon/styles/css/styles.css";
+import { hasErrors, v, validateForm } from "../utils/validation";
 import { useState } from "react";
 import CurrentUserBadge from "../components/CurrentUserBadge";
 import { getStoredUser, getAdminOverviewHref } from "../utils/currentUser";
@@ -111,6 +112,7 @@ export default function AdminInstallmentPlans() {
   const [paymentIdInput, setPaymentIdInput] = useState("");
   const [numInstallments, setNumInstallments] = useState(3);
   const [intervalDays, setIntervalDays] = useState(30);
+  const [formErrors, setFormErrors] = useState<Partial<Record<"paymentId" | "installments" | "interval", string>>>({});
 
   // ── Plan state ─────────────────────────────────────────────────────────────
   const [plan, setPlan] = useState<InstallmentPlanResponse | null>(null);
@@ -142,11 +144,15 @@ export default function AdminInstallmentPlans() {
   // ── Actions ────────────────────────────────────────────────────────────────
 
   async function handleLookup() {
+    // Same limits as the backend's CreateInstallmentPlanDto
+    const errors = validateForm({
+      paymentId: [paymentIdInput, v.integer("Payment ID", 1, 2147483647)],
+      installments: [String(numInstallments), v.integer("Number of instalments", 2, 60)],
+      interval: [String(intervalDays), v.integer("Interval (days)", 1, 365)],
+    });
+    setFormErrors(errors);
+    if (hasErrors(errors)) return;
     const pid = parseInt(paymentIdInput.trim(), 10);
-    if (isNaN(pid) || pid <= 0) {
-      setError("Please enter a valid numeric Payment ID.");
-      return;
-    }
     setLoading(true);
     setError(null);
     setBanner(null);
@@ -346,6 +352,9 @@ export default function AdminInstallmentPlans() {
                     value={paymentIdInput}
                     onChange={(e) => setPaymentIdInput(e.target.value)}
                     helperText="The numeric ID of the payment to split."
+                    maxLength={10}
+                    invalid={!!formErrors.paymentId}
+                    invalidText={formErrors.paymentId}
                   />
                 </Column>
 
@@ -359,7 +368,9 @@ export default function AdminInstallmentPlans() {
                     onChange={(_e, { value }) =>
                       setNumInstallments(typeof value === "number" ? value : parseInt(String(value), 10))
                     }
-                    helperText="Minimum 2."
+                    helperText="Between 2 and 60."
+                    invalid={!!formErrors.installments}
+                    invalidText={formErrors.installments}
                   />
                 </Column>
 
@@ -373,7 +384,9 @@ export default function AdminInstallmentPlans() {
                     onChange={(_e, { value }) =>
                       setIntervalDays(typeof value === "number" ? value : parseInt(String(value), 10))
                     }
-                    helperText="Days between each instalment."
+                    helperText="Days between each instalment (1-365)."
+                    invalid={!!formErrors.interval}
+                    invalidText={formErrors.interval}
                   />
                 </Column>
 

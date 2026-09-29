@@ -51,6 +51,7 @@ class RefundDetail extends _$RefundDetail {
         status: status,
         refundTransactionRef: r.refundTransactionRef,
         requestedByEmail: r.requestedByEmail,
+        departmentName: r.departmentName,
         decidedByEmail: r.decidedByEmail,
         decisionNote: r.decisionNote,
         requestedDate: r.requestedDate,

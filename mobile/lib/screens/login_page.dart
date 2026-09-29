@@ -5,6 +5,7 @@ import 'package:mobile/screens/dashboard_screen.dart';
 import '../theme/app_colors.dart';
 import '../theme/glass_theme.dart';
 import '../providers/auth_provider.dart';
+import '../utils/validators.dart';
 import 'signup_page.dart';
 
 class LoginPage extends ConsumerStatefulWidget {
@@ -237,11 +238,7 @@ class _LoginPageState extends ConsumerState<LoginPage> {
                     color: AppColors.primary, size: 20),
                 contentPadding: const EdgeInsets.symmetric(vertical: 16),
               ),
-              validator: (v) {
-                if (v == null || v.trim().isEmpty) return 'Email is required';
-                if (!v.contains('@')) return 'Enter a valid email';
-                return null;
-              },
+              validator: Validators.email,
             ),
           ),
           Divider(height: 1, color: AppColors.divider, indent: 52),
@@ -274,11 +271,7 @@ class _LoginPageState extends ConsumerState<LoginPage> {
                   ),
                 ),
               ),
-              validator: (v) {
-                if (v == null || v.isEmpty) return 'Password is required';
-                if (v.length < 6) return 'At least 6 characters';
-                return null;
-              },
+              validator: Validators.loginPassword,
             ),
           ),
         ],

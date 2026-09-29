@@ -1,6 +1,7 @@
 using Government_Service_Navigator.Backend.DTOs.Requests;
 using Government_Service_Navigator.Backend.DTOs.Responses;
 using Government_Service_Navigator.Backend.Services.Interfaces;
+using Government_Service_Navigator.Backend.Validation;
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
 using System.Security.Claims;
@@ -12,6 +13,8 @@ namespace Government_Service_Navigator.Backend.Controllers
     [Route("api/refunds")]
     public class RefundsController : ControllerBase
     {
+        private const string FinanceRoles = "Finance Officer,Department Admin,Admin,System Admin";
+
         private readonly IRefundService _refundService;
 
         public RefundsController(IRefundService refundService)
@@ -28,12 +31,48 @@ namespace Government_Service_Navigator.Backend.Controllers
                 ?? "unknown@user";
         }
 
-        // Finance Officer: list all refund requests, optionally filtered by status.
+        private bool IsSystemAdmin()
+        {
+            var role = User.FindFirstValue(ClaimTypes.Role) ?? string.Empty;
+            return role.Contains("System Admin", StringComparison.OrdinalIgnoreCase) || role == "Admin";
+        }
+
+        private string? GetDepartment() => User.FindFirstValue("department");
+
+        // Staff may only act on refunds for payments that belong to their own department.
+        private async Task<bool> CanManageAsync(int refundId)
+        {
+            if (IsSystemAdmin()) return true;
+            var dept = GetDepartment();
+            return !string.IsNullOrWhiteSpace(dept) && await _refundService.IsInDepartmentAsync(refundId, dept);
+        }
+
+        // The citizen who asked for the refund, or staff of the payment's department.
+        private async Task<bool> CanViewAsync(Models.Entities.RefundRequest refund)
+        {
+            if (string.Equals(refund.RequestedByEmail, GetUserEmail(), StringComparison.OrdinalIgnoreCase)) return true;
+            var isFinanceStaff = FinanceRoles.Split(',').Any(User.IsInRole);
+            return isFinanceStaff && await CanManageAsync(refund.Id);
+        }
+
+        // Finance Officer: list refund requests for their department, optionally filtered by status.
         [HttpGet]
-        [Authorize]
+        [Authorize(Roles = FinanceRoles)]
         public async Task<IActionResult> GetAll([FromQuery] string? status)
         {
-            var refunds = await _refundService.GetAllAsync(status);
+            List<Models.Entities.RefundRequest> refunds;
+            if (IsSystemAdmin())
+            {
+                refunds = await _refundService.GetAllAsync(status, null);
+            }
+            else
+            {
+                // A non-admin without a department claim sees nothing
+                var dept = GetDepartment();
+                refunds = string.IsNullOrWhiteSpace(dept)
+                    ? new List<Models.Entities.RefundRequest>()
+                    : await _refundService.GetAllAsync(status, dept);
+            }
             return Ok(refunds.Select(RefundResponseDto.FromEntity));
         }
 
@@ -45,7 +84,7 @@ namespace Government_Service_Navigator.Backend.Controllers
             var email = GetUserEmail();
             try
             {
-                var refund = await _refundService.CreateRefundRequestAsync(dto.PaymentId, dto.RefundAmount, dto.Reason, email);
+                var refund = await _refundService.CreateRefundRequestAsync(dto.PaymentId, dto.Reason, email);
                 return CreatedAtAction(nameof(GetById), new { id = refund.Id }, RefundResponseDto.FromEntity(refund));
             }
             catch (KeyNotFoundException ex) { return NotFound(ex.Message); }
@@ -57,7 +96,7 @@ namespace Government_Service_Navigator.Backend.Controllers
         public async Task<IActionResult> GetById(int id)
         {
             var refund = await _refundService.GetRefundByIdAsync(id);
-            if (refund == null) return NotFound();
+            if (refund == null || !await CanViewAsync(refund)) return NotFound();
             return Ok(RefundResponseDto.FromEntity(refund));
         }
 
@@ -66,7 +105,7 @@ namespace Government_Service_Navigator.Backend.Controllers
         public async Task<IActionResult> GetStatus(int id)
         {
             var refund = await _refundService.GetRefundByIdAsync(id);
-            if (refund == null) return NotFound();
+            if (refund == null || !await CanViewAsync(refund)) return NotFound();
             return Ok(new { refund.Id, refund.Status });
         }
 
@@ -81,9 +120,10 @@ namespace Government_Service_Navigator.Backend.Controllers
         }
 
         [HttpPost("{id}/approve")]
-        [Authorize]
+        [Authorize(Roles = FinanceRoles)]
         public async Task<IActionResult> Approve(int id, [FromBody] RefundDecisionDto dto)
         {
+            if (!await CanManageAsync(id)) return NotFound();
             var email = GetUserEmail();
             try
             {
@@ -95,9 +135,13 @@ namespace Government_Service_Navigator.Backend.Controllers
         }
 
         [HttpPost("{id}/reject")]
-        [Authorize]
+        [Authorize(Roles = FinanceRoles)]
         public async Task<IActionResult> Reject(int id, [FromBody] RefundDecisionDto dto)
         {
+            if (!await CanManageAsync(id)) return NotFound();
+            // The rejection email shows this note as the reason
+            if (string.IsNullOrWhiteSpace(dto.Note))
+                return BadRequest(ValidationError.Body("Give a reason for rejecting the refund.", "note"));
             var email = GetUserEmail();
             try
             {
@@ -109,9 +153,10 @@ namespace Government_Service_Navigator.Backend.Controllers
         }
 
         [HttpPost("{id}/process")]
-        [Authorize]
+        [Authorize(Roles = FinanceRoles)]
         public async Task<IActionResult> Process(int id, [FromBody] RefundProcessDto dto)
         {
+            if (!await CanManageAsync(id)) return NotFound();
             try
             {
                 var refund = await _refundService.ProcessAsync(id, dto.TransactionRef);
@@ -123,9 +168,10 @@ namespace Government_Service_Navigator.Backend.Controllers
         }
 
         [HttpPost("{id}/complete")]
-        [Authorize]
+        [Authorize(Roles = FinanceRoles)]
         public async Task<IActionResult> Complete(int id)
         {
+            if (!await CanManageAsync(id)) return NotFound();
             try
             {
                 var refund = await _refundService.CompleteAsync(id);

@@ -37,6 +37,8 @@ import {
   TrashCan,
   Document,
 } from "@carbon/icons-react";
+import { parseApiError } from "../../utils/validation";
+import { rulesError } from "./serviceCatalogValidation";
 
 interface Service {
   id: number;
@@ -158,6 +160,11 @@ export default function EligibilityRuleBuilder() {
   };
 
   const handleSave = async () => {
+    const problem = rulesError(rules.map((r) => ({ field: r.field, operator: r.operator, value: String(r.value ?? "") })));
+    if (problem) {
+      setNotification({ type: "error", title: "Check the rules", subtitle: problem });
+      return;
+    }
     try {
       const payload = rules.map((r) => ({
         serviceProcedureId: r.serviceProcedureId,
@@ -188,7 +195,7 @@ export default function EligibilityRuleBuilder() {
         setNotification({
           type: "error",
           title: "Error",
-          subtitle: "Failed to save ruleset to database.",
+          subtitle: parseApiError(await response.text(), "Failed to save ruleset to database."),
         });
       }
     } catch (error) {

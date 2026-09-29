@@ -460,8 +460,23 @@ namespace Government_Service_Navigator.Backend.Controllers
             return Ok();
         }
 
+        // The endpoints bind the entity directly, so the rules live here rather than as annotations
+        private static List<string> RejectionReasonProblems(Government_Service_Navigator.Backend.Models.Entities.RejectionReason? reason)
+        {
+            var problems = new List<string>();
+            if (reason == null) { problems.Add("Rejection code details are required."); return problems; }
+            if (string.IsNullOrWhiteSpace(reason.Code)
+                || !System.Text.RegularExpressions.Regex.IsMatch(reason.Code.Trim(), @"^[A-Za-z0-9][A-Za-z0-9\-]{1,19}$"))
+                problems.Add("Code must be 2-20 letters, numbers or dashes, e.g. ERR-101.");
+            if (string.IsNullOrWhiteSpace(reason.Description) || reason.Description.Trim().Length is < 3 or > 300)
+                problems.Add("Description must be 3-300 characters.");
+            return problems;
+        }
+
         public class DeleteApplicationRequest
         {
+            [System.ComponentModel.DataAnnotations.MaxLength(1000, ErrorMessage = "Reason must be at most 1000 characters.")]
+            [Government_Service_Navigator.Backend.Validation.PlainText]
             public string? Reason { get; set; }
         }
 
@@ -541,6 +556,9 @@ namespace Government_Service_Navigator.Backend.Controllers
         [HttpPost("rejection-reasons")]
         public async Task<IActionResult> CreateRejectionReason([FromBody] Government_Service_Navigator.Backend.Models.Entities.RejectionReason reason)
         {
+            var problems = RejectionReasonProblems(reason);
+            if (problems.Count > 0) return BadRequest(Government_Service_Navigator.Backend.Validation.ValidationError.Body(problems));
+
             var created = await _verificationService.CreateRejectionReasonAsync(reason);
             return Ok(created);
         }
@@ -549,6 +567,9 @@ namespace Government_Service_Navigator.Backend.Controllers
         [HttpPut("rejection-reasons/{id}")]
         public async Task<IActionResult> UpdateRejectionReason(int id, [FromBody] Government_Service_Navigator.Backend.Models.Entities.RejectionReason reason)
         {
+            var problems = RejectionReasonProblems(reason);
+            if (problems.Count > 0) return BadRequest(Government_Service_Navigator.Backend.Validation.ValidationError.Body(problems));
+
             var success = await _verificationService.UpdateRejectionReasonAsync(id, reason);
             if (!success) return NotFound();
             return Ok();
@@ -668,6 +689,8 @@ namespace Government_Service_Navigator.Backend.Controllers
 
         public class ApproveStageRequest
         {
+            [System.ComponentModel.DataAnnotations.MaxLength(2000, ErrorMessage = "Notes must be at most 2000 characters.")]
+            [Government_Service_Navigator.Backend.Validation.PlainText]
             public string? Notes { get; set; }
         }
 

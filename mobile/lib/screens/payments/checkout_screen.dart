@@ -5,6 +5,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import '../../providers/payment_providers.dart';
 import '../../providers/service_providers.dart';
 import '../../providers/session_provider.dart';
+import '../../utils/validators.dart';
 import 'checkout_webview_screen.dart';
 import 'payment_confirm_screen.dart';
 
@@ -166,8 +167,7 @@ class _CheckoutScreenState extends ConsumerState<CheckoutScreen> {
                   controller: _applicationIdController,
                   hint: 'e.g. APP-2026-8841',
                   icon: CupertinoIcons.doc_text,
-                  validator: (v) =>
-                      (v == null || v.trim().isEmpty) ? 'Required' : null,
+                  validator: Validators.applicationId,
                 ),
                 const SizedBox(height: 16),
 
@@ -179,13 +179,7 @@ class _CheckoutScreenState extends ConsumerState<CheckoutScreen> {
                   icon: CupertinoIcons.money_dollar_circle,
                   keyboardType:
                       const TextInputType.numberWithOptions(decimal: true),
-                  validator: (v) {
-                    if (v == null || v.trim().isEmpty) return 'Required';
-                    if (double.tryParse(v.trim()) == null) {
-                      return 'Enter a valid number';
-                    }
-                    return null;
-                  },
+                  validator: Validators.amount,
                 ),
                 const SizedBox(height: 16),
 
@@ -197,11 +191,7 @@ class _CheckoutScreenState extends ConsumerState<CheckoutScreen> {
                   icon: CupertinoIcons.mail,
                   keyboardType: TextInputType.emailAddress,
                   readOnly: true,
-                  validator: (v) {
-                    if (v == null || v.trim().isEmpty) return 'Required';
-                    if (!v.contains('@')) return 'Enter a valid email';
-                    return null;
-                  },
+                  validator: Validators.email,
                 ),
                 const SizedBox(height: 24),
 

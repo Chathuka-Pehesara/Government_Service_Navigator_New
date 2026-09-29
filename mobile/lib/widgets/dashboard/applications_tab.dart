@@ -11,6 +11,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import '../../providers/application_providers.dart';
 import '../../providers/session_provider.dart';
 import '../../screens/application_form_screen.dart';
+import '../../utils/validators.dart';
 
 class ApplicationsTab extends ConsumerStatefulWidget {
   const ApplicationsTab({super.key});
@@ -381,6 +382,7 @@ class _ApplicationsTabState extends ConsumerState<ApplicationsTab> {
                     const SizedBox(height: 6),
                     TextField(
                       controller: subjectController,
+                      maxLength: 110,
                       decoration: InputDecoration(
                         filled: true,
                         fillColor: AppColors.background,
@@ -407,6 +409,7 @@ class _ApplicationsTabState extends ConsumerState<ApplicationsTab> {
                     TextField(
                       controller: messageController,
                       maxLines: 4,
+                      maxLength: 2000,
                       decoration: InputDecoration(
                         hintText: 'Describe your query or request for officer re-evaluation in detail...',
                         hintStyle: const TextStyle(fontSize: 12, color: AppColors.secondaryLabel),
@@ -471,8 +474,12 @@ class _ApplicationsTabState extends ConsumerState<ApplicationsTab> {
                           ? null
                           : () async {
                               final msg = messageController.text.trim();
-                              if (msg.isEmpty) {
-                                setDialogState(() => dialogError = 'Please provide an explanation for your concern.');
+                              // Same limits as the backend's RaiseConcernDto; the category prefix is added to the subject
+                              final problem = Validators.text(subjectController.text, field: 'Subject', min: 3, max: 110) ??
+                                  Validators.text(msg, field: 'Explanation', min: 10, max: 2000) ??
+                                  Validators.phone(phoneController.text, required: false);
+                              if (problem != null) {
+                                setDialogState(() => dialogError = problem);
                                 return;
                               }
                               setDialogState(() {

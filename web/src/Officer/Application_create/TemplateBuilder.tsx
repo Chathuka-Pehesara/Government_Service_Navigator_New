@@ -1,4 +1,5 @@
 import { useState, useEffect } from "react";
+import { parseApiError, v } from "../../utils/validation";
 import {
   TextInput,
   Select,
@@ -149,6 +150,8 @@ export default function TemplateBuilder() {
   const [customFields, setCustomFields] = useState<FormField[]>([]);
   
   const [newFieldLabel, setNewFieldLabel] = useState("");
+  const [newFieldError, setNewFieldError] = useState<string | null>(null);
+  const [headerErrors, setHeaderErrors] = useState<{ formName?: string; subTitle?: string; lawText?: string; stageDescription?: string }>({});
   const [newFieldType, setNewFieldType] = useState<FieldType>("text");
   const [newFieldOptions, setNewFieldOptions] = useState("");
   const [newFieldRequired, setNewFieldRequired] = useState(false);
@@ -461,7 +464,45 @@ export default function TemplateBuilder() {
     fetchAllTemplates();
   };
 
+  // Same rules as the backend's CreateTemplateRequest / FormFieldDto
+  const DISPLAY_ONLY = ["heading", "paragraph"];
+
+  const validateTemplate = (): string | null => {
+    const errors = {
+      formName: v.text("Form name", { min: 3, max: 200 })(formName) ?? undefined,
+      subTitle: v.text("Main title", { max: 300, required: false })(subTitle) ?? undefined,
+      lawText: v.text("Legal reference", { max: 5000, required: false })(lawText) ?? undefined,
+      stageDescription: v.text("Stage description", { max: 500, required: false })(stageDescription) ?? undefined,
+    };
+    setHeaderErrors(errors);
+    const firstHeaderError = Object.values(errors).find(Boolean);
+    if (firstHeaderError) return firstHeaderError;
+
+    if (!Number.isInteger(Number(stageOrder)) || Number(stageOrder) < 1 || Number(stageOrder) > 50) {
+      return "Stage must be between 1 and 50.";
+    }
+    if (customFields.length > 200) return "A form can have at most 200 fields.";
+
+    // Answers are stored by label, so two inputs with the same label would overwrite each other
+    const seen = new Set<string>();
+    for (const f of customFields) {
+      if (DISPLAY_ONLY.includes(f.type)) continue;
+      const key = f.label.trim().toLowerCase();
+      if (seen.has(key)) return `Each field needs a unique label. "${f.label}" is used more than once.`;
+      seen.add(key);
+      if ((f.type === "select" || f.type === "multiselect") && !(f.options || "").split(",").some((o) => o.trim())) {
+        return `Dropdown field "${f.label}" needs at least one option.`;
+      }
+    }
+    return null;
+  };
+
   const handleSaveTemplate = async () => {
+    const problem = validateTemplate();
+    if (problem) {
+      alert(problem);
+      return;
+    }
     try {
       setIsSaving(true);
       const token = localStorage.getItem("officerToken");
@@ -498,7 +539,7 @@ export default function TemplateBuilder() {
       });
 
       if (!response.ok) {
-        throw new Error("Failed to save template");
+        throw new Error(parseApiError(await response.text(), "Failed to save template."));
       }
 
       const searchServiceId = new URLSearchParams(window.location.search).get("serviceId");
@@ -521,14 +562,30 @@ export default function TemplateBuilder() {
       }
     } catch (error) {
       console.error(error);
-      alert("Error saving template. Please check console.");
+      alert(error instanceof Error ? error.message : "Error saving template.");
     } finally {
       setIsSaving(false);
     }
   };
 
   const handleAddField = () => {
-    if (!newFieldLabel) return;
+    const isDisplay = DISPLAY_ONLY.includes(newFieldType);
+    const labelName = isDisplay ? "Text content" : newFieldType === "payment" ? "Payment section title" : "Field label";
+    let error = v.text(labelName, { max: isDisplay ? 5000 : 300 })(newFieldLabel);
+    if (!error && !isDisplay && customFields.some((f) => !DISPLAY_ONLY.includes(f.type) && f.label.trim().toLowerCase() === newFieldLabel.trim().toLowerCase())) {
+      error = "A field with this label already exists. Labels must be unique.";
+    }
+    if (!error && ["select", "multiselect", "table"].includes(newFieldType)) {
+      const options = newFieldOptions.split(",").map((o) => o.trim()).filter(Boolean);
+      if (options.length === 0) error = newFieldType === "table" ? "Enter at least one column name." : "Enter at least one dropdown option.";
+      else if (options.some((o) => o.length > 100)) error = "Each option must be at most 100 characters.";
+      else if (new Set(options.map((o) => o.toLowerCase())).size !== options.length) error = "Options must not repeat.";
+    }
+    if (!error && newFieldType === "payment") {
+      error = v.amount("Fee amount")(String(paymentFeeAmount));
+    }
+    setNewFieldError(error);
+    if (error) return;
 
     let optionsVal: string | undefined = undefined;
     if (['select', 'multiselect', 'table'].includes(newFieldType)) {
@@ -1308,12 +1365,18 @@ export default function TemplateBuilder() {
               labelText="Form Number/Identifier"
               value={formName}
               onChange={(e) => setFormName(e.target.value)}
+              maxLength={200}
+              invalid={!!headerErrors.formName}
+              invalidText={headerErrors.formName}
             />
             <TextInput
               id="subTitle"
               labelText="Main Title"
               value={subTitle}
               onChange={(e) => setSubTitle(e.target.value)}
+              maxLength={300}
+              invalid={!!headerErrors.subTitle}
+              invalidText={headerErrors.subTitle}
             />
             <TextInput
               id="lawText"
@@ -1531,7 +1594,12 @@ export default function TemplateBuilder() {
                   labelText={['heading', 'paragraph'].includes(newFieldType) ? "Text Content" : newFieldType === 'payment' ? "Payment Section Title" : "Field Label"}
                   rows={2}
                   value={newFieldLabel}
-                  onChange={(e) => setNewFieldLabel(e.target.value)}
+                  onChange={(e) => {
+                    setNewFieldLabel(e.target.value);
+                    if (newFieldError) setNewFieldError(null);
+                  }}
+                  invalid={!!newFieldError}
+                  invalidText={newFieldError ?? undefined}
                 />
                 
                 {newFieldType === 'payment' && (

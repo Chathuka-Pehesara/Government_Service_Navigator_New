@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import '../providers/agent_providers.dart';
+import '../utils/validators.dart';
 import 'intake_plan_result_screen.dart';
 
 class DescribeNeedScreen extends ConsumerStatefulWidget {
@@ -15,9 +16,13 @@ class _DescribeNeedScreenState extends ConsumerState<DescribeNeedScreen> {
 
   Future<void> _submitNeed() async {
     final queryText = _textController.text.trim();
-    if (queryText.isEmpty) {
+    // Same limits as the backend's UserQueryDto
+    final problem = queryText.isEmpty
+        ? 'Please describe what service you need.'
+        : Validators.text(queryText, field: 'Your description', min: 2, max: 1000);
+    if (problem != null) {
       ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('Please describe what service you need.')),
+        SnackBar(content: Text(problem)),
       );
       return;
     }
@@ -65,6 +70,7 @@ class _DescribeNeedScreenState extends ConsumerState<DescribeNeedScreen> {
             TextField(
               controller: _textController,
               maxLines: 5,
+              maxLength: 1000,
               enabled: !isLoading,
               decoration: const InputDecoration(
                 hintText: 'e.g., I need to travel next month but my passport is expired...',

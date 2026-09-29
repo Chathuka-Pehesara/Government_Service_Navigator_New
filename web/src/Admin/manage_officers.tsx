@@ -1,5 +1,6 @@
 import '@carbon/styles/css/styles.css';
 import { useState, useEffect, useCallback } from "react";
+import { hasErrors, parseApiError, v, validateForm } from "../utils/validation";
 import CurrentUserBadge from "../components/CurrentUserBadge";
 import { getAdminOverviewHref, canManageServices } from "../utils/currentUser";
 import {
@@ -115,6 +116,7 @@ export default function ManageOfficers() {
   const [isAddModalOpen, setIsAddModalOpen] = useState(false);
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [formError, setFormError] = useState<string | null>(null);
+  const [fieldErrors, setFieldErrors] = useState<Partial<Record<"fullName" | "email" | "password" | "department" | "role", string>>>({});
   const [formData, setFormData] = useState({
     fullName: "",
     email: "",
@@ -180,6 +182,17 @@ export default function ManageOfficers() {
 
   const handleAddOfficer = async () => {
     setFormError(null);
+    // Same rules as the backend's CreateOfficerRequest
+    const errors = validateForm({
+      fullName: [formData.fullName, v.personName("Full name")],
+      email: [formData.email, v.email()],
+      password: [formData.password, v.strongPassword()],
+      department: [formData.department, v.required("Department")],
+      role: [formData.role, v.required("Role")],
+    });
+    setFieldErrors(errors);
+    if (hasErrors(errors)) return;
+
     setIsSubmitting(true);
 
     try {
@@ -202,8 +215,13 @@ export default function ManageOfficers() {
         });
         fetchOfficers();
       } else {
-        const errorData = await response.json();
-        setFormError(errorData.message || "Failed to add officer. Please check the details.");
+        const body = await response.text();
+        try {
+          setFieldErrors(JSON.parse(body)?.fields ?? {});
+        } catch {
+          // not JSON
+        }
+        setFormError(parseApiError(body, "Failed to add officer. Please check the details."));
       }
     } catch {
       setFormError("Network error. Could not connect to the server.");
@@ -460,7 +478,7 @@ export default function ManageOfficers() {
           modalHeading="Add New Officer"
           primaryButtonText={isSubmitting ? "Saving..." : "Create Officer"}
           secondaryButtonText="Cancel"
-          primaryButtonDisabled={isSubmitting || !formData.fullName || !formData.email || !formData.password || !formData.department}
+          primaryButtonDisabled={isSubmitting}
         >
           <p style={{ marginBottom: '1.5rem', color: '#525252' }}>
             Fill in the details below to provision a new verifying officer account.
@@ -484,6 +502,9 @@ export default function ManageOfficers() {
               value={formData.fullName}
               onChange={(e) => setFormData({ ...formData, fullName: e.target.value })}
               disabled={isSubmitting}
+              maxLength={100}
+              invalid={!!fieldErrors.fullName}
+              invalidText={fieldErrors.fullName}
             />
 
             <TextInput
@@ -494,15 +515,22 @@ export default function ManageOfficers() {
               value={formData.email}
               onChange={(e) => setFormData({ ...formData, email: e.target.value })}
               disabled={isSubmitting}
+              maxLength={254}
+              invalid={!!fieldErrors.email}
+              invalidText={fieldErrors.email}
             />
 
             <PasswordInput
               id="password"
               labelText="Temporary Password"
               placeholder="Create a strong password"
+              helperText="At least 8 characters with an uppercase letter, a lowercase letter and a number."
               value={formData.password}
               onChange={(e) => setFormData({ ...formData, password: e.target.value })}
               disabled={isSubmitting}
+              maxLength={64}
+              invalid={!!fieldErrors.password}
+              invalidText={fieldErrors.password}
             />
 
             <Select
@@ -518,6 +546,8 @@ export default function ManageOfficers() {
                 }));
               }}
               disabled={isSubmitting || isDepartmentAdmin}
+              invalid={!!fieldErrors.department}
+              invalidText={fieldErrors.department}
             >
               <SelectItem value="" text="Choose a department" />
               {DEPARTMENTS.map((dept) => (

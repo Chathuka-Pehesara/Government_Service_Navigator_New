@@ -10,6 +10,8 @@ import {
   Button,
 } from "@carbon/react";
 import { Renew } from "@carbon/icons-react";
+import { hasErrors, parseApiError } from "../../utils/validation";
+import { logoFileError, validateDepartment, type DepartmentField } from "./departmentValidation";
 
 export const CATEGORIES = [
   "General",
@@ -38,6 +40,7 @@ export default function RegisterDepartmentModal({
 }: RegisterDepartmentModalProps) {
   const [isSubmitting, setIsSubmitting] = useState<boolean>(false);
   const [formError, setFormError] = useState<string | null>(null);
+  const [fieldErrors, setFieldErrors] = useState<Partial<Record<DepartmentField, string>>>({});
 
   const [departmentCode, setDepartmentCode] = useState<string>("");
   const [name, setName] = useState<string>("");
@@ -85,8 +88,9 @@ export default function RegisterDepartmentModal({
   const handleLogoFileChange = (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
     if (file) {
-      if (file.size > 2 * 1024 * 1024) {
-        setFormError("Logo file size exceeds 2MB limit. Please choose a smaller image.");
+      const fileError = logoFileError(file);
+      if (fileError) {
+        setFormError(fileError);
         return;
       }
       const reader = new FileReader();
@@ -101,8 +105,10 @@ export default function RegisterDepartmentModal({
 
   // Submit handler
   const handleSubmit = async () => {
-    if (!name.trim()) {
-      setFormError("Department Name is required.");
+    const errors = validateDepartment({ name, logoUrl, contactNumber, email, website, address, description });
+    setFieldErrors(errors);
+    if (hasErrors(errors)) {
+      setFormError("Please correct the highlighted fields.");
       return;
     }
 
@@ -129,10 +135,16 @@ export default function RegisterDepartmentModal({
         body: JSON.stringify(payload),
       });
 
-      const data = await res.json();
+      const text = await res.text();
       if (!res.ok) {
-        throw new Error(data.message || "Failed to register department.");
+        try {
+          setFieldErrors(JSON.parse(text)?.fields ?? {});
+        } catch {
+          // not JSON
+        }
+        throw new Error(parseApiError(text, "Failed to register department."));
       }
+      const data = JSON.parse(text);
 
       onSuccess(data);
     } catch (err: any) {
@@ -228,6 +240,9 @@ export default function RegisterDepartmentModal({
           }}
           disabled={isSubmitting}
           autoFocus
+          maxLength={150}
+          invalid={!!fieldErrors.name}
+          invalidText={fieldErrors.name}
         />
 
         {/* Category / Sector */}
@@ -323,6 +338,8 @@ export default function RegisterDepartmentModal({
                 value={logoUrl}
                 onChange={(e) => setLogoUrl(e.target.value)}
                 disabled={isSubmitting}
+                invalid={!!fieldErrors.logoUrl}
+                invalidText={fieldErrors.logoUrl}
               />
             </div>
           </div>
@@ -337,6 +354,9 @@ export default function RegisterDepartmentModal({
           onChange={(e) => setContactNumber(e.target.value)}
           helperText="Direct public inquiry telephone or official mobile hotline."
           disabled={isSubmitting}
+          maxLength={20}
+          invalid={!!fieldErrors.contactNumber}
+          invalidText={fieldErrors.contactNumber}
         />
 
         {/* Email Address */}
@@ -348,6 +368,9 @@ export default function RegisterDepartmentModal({
           value={email}
           onChange={(e) => setEmail(e.target.value)}
           disabled={isSubmitting}
+          maxLength={254}
+          invalid={!!fieldErrors.email}
+          invalidText={fieldErrors.email}
         />
 
         {/* Official Website */}
@@ -358,6 +381,9 @@ export default function RegisterDepartmentModal({
           value={website}
           onChange={(e) => setWebsite(e.target.value)}
           disabled={isSubmitting}
+          maxLength={2048}
+          invalid={!!fieldErrors.website}
+          invalidText={fieldErrors.website}
         />
 
         {/* Head Office Address */}
@@ -368,6 +394,9 @@ export default function RegisterDepartmentModal({
           value={address}
           onChange={(e) => setAddress(e.target.value)}
           disabled={isSubmitting}
+          maxLength={300}
+          invalid={!!fieldErrors.address}
+          invalidText={fieldErrors.address}
         />
 
         {/* Mandate & Scope Description */}
@@ -379,6 +408,9 @@ export default function RegisterDepartmentModal({
           value={description}
           onChange={(e) => setDescription(e.target.value)}
           disabled={isSubmitting}
+          maxLength={2000}
+          invalid={!!fieldErrors.description}
+          invalidText={fieldErrors.description}
         />
 
         {/* Status */}

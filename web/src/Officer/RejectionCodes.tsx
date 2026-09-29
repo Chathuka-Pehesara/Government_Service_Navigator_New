@@ -1,4 +1,5 @@
 import '@carbon/styles/css/styles.css';
+import { hasErrors, readApiError, v, validateForm } from '../utils/validation';
 import { useState, useEffect, useCallback } from 'react';
 import { useNavigate } from 'react-router-dom';
 import {
@@ -63,6 +64,17 @@ export default function RejectionCodes() {
   // Form State
   const [selectedId, setSelectedId] = useState<number | null>(null);
   const [formData, setFormData] = useState({ code: '', description: '' });
+  const [formErrors, setFormErrors] = useState<Partial<Record<'code' | 'description', string>>>({});
+
+  // Same rules as the backend (VerificationController.RejectionReasonProblems)
+  const validateCode = () => {
+    const errors = validateForm({
+      code: [formData.code, v.pattern(/^[A-Za-z0-9][A-Za-z0-9-]{1,19}$/, 'Code must be 2-20 letters, numbers or dashes, e.g. ERR-101.', true, 'Code')],
+      description: [formData.description, v.text('Description', { min: 3, max: 300 })],
+    });
+    setFormErrors(errors);
+    return !hasErrors(errors);
+  };
 
   const fetchCodes = useCallback(async () => {
     const token = localStorage.getItem("officerToken");
@@ -87,6 +99,7 @@ export default function RejectionCodes() {
   }, [fetchCodes]);
 
   const handleCreate = async () => {
+    if (!validateCode()) return;
     const token = localStorage.getItem("officerToken");
     try {
       const response = await fetch(`http://localhost:5119/api/Verification/rejection-reasons`, {
@@ -104,7 +117,7 @@ export default function RejectionCodes() {
         setFormData({ code: '', description: '' });
         fetchCodes();
       } else {
-        setNotification({ kind: "error", message: "Failed to create rejection code." });
+        setNotification({ kind: "error", message: await readApiError(response, "Failed to create rejection code.") });
       }
     } catch {
       setNotification({ kind: "error", message: "An error occurred." });
@@ -113,6 +126,7 @@ export default function RejectionCodes() {
 
   const handleUpdate = async () => {
     if (!selectedId) return;
+    if (!validateCode()) return;
     const token = localStorage.getItem("officerToken");
     try {
       const response = await fetch(`http://localhost:5119/api/Verification/rejection-reasons/${selectedId}`, {
@@ -129,7 +143,7 @@ export default function RejectionCodes() {
         setIsEditModalOpen(false);
         fetchCodes();
       } else {
-        setNotification({ kind: "error", message: "Failed to update rejection code." });
+        setNotification({ kind: "error", message: await readApiError(response, "Failed to update rejection code.") });
       }
     } catch {
       setNotification({ kind: "error", message: "An error occurred." });
@@ -160,7 +174,7 @@ export default function RejectionCodes() {
   const openEditModal = (codeItem: RejectionCodeItem) => {
     setSelectedId(codeItem.id);
     setFormData({ code: codeItem.code, description: codeItem.description });
-    setIsEditModalOpen(true);
+    setFormErrors({}); setIsEditModalOpen(true);
   };
 
   const openDeleteModal = (id: number) => {
@@ -266,7 +280,7 @@ export default function RejectionCodes() {
                         <Button 
                           onClick={() => {
                             setFormData({ code: '', description: '' });
-                            setIsCreateModalOpen(true);
+                            setFormErrors({}); setIsCreateModalOpen(true);
                           }} 
                           size="sm"
                           renderIcon={Add}
@@ -356,12 +370,18 @@ export default function RejectionCodes() {
           value={formData.code}
           onChange={(e) => setFormData({ ...formData, code: e.target.value })}
           style={{ marginBottom: '1rem' }}
+          maxLength={20}
+          invalid={!!formErrors.code}
+          invalidText={formErrors.code}
         />
         <TextInput
           id="create-desc"
           labelText="Description"
           value={formData.description}
           onChange={(e) => setFormData({ ...formData, description: e.target.value })}
+          maxLength={300}
+          invalid={!!formErrors.description}
+          invalidText={formErrors.description}
         />
       </div>
     </Modal>
@@ -382,12 +402,18 @@ export default function RejectionCodes() {
           value={formData.code}
           onChange={(e) => setFormData({ ...formData, code: e.target.value })}
           style={{ marginBottom: '1rem' }}
+          maxLength={20}
+          invalid={!!formErrors.code}
+          invalidText={formErrors.code}
         />
         <TextInput
           id="edit-desc"
           labelText="Description"
           value={formData.description}
           onChange={(e) => setFormData({ ...formData, description: e.target.value })}
+          maxLength={300}
+          invalid={!!formErrors.description}
+          invalidText={formErrors.description}
         />
       </div>
     </Modal>

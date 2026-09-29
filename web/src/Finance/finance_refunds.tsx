@@ -1,5 +1,6 @@
 import '@carbon/styles/css/styles.css';
 import { useCallback, useEffect, useMemo, useState } from "react";
+import { v } from "../utils/validation";
 import {
   Button,
   Column,
@@ -126,6 +127,8 @@ export default function FinanceRefunds() {
   const [selected, setSelected] = useState<RefundResponse | null>(null);
   const [note, setNote] = useState("");
   const [txRef, setTxRef] = useState("");
+  const [noteError, setNoteError] = useState<string | null>(null);
+  const [txRefError, setTxRefError] = useState<string | null>(null);
 
   const [actionLoading, setActionLoading] = useState(false);
   const [banner, setBanner] = useState<{ kind: "success" | "error"; msg: string } | null>(null);
@@ -220,29 +223,52 @@ export default function FinanceRefunds() {
     }
   }
 
+  // Same rules as the backend's RefundDecisionDto / RefundProcessDto
+  const optionalNote = v.text("Note", { max: 1000, required: false });
+  const rejectionNote = v.text("Reason for rejection", { min: 5, max: 1000 });
+  const transactionRef = v.pattern(
+    /^[A-Za-z0-9][A-Za-z0-9\-_/]{2,99}$/,
+    "Transaction reference must be 3-100 letters, numbers, dashes, underscores or slashes.",
+    true,
+    "Transaction reference"
+  );
+
   function handleApprove() {
     if (!selected) return;
-    mutate(() => approveRefund(selected.id, note || undefined), "Refund approved successfully.");
+    const error = optionalNote(note);
+    setNoteError(error);
+    if (error) return;
+    mutate(() => approveRefund(selected.id, note.trim() || undefined), "Refund approved successfully.");
   }
 
   function handleReject() {
     if (!selected) return;
-    mutate(() => rejectRefund(selected.id, note || undefined), "Refund rejected.");
+    // The citizen's rejection email shows this as the reason
+    const error = rejectionNote(note);
+    setNoteError(error);
+    if (error) return;
+    mutate(() => rejectRefund(selected.id, note.trim()), "Refund rejected.");
   }
 
   function handleProcess() {
-    if (!selected || !txRef.trim()) return;
+    if (!selected) return;
+    const error = transactionRef(txRef);
+    setTxRefError(error);
+    if (error) return;
     mutate(() => processRefund(selected.id, txRef.trim()), "Refund marked as Processing.");
   }
 
   async function handleApproveAndComplete() {
     if (!selected) return;
+    const error = transactionRef(txRef);
+    setTxRefError(error);
+    if (error) return;
     setActionLoading(true);
     setBanner(null);
     try {
       // Step 1: Process with dummy ref if not provided, or jump straight to complete if backend permits, 
       // otherwise follow sequence Process -> Complete.
-      const processed = await processRefund(selected.id, txRef.trim() || "DIRECT-COMPLETE");
+      const processed = await processRefund(selected.id, txRef.trim());
       const completed = await completeRefund(processed.id);
       setRefunds((prev) => prev.map((r) => (r.id === completed.id ? completed : r)));
       setSelected(completed);
@@ -472,11 +498,15 @@ export default function FinanceRefunds() {
                   <div>
                     <TextArea
                       id="refund-decision-note"
-                      labelText="Officer Note (Optional)"
-                      placeholder="Add an optional explanation note for the citizen..."
+                      labelText="Officer Note (required when rejecting)"
+                      placeholder="Explain the decision to the citizen. A reason is required to reject."
                       value={note}
                       onChange={(e) => setNote(e.target.value)}
                       rows={2}
+                      maxCount={1000}
+                      enableCounter
+                      invalid={!!noteError}
+                      invalidText={noteError ?? undefined}
                       style={{ marginBottom: "1rem" }}
                     />
                     <div style={{ display: "flex", gap: "1rem", flexWrap: "wrap" }}>
@@ -508,6 +538,9 @@ export default function FinanceRefunds() {
                       placeholder="e.g. TRF-2026-00142"
                       value={txRef}
                       onChange={(e) => setTxRef(e.target.value)}
+                      maxLength={100}
+                      invalid={!!txRefError}
+                      invalidText={txRefError ?? undefined}
                       style={{ marginBottom: "1rem" }}
                     />
                     <div style={{ display: "flex", gap: "1rem", flexWrap: "wrap" }}>

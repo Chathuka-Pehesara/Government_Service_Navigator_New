@@ -45,6 +45,8 @@ import {
   Money,
 } from "@carbon/icons-react";
 import { DEPARTMENTS, getCategoryForDepartment, getDepartmentSlug } from "../../constants/departments";
+import { parseApiError } from "../../utils/validation";
+import { serviceError } from "./serviceCatalogValidation";
 
 const headers = [
   { key: "serviceId", header: "Service ID" },
@@ -199,8 +201,9 @@ export default function ServiceCatalogManager() {
 
   const handleSaveService = async () => {
     setSaveError(null);
-    if (!formData.name.trim()) {
-      setSaveError("Procedure Name is required.");
+    const problem = serviceError(formData);
+    if (problem) {
+      setSaveError(problem);
       return;
     }
     try {
@@ -235,8 +238,7 @@ export default function ServiceCatalogManager() {
         setIsModalOpen(false);
         setSaveError(null);
       } else {
-        const errText = await response.text();
-        setSaveError(`Failed to save service. Server responded: ${response.status}. ${errText}`);
+        setSaveError(parseApiError(await response.text(), `Failed to save service (${response.status}).`));
       }
     } catch (error) {
       console.error("Error saving service:", error);

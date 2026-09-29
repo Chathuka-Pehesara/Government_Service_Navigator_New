@@ -7,6 +7,7 @@ import 'package:http/http.dart' as http;
 import '../config/app_config.dart';
 import '../providers/application_providers.dart';
 import '../theme/app_colors.dart';
+import '../providers/session_provider.dart';
 import 'booking_options_screen.dart';
 import 'post_service_form_screen.dart';
 
@@ -289,6 +290,14 @@ class _BookingsListScreenState extends ConsumerState<BookingsListScreen> {
     );
   }
 
+  /// Signed-in citizen's NIC, sent with bookings so the department admin can identify them.
+  /// Null lets the backend take it from the application.
+  String? get _citizenNic {
+    final user = ref.read(sessionProvider).user;
+    final nic = (user?['nicNumber'] ?? user?['nic'] ?? user?['citizenNic'])?.toString();
+    return (nic == null || nic.isEmpty) ? null : nic;
+  }
+
   @override
   Widget build(BuildContext context) {
     // Read live applications
@@ -565,7 +574,9 @@ class _BookingsListScreenState extends ConsumerState<BookingsListScreen> {
                                   CupertinoPageRoute(
                                     builder: (_) => BookingOptionsScreen(
                                       applicationId: appId,
+                                      citizenNic: _citizenNic,
                                       serviceName: serviceName,
+                                      isReschedule: true,
                                       onAppointmentBooked: (newBooking) {
                                         setState(() {
                                           _bookingsByAppCode[appId.toUpperCase()] = newBooking;
@@ -667,6 +678,7 @@ class _BookingsListScreenState extends ConsumerState<BookingsListScreen> {
                                 CupertinoPageRoute(
                                   builder: (_) => BookingOptionsScreen(
                                     applicationId: appId,
+                                    citizenNic: _citizenNic,
                                     serviceName: serviceName,
                                     onPostalSubmitted: () {
                                       setState(() => _postalRequestedApps.add(appId));

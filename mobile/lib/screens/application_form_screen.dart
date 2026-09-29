@@ -13,6 +13,7 @@ import '../providers/service_providers.dart';
 import 'payments/payment_screen.dart';
 import 'payments/checkout_webview_screen.dart';
 import 'package:shared_preferences/shared_preferences.dart';
+import '../utils/validators.dart';
 
 /// Renders the admin-built application template as a paper-style government form
 /// (matching the web Template Builder canvas) and submits the citizen's answers.
@@ -1187,8 +1188,9 @@ class _ApplicationFormScreenState extends ConsumerState<ApplicationFormScreen> {
             controller: _controllerFor(label),
             minLines: 3,
             maxLines: 6,
+            maxLength: 5000,
             decoration: _boxDecoration(),
-            validator: requiredValidator,
+            validator: (v) => requiredValidator(v) ?? Validators.text(v, field: label, max: 5000, required: false),
           ),
         );
 
@@ -1330,13 +1332,26 @@ class _ApplicationFormScreenState extends ConsumerState<ApplicationFormScreen> {
         );
 
       default: // text
+        // An NIC / email / phone field is recognised by its label, as the backend does
+        final lower = label.toLowerCase();
+        final isNic = lower.contains('nic') || lower.contains('identity card') || lower.contains('national id');
+        final isEmail = lower.contains('email') || lower.contains('e-mail');
+        final isPhone = lower.contains('phone') || lower.contains('mobile') || lower.contains('telephone');
         return _labelled(
           label,
           required,
           child: TextFormField(
             controller: _controllerFor(label),
-            decoration: _boxDecoration(),
-            validator: requiredValidator,
+            maxLength: isNic ? 12 : 1000,
+            keyboardType: isEmail
+                ? TextInputType.emailAddress
+                : (isPhone ? TextInputType.phone : TextInputType.text),
+            textCapitalization: isNic ? TextCapitalization.characters : TextCapitalization.none,
+            decoration: _boxDecoration().copyWith(counterText: ''),
+            validator: (v) =>
+                requiredValidator(v) ??
+                Validators.byLabel(label, v) ??
+                Validators.text(v, field: label, max: 1000, required: false),
           ),
         );
     }

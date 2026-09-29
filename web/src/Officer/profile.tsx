@@ -1,5 +1,6 @@
 import '@carbon/styles/css/styles.css';
 import React, { useState } from "react";
+import { v } from "../utils/validation";
 import {
   Header,
   HeaderContainer,
@@ -66,6 +67,24 @@ export default function Profile() {
   const [officerData, setOfficerData] = useState(getStoredOfficerData);
 
   const [isSaving, setIsSaving] = useState(false);
+  const [nameError, setNameError] = useState<string | null>(null);
+  const [currentPassword, setCurrentPassword] = useState("");
+  const [newPassword, setNewPassword] = useState("");
+  const [passwordErrors, setPasswordErrors] = useState<{ current?: string; next?: string }>({});
+  const [passwordNotice, setPasswordNotice] = useState<string | null>(null);
+
+  // Same rule the backend uses for new passwords (StrongPassword)
+  const handleUpdatePassword = () => {
+    const errors = {
+      current: currentPassword ? undefined : "Enter your current password.",
+      next: v.strongPassword()(newPassword) ?? (newPassword === currentPassword ? "The new password must be different." : undefined),
+    };
+    setPasswordErrors(errors);
+    setPasswordNotice(null);
+    if (errors.current || errors.next) return;
+    // There is no self-service endpoint yet; administrators reset officer passwords
+    setPasswordNotice("Self-service password change is not connected yet. Ask your administrator to reset your password.");
+  };
 
   const handleLogout = async () => {
     const token = localStorage.getItem("officerToken");
@@ -88,6 +107,9 @@ export default function Profile() {
 
   const handleSaveProfile = (e: React.FormEvent) => {
     e.preventDefault();
+    const error = v.personName("Full name")(officerData.fullName);
+    setNameError(error);
+    if (error) return;
     setIsSaving(true);
     // Simulate API save delay
     setTimeout(() => {
@@ -219,6 +241,9 @@ export default function Profile() {
                           labelText="Full Name"
                           value={officerData.fullName}
                           onChange={(e) => setOfficerData({...officerData, fullName: e.target.value})}
+                          maxLength={100}
+                          invalid={!!nameError}
+                          invalidText={nameError ?? undefined}
                         />
                       </FormGroup>
                       <FormGroup legendText="">
@@ -258,6 +283,10 @@ export default function Profile() {
                           id="current-password"
                           labelText="Current Password"
                           placeholder="Enter your current password"
+                          value={currentPassword}
+                          onChange={(e) => setCurrentPassword(e.target.value)}
+                          invalid={!!passwordErrors.current}
+                          invalidText={passwordErrors.current}
                         />
                       </FormGroup>
                       <FormGroup legendText="">
@@ -265,16 +294,24 @@ export default function Profile() {
                           id="new-password"
                           labelText="New Password"
                           placeholder="Enter a new password"
-                          helperText="Must be at least 8 characters and contain a symbol."
+                          helperText="At least 8 characters with an uppercase letter, a lowercase letter and a number."
+                          value={newPassword}
+                          onChange={(e) => setNewPassword(e.target.value)}
+                          maxLength={64}
+                          invalid={!!passwordErrors.next}
+                          invalidText={passwordErrors.next}
                         />
                       </FormGroup>
                       <Button 
                         type="button" 
-                        kind="secondary"
+                        kind="secondary" onClick={handleUpdatePassword}
                         style={{ maxWidth: '200px' }}
                       >
                         Update Password
                       </Button>
+                      {passwordNotice && (
+                        <p style={{ fontSize: "0.875rem", color: "#0043ce", margin: 0 }}>{passwordNotice}</p>
+                      )}
                     </Stack>
                   </Form>
                 </Tile>

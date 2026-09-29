@@ -35,7 +35,8 @@ namespace Government_Service_Navigator.Backend.Services
             });
         }
         public async Task<AuthResponse> CreateOfficerAsync(CreateOfficerRequest request) {
-            if (await _context.Officers.AnyAsync(o => o.Email == request.Email)) {
+            var email = request.Email.Trim().ToLower();
+            if (await _context.Officers.AnyAsync(o => o.Email.ToLower() == email)) {
                 return new AuthResponse {
                     Success = false,
                     ErrorMessage = "Officer with this email already exists."

@@ -22,6 +22,7 @@ import AgentDraftPanel from "./AgentDraftPanel";
 import DocumentPreview from "./DocumentPreview";
 import { getAgentDraft, generateAgentDraft, type AgentDraftView } from "./agentDraftApi";
 import { ApiError } from "../utils/api";
+import { v } from "../utils/validation";
 
 interface PaymentDetail {
   id?: number;
@@ -114,7 +115,7 @@ export default function VerificationWorkspace() {
     const fallback = "The AI agents could not prepare a draft for this application.";
     if (!(e instanceof ApiError)) return fallback;
     try {
-      const body = JSON.parse(e.message);
+      const body = JSON.parse(e.body);
       return body.details ? `${fallback} ${body.details}` : fallback;
     } catch {
       return e.status === 404 ? e.message : fallback;
@@ -223,8 +224,14 @@ export default function VerificationWorkspace() {
       alert("Cannot complete stage as verified: Statutory payment has not been verified by the Department Finance Officer.");
       return;
     }
-    if ((status === "Rejected" || status === "Revision Requested") && (!comments && !reasonId)) {
+    if ((status === "Rejected" || status === "Revision Requested") && (!comments.trim() && !reasonId)) {
       alert("Please provide a reason or comments for rejection/revision.");
+      return;
+    }
+    // Same limit as the backend's VerificationDecisionRequest
+    const commentsError = v.text("Comments", { max: 2000, required: false })(comments);
+    if (commentsError) {
+      alert(commentsError);
       return;
     }
 
@@ -616,6 +623,8 @@ export default function VerificationWorkspace() {
                            onChange={(e) => setComments(e.target.value)}
                            rows={4}
                            style={{ marginBottom: '1rem' }}
+                           maxCount={2000}
+                           enableCounter
                         />
 
                         <Button 
@@ -689,6 +698,8 @@ export default function VerificationWorkspace() {
                 rows={3}
                 value={deleteNotes}
                 onChange={(e) => setDeleteNotes(e.target.value)}
+                maxCount={1000}
+                enableCounter
               />
             </Modal>
           </main>

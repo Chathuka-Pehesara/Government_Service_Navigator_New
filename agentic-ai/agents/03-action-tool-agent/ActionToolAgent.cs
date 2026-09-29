@@ -283,11 +283,11 @@ public class ActionToolAgent : IActionToolAgent
                 var nextDateStr = nextWorkingDay.ToString("dddd, dd MMM yyyy");
 
                 var nextDaySlots = request.ConfiguredSlots
-                    .Where(s => s.IsActive && s.DayOfWeek == nextDayNum && s.BookedCount < s.MaxCapacity)
+                    .Where(s => s.IsActive && s.DayOfWeek == nextDayNum && BookedOn(request, s, nextWorkingDay) < s.MaxCapacity)
                     .OrderBy(s => s.StartTime)
                     .Select(s => new SuggestedTimeSlot(
                         $"{s.StartTime.Substring(0, Math.Min(5, s.StartTime.Length))} - {s.EndTime.Substring(0, Math.Min(5, s.EndTime.Length))}",
-                        $"{s.StartTime.Substring(0, Math.Min(5, s.StartTime.Length))} - {s.EndTime.Substring(0, Math.Min(5, s.EndTime.Length))} ({s.MaxCapacity - s.BookedCount} seats available) — {nextDateStr}",
+                        $"{s.StartTime.Substring(0, Math.Min(5, s.StartTime.Length))} - {s.EndTime.Substring(0, Math.Min(5, s.EndTime.Length))} ({s.MaxCapacity - BookedOn(request, s, nextWorkingDay)} seats available) — {nextDateStr}",
                         $"{nextWorkingDay:yyyy-MM-dd} {s.StartTime.Substring(0, Math.Min(5, s.StartTime.Length))}"
                     ))
                     .ToList();
@@ -323,12 +323,13 @@ public class ActionToolAgent : IActionToolAgent
             }
 
             // Case A: A matching department slot exists and has free capacity
-            if (matchingSlot != null && matchingSlot.BookedCount < matchingSlot.MaxCapacity)
+            var matchingBooked = matchingSlot == null ? 0 : BookedOn(request, matchingSlot, parsedTime.TargetDate);
+            if (matchingSlot != null && matchingBooked < matchingSlot.MaxCapacity)
             {
                 var code = $"SL-APT-{Random.Shared.Next(1000, 9999)}";
                 var slotDisplay = $"{matchingSlot.StartTime.Substring(0, Math.Min(5, matchingSlot.StartTime.Length))} - {matchingSlot.EndTime.Substring(0, Math.Min(5, matchingSlot.EndTime.Length))}";
                 var dateDisplay = parsedTime.TargetDate.ToString("dddd, dd MMM yyyy");
-                int newBookedCount = matchingSlot.BookedCount + 1;
+                int newBookedCount = matchingBooked + 1;
                 int remaining = matchingSlot.MaxCapacity - newBookedCount;
 
                 string reasoning = $"Agent 3 matched your requested time '{request.PreferredTimeInput}' with an available collection counter slot ({slotDisplay}) at {department}. Slot capacity updated: {newBookedCount}/{matchingSlot.MaxCapacity} slots filled ({remaining} remaining). Appointment confirmed under statutory booking code {code}. Both your profile and the {department} desk have received this confirmation.";
@@ -358,11 +359,11 @@ public class ActionToolAgent : IActionToolAgent
             var dateString = targetDay.ToString("dddd, dd MMM yyyy");
 
             var availableDeptSlots = request.ConfiguredSlots
-                .Where(s => s.IsActive && s.DayOfWeek == dayNum && s.BookedCount < s.MaxCapacity)
+                .Where(s => s.IsActive && s.DayOfWeek == dayNum && BookedOn(request, s, targetDay) < s.MaxCapacity)
                 .OrderBy(s => s.StartTime)
                 .Select(s => new SuggestedTimeSlot(
                     $"{s.StartTime.Substring(0, Math.Min(5, s.StartTime.Length))} - {s.EndTime.Substring(0, Math.Min(5, s.EndTime.Length))}",
-                    $"{s.StartTime.Substring(0, Math.Min(5, s.StartTime.Length))} - {s.EndTime.Substring(0, Math.Min(5, s.EndTime.Length))} ({s.MaxCapacity - s.BookedCount} seats available) — {dateString}",
+                    $"{s.StartTime.Substring(0, Math.Min(5, s.StartTime.Length))} - {s.EndTime.Substring(0, Math.Min(5, s.EndTime.Length))} ({s.MaxCapacity - BookedOn(request, s, targetDay)} seats available) — {dateString}",
                     $"{targetDay:yyyy-MM-dd} {s.StartTime.Substring(0, Math.Min(5, s.StartTime.Length))}"
                 ))
                 .ToList();
@@ -376,11 +377,11 @@ public class ActionToolAgent : IActionToolAgent
                 var nextDayStr = nextDay.ToString("dddd, dd MMM yyyy");
 
                 availableDeptSlots = request.ConfiguredSlots
-                    .Where(s => s.IsActive && s.DayOfWeek == nextDayNum && s.BookedCount < s.MaxCapacity)
+                    .Where(s => s.IsActive && s.DayOfWeek == nextDayNum && BookedOn(request, s, nextDay) < s.MaxCapacity)
                     .OrderBy(s => s.StartTime)
                     .Select(s => new SuggestedTimeSlot(
                         $"{s.StartTime.Substring(0, Math.Min(5, s.StartTime.Length))} - {s.EndTime.Substring(0, Math.Min(5, s.EndTime.Length))}",
-                        $"{s.StartTime.Substring(0, Math.Min(5, s.StartTime.Length))} - {s.EndTime.Substring(0, Math.Min(5, s.EndTime.Length))} ({s.MaxCapacity - s.BookedCount} seats available) — {nextDayStr}",
+                        $"{s.StartTime.Substring(0, Math.Min(5, s.StartTime.Length))} - {s.EndTime.Substring(0, Math.Min(5, s.EndTime.Length))} ({s.MaxCapacity - BookedOn(request, s, nextDay)} seats available) — {nextDayStr}",
                         $"{nextDay:yyyy-MM-dd} {s.StartTime.Substring(0, Math.Min(5, s.StartTime.Length))}"
                     ))
                     .ToList();
@@ -483,6 +484,12 @@ public class ActionToolAgent : IActionToolAgent
             Message: $"Requested time is not available. Available slots for {fallbackDateString} are suggested below.",
             AgentReasoning: agentAdvice);
     }
+
+    // Bookings for this slot on this exact date (not the slot's weekday in general)
+    private static int BookedOn(AppointmentBookingRequest request, DepartmentSlotInfo slot, DateTime date) =>
+        request.DateUsage == null
+            ? slot.BookedCount
+            : request.DateUsage.Where(u => u.SlotId == slot.Id && u.Date.Date == date.Date).Sum(u => u.Count);
 
     private static string ResolveDepartmentFromService(string serviceName)
     {

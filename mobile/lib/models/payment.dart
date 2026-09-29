@@ -11,6 +11,8 @@ class Payment {
   final String? paidDate;
   final String? paymentId;
   final String? checkoutUrl;
+  // Department handling the payment's application (from GET /api/payments/mine)
+  final String? department;
 
   const Payment({
     required this.id,
@@ -25,6 +27,7 @@ class Payment {
     this.paidDate,
     this.paymentId,
     this.checkoutUrl,
+    this.department,
   });
 
   factory Payment.fromJson(Map<String, dynamic> json) {
@@ -41,6 +44,7 @@ class Payment {
       paidDate: json['paidDate'] as String?,
       paymentId: json['paymentId']?.toString(),
       checkoutUrl: json['checkoutUrl'] as String?,
+      department: json['department'] as String?,
     );
   }
 }

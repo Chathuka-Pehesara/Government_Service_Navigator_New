@@ -4,6 +4,7 @@ import '../../theme/app_colors.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import '../../providers/refund_providers.dart';
 import '../../providers/service_providers.dart';
+import '../../utils/validators.dart';
 import 'my_refunds_screen.dart';
 
 class SubmitRefundScreen extends ConsumerStatefulWidget {
@@ -184,10 +185,9 @@ class _SubmitRefundScreenState extends ConsumerState<SubmitRefundScreen> {
             const SizedBox(height: 8),
             _buildField(
               controller: _paymentIdController,
-              hint: 'e.g. PAY-001',
+              hint: 'e.g. 1024',
               icon: CupertinoIcons.creditcard,
-              validator: (v) =>
-                  (v == null || v.trim().isEmpty) ? 'Required' : null,
+              validator: (v) => Validators.number(v, field: 'Payment ID', min: 1),
             ),
             const SizedBox(height: 16),
 
@@ -199,13 +199,7 @@ class _SubmitRefundScreenState extends ConsumerState<SubmitRefundScreen> {
               icon: CupertinoIcons.money_dollar_circle,
               keyboardType:
                   const TextInputType.numberWithOptions(decimal: true),
-              validator: (v) {
-                if (v == null || v.trim().isEmpty) return 'Required';
-                if (double.tryParse(v.trim()) == null) {
-                  return 'Enter a valid number';
-                }
-                return null;
-              },
+              validator: Validators.amount,
             ),
             const SizedBox(height: 16),
 
@@ -233,12 +227,8 @@ class _SubmitRefundScreenState extends ConsumerState<SubmitRefundScreen> {
                     focusedBorder: InputBorder.none,
                     contentPadding: EdgeInsets.symmetric(vertical: 12),
                   ),
-                  validator: (v) {
-                    if (v == null || v.trim().length < 10) {
-                      return 'Please provide at least 10 characters';
-                    }
-                    return null;
-                  },
+                  maxLength: 1000,
+                  validator: (v) => Validators.text(v, field: 'Reason', min: 10, max: 1000),
                 ),
               ),
             ),

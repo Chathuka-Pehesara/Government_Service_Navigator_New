@@ -1,4 +1,5 @@
 using System;
+using System.ComponentModel.DataAnnotations;
 using System.Linq;
 using System.Text.RegularExpressions;
 using System.Threading.Tasks;
@@ -6,6 +7,7 @@ using Microsoft.AspNetCore.Mvc;
 using Microsoft.EntityFrameworkCore;
 using Government_Service_Navigator.Backend.Data.Context;
 using Government_Service_Navigator.Backend.Models.Entities;
+using Government_Service_Navigator.Backend.Validation;
 
 namespace Government_Service_Navigator.Backend.Controllers
 {
@@ -360,36 +362,62 @@ namespace Government_Service_Navigator.Backend.Controllers
         }
     }
 
-    public class DepartmentCreateDto
+    // Fields shared by create and update, all optional. Name is declared on each: required only on create.
+    public abstract class DepartmentFieldsDto
     {
+        [RegularExpression(@"^[A-Za-z0-9\-]{2,20}$", ErrorMessage = "Department code must be 2-20 letters, numbers or dashes.")]
         public string? DepartmentCode { get; set; }
-        public string Name { get; set; } = string.Empty;
+
+        [MaxLength(100, ErrorMessage = "Category must be at most 100 characters.")]
         public string? Category { get; set; }
+
+        // A web address, or the uploaded image itself as a data: URL
+        [ImageUrl]
         public string? LogoUrl { get; set; }
+
+        [SriLankaPhone(AllowShortCode = true, ErrorMessage = "Enter a valid contact number, e.g. 0112345678, +94112345678 or a hotline such as 1919.")]
         public string? ContactNumber { get; set; }
+
+        [Email]
         public string? Email { get; set; }
+
+        [MaxLength(2048, ErrorMessage = "Website address is too long.")]
+        [WebUrl]
         public string? Website { get; set; }
+
+        [MaxLength(300, ErrorMessage = "Address must be at most 300 characters.")]
+        [PlainText]
         public string? Address { get; set; }
+
+        [MaxLength(2000, ErrorMessage = "Description must be at most 2000 characters.")]
+        [PlainText]
         public string? Description { get; set; }
-        public string? Status { get; set; } = "Inactive";
+
+        [RegularExpression("^(?i:Active|Inactive)$", ErrorMessage = "Status must be Active or Inactive.")]
+        public string? Status { get; set; }
     }
 
-    public class DepartmentUpdateDto
+    public class DepartmentCreateDto : DepartmentFieldsDto
     {
-        public string? DepartmentCode { get; set; }
+        [Required(ErrorMessage = "Department name is required.")]
+        [StringLength(150, MinimumLength = 3, ErrorMessage = "Department name must be 3-150 characters.")]
+        [PlainText]
+        public string Name { get; set; } = string.Empty;
+
+        public DepartmentCreateDto() => Status = "Inactive";
+    }
+
+    public class DepartmentUpdateDto : DepartmentFieldsDto
+    {
+        [StringLength(150, MinimumLength = 3, ErrorMessage = "Department name must be 3-150 characters.")]
+        [PlainText]
         public string? Name { get; set; }
-        public string? Category { get; set; }
-        public string? LogoUrl { get; set; }
-        public string? ContactNumber { get; set; }
-        public string? Email { get; set; }
-        public string? Website { get; set; }
-        public string? Address { get; set; }
-        public string? Description { get; set; }
-        public string? Status { get; set; }
     }
 
     public class DepartmentStatusDto
     {
+        [Required(ErrorMessage = "Status is required.")]
+        [RegularExpression("^(?i:Active|Inactive)$", ErrorMessage = "Status must be Active or Inactive.")]
         public string? Status { get; set; }
     }
 }

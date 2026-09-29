@@ -1,4 +1,5 @@
 using AgenticAi.Agents.IntakePlanningAgent;
+using DA = System.ComponentModel.DataAnnotations;
 using Microsoft.AspNetCore.Mvc;
 
 namespace Government_Service_Navigator.Backend.Controllers;
@@ -34,5 +35,7 @@ public class IntakeAgentController : ControllerBase
 // A simple DTO to catch the incoming JSON request
 public class UserQueryDto
 {
+    [DA.Required(ErrorMessage = "Describe what you need help with.")]
+    [DA.StringLength(1000, MinimumLength = 2, ErrorMessage = "Your question must be 2-1000 characters.")]
     public string Text { get; set; } = string.Empty;
 }

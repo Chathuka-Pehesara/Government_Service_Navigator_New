@@ -1,4 +1,5 @@
 using Government_Service_Navigator.AgenticAi.Tools.CalculateFee;
+using System.ComponentModel.DataAnnotations;
 using System.Security.Claims;
 using System.Text.Json;
 using Microsoft.AspNetCore.Authorization;
@@ -9,6 +10,7 @@ using Government_Service_Navigator.Backend.DTOs.Requests;
 using Government_Service_Navigator.Backend.Models.Entities;
 using Government_Service_Navigator.Backend.Services;
 using Government_Service_Navigator.Backend.Services.Interfaces;
+using Government_Service_Navigator.Backend.Validation;
 using Government_Service_Navigator.AgenticAi.Agents.ValidationSafety;
 using Government_Service_Navigator.AgenticAi.Schemas;
 using Government_Service_Navigator.AgenticAi.Tools.CheckDuplicateApplication;
@@ -243,6 +245,10 @@ namespace Government_Service_Navigator.Backend.Controllers
                     .ToList();
                 if (missing.Count > 0)
                     return BadRequest(new { message = "Required fields are missing.", missingFields = missing });
+
+                var invalid = ApplicationAnswersValidator.Validate(template.Fields, request.Answers);
+                if (invalid.Count > 0)
+                    return BadRequest(new { message = string.Join(" ", invalid.Values), errors = invalid.Values, invalidFields = invalid });
             }
 
             // Footer values are set server-side so the client can't alter which department receives it.
@@ -655,6 +661,10 @@ namespace Government_Service_Navigator.Backend.Controllers
             if (missing.Count > 0)
                 return BadRequest(new { message = $"Required fields are missing for Stage {template.StageOrder}.", missingFields = missing });
 
+            var invalid = ApplicationAnswersValidator.Validate(template.Fields, request.Answers);
+            if (invalid.Count > 0)
+                return BadRequest(new { message = string.Join(" ", invalid.Values), errors = invalid.Values, invalidFields = invalid });
+
             // Identify required document fields for this stage
             var stageRequiredDocs = template.Fields
                 .Where(f => f.IsRequired && (f.Type == "file" || f.Type == "document" || f.Type == "documentUpload"))
@@ -973,20 +983,39 @@ namespace Government_Service_Navigator.Backend.Controllers
 
     public class SubmitStageRequest
     {
+        [Range(1, int.MaxValue, ErrorMessage = "A valid application is required.")]
         public int ApplicationId { get; set; }
+
+        [Required(ErrorMessage = "The form is required.")]
         public Guid TemplateId { get; set; }
+
+        [MaxLength(300, ErrorMessage = "A form can have at most 300 answers.")]
         public Dictionary<string, string> Answers { get; set; } = new();
+
+        [MaxLength(50, ErrorMessage = "A form can have at most 50 documents.")]
         public Dictionary<string, Guid> Documents { get; set; } = new();
     }
 
     public class SaveDraftRequest
     {
+        [Range(0, int.MaxValue, ErrorMessage = "Application id cannot be negative.")]
         public int ApplicationId { get; set; }
+
+        [Range(0, 50, ErrorMessage = "Stage must be between 1 and 50.")]
         public int StageNumber { get; set; }
+
         public Guid? TemplateId { get; set; }
+
+        [MaxLength(300, ErrorMessage = "A form can have at most 300 answers.")]
         public Dictionary<string, string> Answers { get; set; } = new();
+
+        [MaxLength(50, ErrorMessage = "A form can have at most 50 documents.")]
         public Dictionary<string, Guid> Documents { get; set; } = new();
+
+        [MaxLength(200, ErrorMessage = "Payment reference must be at most 200 characters.")]
         public string? PaymentReference { get; set; }
+
+        [MaxLength(50, ErrorMessage = "Payment method must be at most 50 characters.")]
         public string? PaymentMethod { get; set; }
     }
 }

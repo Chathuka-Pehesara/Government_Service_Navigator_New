@@ -4,6 +4,7 @@ import '../theme/app_colors.dart';
 import '../theme/glass_theme.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import '../providers/auth_provider.dart';
+import '../utils/validators.dart';
 import 'dashboard_screen.dart';
 
 class SignUpPage extends ConsumerStatefulWidget {
@@ -41,7 +42,7 @@ class _SignUpPageState extends ConsumerState<SignUpPage> {
           fullName: _fullNameController.text.trim(),
           email: _emailController.text.trim(),
           password: _passwordController.text,
-          nicNumber: _nicController.text.trim(),
+          nicNumber: SriLankaNic.normalize(_nicController.text),
         );
 
     if (!signedIn || !mounted) return;
@@ -96,26 +97,16 @@ class _SignUpPageState extends ConsumerState<SignUpPage> {
                   controller: _fullNameController,
                   hint: 'Kamal Perera',
                   icon: Icons.person_outline,
-                  validator: (value) => (value == null || value.trim().isEmpty)
-                      ? 'Full name is required'
-                      : null,
+                  validator: (value) => Validators.personName(value, field: 'Full name'),
                 ),
                 const SizedBox(height: 16),
                 _buildLabel('NIC Number'),
                 const SizedBox(height: 8),
                 _buildTextField(
                   controller: _nicController,
-                  hint: '200012345678',
+                  hint: '200012345678 or 881234567V',
                   icon: Icons.badge_outlined,
-                  validator: (value) {
-                    if (value == null || value.trim().isEmpty) {
-                      return 'NIC number is required';
-                    }
-                    if (value.trim().length < 10) {
-                      return 'Enter a valid NIC number';
-                    }
-                    return null;
-                  },
+                  validator: Validators.nic,
                 ),
                 const SizedBox(height: 16),
                 _buildLabel('Email'),
@@ -125,15 +116,7 @@ class _SignUpPageState extends ConsumerState<SignUpPage> {
                   hint: 'you@example.com',
                   icon: Icons.mail_outline,
                   keyboardType: TextInputType.emailAddress,
-                  validator: (value) {
-                    if (value == null || value.trim().isEmpty) {
-                      return 'Email is required';
-                    }
-                    if (!value.contains('@')) {
-                      return 'Enter a valid email';
-                    }
-                    return null;
-                  },
+                  validator: Validators.email,
                 ),
                 const SizedBox(height: 16),
                 _buildLabel('Password'),
@@ -143,15 +126,12 @@ class _SignUpPageState extends ConsumerState<SignUpPage> {
                   obscure: _obscurePassword,
                   onToggle: () =>
                       setState(() => _obscurePassword = !_obscurePassword),
-                  validator: (value) {
-                    if (value == null || value.isEmpty) {
-                      return 'Password is required';
-                    }
-                    if (value.length < 6) {
-                      return 'Password must be at least 6 characters';
-                    }
-                    return null;
-                  },
+                  validator: Validators.strongPassword,
+                ),
+                const SizedBox(height: 6),
+                Text(
+                  'At least 8 characters with an uppercase letter, a lowercase letter and a number.',
+                  style: TextStyle(fontSize: 12, color: AppColors.dark.withValues(alpha: 0.55)),
                 ),
                 const SizedBox(height: 16),
                 _buildLabel('Confirm Password'),
@@ -161,12 +141,7 @@ class _SignUpPageState extends ConsumerState<SignUpPage> {
                   obscure: _obscureConfirmPassword,
                   onToggle: () => setState(
                       () => _obscureConfirmPassword = !_obscureConfirmPassword),
-                  validator: (value) {
-                    if (value != _passwordController.text) {
-                      return 'Passwords do not match';
-                    }
-                    return null;
-                  },
+                  validator: Validators.confirmPassword(() => _passwordController.text),
                 ),
                 if (errorMessage != null) ...[
                   const SizedBox(height: 14),

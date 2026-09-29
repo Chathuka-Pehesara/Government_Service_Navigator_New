@@ -10,6 +10,8 @@ import {
   Button,
   Tag,
 } from "@carbon/react";
+import { hasErrors, parseApiError } from "../../utils/validation";
+import { logoFileError, validateDepartment, type DepartmentField } from "./departmentValidation";
 import { CATEGORIES } from "./RegisterDepartmentModal";
 import type { Department } from "./types";
 
@@ -28,6 +30,7 @@ export default function EditDepartmentModal({
 }: EditDepartmentModalProps) {
   const [isSubmitting, setIsSubmitting] = useState<boolean>(false);
   const [formError, setFormError] = useState<string | null>(null);
+  const [fieldErrors, setFieldErrors] = useState<Partial<Record<DepartmentField, string>>>({});
 
   const [name, setName] = useState<string>("");
   const [category, setCategory] = useState<string>("General");
@@ -60,8 +63,9 @@ export default function EditDepartmentModal({
   const handleLogoFileChange = (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
     if (file) {
-      if (file.size > 2 * 1024 * 1024) {
-        setFormError("Logo file size exceeds 2MB limit. Please choose a smaller image.");
+      const fileError = logoFileError(file);
+      if (fileError) {
+        setFormError(fileError);
         return;
       }
       const reader = new FileReader();
@@ -77,8 +81,10 @@ export default function EditDepartmentModal({
   // Submit handler
   const handleSubmit = async () => {
     if (!department) return;
-    if (!name.trim()) {
-      setFormError("Department Name is required.");
+    const errors = validateDepartment({ name, logoUrl, contactNumber, email, website, address, description });
+    setFieldErrors(errors);
+    if (hasErrors(errors)) {
+      setFormError("Please correct the highlighted fields.");
       return;
     }
 
@@ -112,10 +118,16 @@ export default function EditDepartmentModal({
         body: JSON.stringify(payload),
       });
 
-      const data = await res.json();
+      const text = await res.text();
       if (!res.ok) {
-        throw new Error(data.message || "Failed to update department.");
+        try {
+          setFieldErrors(JSON.parse(text)?.fields ?? {});
+        } catch {
+          // not JSON
+        }
+        throw new Error(parseApiError(text, "Failed to update department."));
       }
+      const data = JSON.parse(text);
 
       onSuccess(data);
     } catch (err: any) {
@@ -200,6 +212,9 @@ export default function EditDepartmentModal({
             if (formError) setFormError(null);
           }}
           disabled={isSubmitting}
+          maxLength={150}
+          invalid={!!fieldErrors.name}
+          invalidText={fieldErrors.name}
         />
 
         <Select
@@ -294,6 +309,8 @@ export default function EditDepartmentModal({
                 value={logoUrl}
                 onChange={(e) => setLogoUrl(e.target.value)}
                 disabled={isSubmitting}
+                invalid={!!fieldErrors.logoUrl}
+                invalidText={fieldErrors.logoUrl}
               />
             </div>
           </div>
@@ -305,6 +322,9 @@ export default function EditDepartmentModal({
           value={contactNumber}
           onChange={(e) => setContactNumber(e.target.value)}
           disabled={isSubmitting}
+          maxLength={20}
+          invalid={!!fieldErrors.contactNumber}
+          invalidText={fieldErrors.contactNumber}
         />
 
         <TextInput
@@ -314,6 +334,9 @@ export default function EditDepartmentModal({
           value={email}
           onChange={(e) => setEmail(e.target.value)}
           disabled={isSubmitting}
+          maxLength={254}
+          invalid={!!fieldErrors.email}
+          invalidText={fieldErrors.email}
         />
 
         <TextInput
@@ -322,6 +345,9 @@ export default function EditDepartmentModal({
           value={website}
           onChange={(e) => setWebsite(e.target.value)}
           disabled={isSubmitting}
+          maxLength={2048}
+          invalid={!!fieldErrors.website}
+          invalidText={fieldErrors.website}
         />
 
         <TextInput
@@ -330,6 +356,9 @@ export default function EditDepartmentModal({
           value={address}
           onChange={(e) => setAddress(e.target.value)}
           disabled={isSubmitting}
+          maxLength={300}
+          invalid={!!fieldErrors.address}
+          invalidText={fieldErrors.address}
         />
 
         <TextArea
@@ -339,6 +368,9 @@ export default function EditDepartmentModal({
           value={description}
           onChange={(e) => setDescription(e.target.value)}
           disabled={isSubmitting}
+          maxLength={2000}
+          invalid={!!fieldErrors.description}
+          invalidText={fieldErrors.description}
         />
 
         <Select

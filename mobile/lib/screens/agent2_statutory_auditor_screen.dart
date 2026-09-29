@@ -3,6 +3,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import '../models/eligibility_agent_model.dart';
 import '../services/eligibility_agent_service.dart';
 import '../theme/app_colors.dart';
+import '../utils/validators.dart';
 
 class Agent2StatutoryAuditorScreen extends ConsumerStatefulWidget {
   final int serviceId;
@@ -71,12 +72,20 @@ class _Agent2StatutoryAuditorScreenState
   }
 
   Future<void> _executeAudit() async {
+    // Income is optional (0 when blank) but must be a sensible number when given
+    final incomeText = _incomeController.text.trim().replaceAll(',', '');
+    final incomeError = Validators.number(incomeText, field: 'Annual income', required: false, min: 0, max: 1000000000);
+    if (incomeError != null) {
+      setState(() => _auditError = incomeError);
+      return;
+    }
+
     setState(() {
       _isAuditing = true;
       _auditError = null;
     });
 
-    final income = double.tryParse(_incomeController.text) ?? 0.0;
+    final income = double.tryParse(incomeText) ?? 0.0;
 
     try {
       final response = await EligibilityAgentService.evaluateEligibility(
@@ -113,6 +122,7 @@ class _Agent2StatutoryAuditorScreenState
         title: const Text('Add Document Reference'),
         content: TextField(
           controller: controller,
+          maxLength: 200,
           decoration: const InputDecoration(
             hintText: 'e.g. Utility_Bill.pdf, Marriage_Cert.jpg',
             labelText: 'Document Name or Reference',
@@ -127,7 +137,7 @@ class _Agent2StatutoryAuditorScreenState
           ElevatedButton(
             onPressed: () {
               final text = controller.text.trim();
-              if (text.isNotEmpty) {
+              if (text.isNotEmpty && Validators.text(text, field: 'Document name', max: 200) == null) {
                 setState(() => _selectedDocs.add(text));
               }
               Navigator.pop(ctx);
