@@ -335,7 +335,7 @@ class _HomeDashboardTabState extends ConsumerState<HomeDashboardTab> {
                       );
                     },
                     label: const Text(
-                      'Agent 2 Check',
+                      'Statutory Audit',
                       style: TextStyle(fontWeight: FontWeight.w600, fontSize: 13),
                     ),
                   ),

@@ -17,7 +17,7 @@ import {
   Toggle,
   Modal
 } from "@carbon/react";
-import { Checkmark, Close, Document, ChevronLeft, ArrowRight, Warning, Money, TrashCan, Launch } from "@carbon/icons-react";
+import { Checkmark, Close, Document, ChevronLeft, ArrowRight, Warning, Money, TrashCan, Launch, Security, Task, CheckmarkFilled, WarningAltFilled } from "@carbon/icons-react";
 import AgentDraftPanel from "./AgentDraftPanel";
 import DocumentPreview from "./DocumentPreview";
 import { getAgentDraft, generateAgentDraft, type AgentDraftView } from "./agentDraftApi";
@@ -89,6 +89,7 @@ export default function VerificationWorkspace() {
   const [agentDraft, setAgentDraft] = useState<AgentDraftView | null>(null);
   const [agentLoading, setAgentLoading] = useState(true);
   const [agentError, setAgentError] = useState("");
+  const [workspaceTab, setWorkspaceTab] = useState<"copilot" | "application" | "decision">("copilot");
 
   // Document Gallery State: files the citizen uploaded, plus documents the agents flagged as missing
   const [currentDocIndex, setCurrentDocIndex] = useState(0);
@@ -400,22 +401,54 @@ export default function VerificationWorkspace() {
 
               {/* Right Column: Reasoning & Decision Panel */}
               <Column sm={4} md={3} lg={7} style={{ padding: '0 1rem' }}>
-                
-                <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: '0.5rem' }}>
+                                <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: '0.5rem', flexWrap: 'wrap', gap: '0.5rem' }}>
                   <h2 style={{ fontSize: '1.75rem', fontWeight: 300 }}>Application Review</h2>
-                  {detail?.task.maxStages && detail.task.maxStages > 1 && (
-                    <Tag type="teal">
-                      Stage {detail.task.currentStage ?? 1} of {detail.task.maxStages}
-                    </Tag>
-                  )}
+                  <div style={{ display: 'flex', gap: '0.5rem', alignItems: 'center', flexWrap: 'wrap' }}>
+                    {agentDraft?.validation && (
+                      <Tag
+                        type={
+                          agentDraft.validation.riskLevel?.toLowerCase() === 'low'
+                            ? 'green'
+                            : agentDraft.validation.riskLevel?.toLowerCase() === 'medium'
+                            ? 'warm-gray'
+                            : 'red'
+                        }
+                        style={{ fontWeight: 600, fontSize: '0.8125rem', display: 'inline-flex', alignItems: 'center', gap: '4px' }}
+                      >
+                        {agentDraft.validation.riskLevel?.toLowerCase() === 'high' ? (
+                          <>
+                            <WarningAltFilled size={14} />
+                            <span>High Risk Compliance Alert</span>
+                          </>
+                        ) : agentDraft.validation.riskLevel?.toLowerCase() === 'medium' ? (
+                          <>
+                            <Warning size={14} />
+                            <span>Moderate Risk Review</span>
+                          </>
+                        ) : (
+                          <>
+                            <CheckmarkFilled size={14} />
+                            <span>Statutory Verification Passed</span>
+                          </>
+                        )}
+                      </Tag>
+                    )}
+                    {detail?.task.maxStages && detail.task.maxStages > 1 && (
+                      <Tag type="teal">
+                        Stage {detail.task.currentStage ?? 1} of {detail.task.maxStages}
+                      </Tag>
+                    )}
+                  </div>
                 </div>
-                <div style={{ marginBottom: '2rem' }}>
-                  <p style={{ fontSize: '0.875rem', color: '#525252' }}>App ID: <strong>{detail?.task.referenceNumber ?? "—"}</strong></p>
-                  <p style={{ fontSize: '0.875rem', color: '#525252' }}>Citizen: <strong>{detail?.task.citizenName || "—"}</strong>{detail?.task.citizenNic ? ` (${detail.task.citizenNic})` : ""}</p>
-                  <p style={{ fontSize: '0.875rem', color: '#525252' }}>Service: <strong>{detail?.task.serviceName || "—"}</strong></p>
-                  {detail?.submittedAt && (
-                    <p style={{ fontSize: '0.875rem', color: '#525252' }}>Submitted: <strong>{new Date(detail.submittedAt).toLocaleString()}</strong></p>
-                  )}
+                <div style={{ marginBottom: '1.25rem', backgroundColor: '#fff', padding: '0.875rem 1rem', border: '1px solid #e0e0e0', borderRadius: '4px' }}>
+                  <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(200px, 1fr))', gap: '0.5rem', fontSize: '0.875rem' }}>
+                    <div><span style={{ color: '#525252' }}>App ID:</span> <strong>{detail?.task.referenceNumber ?? "—"}</strong></div>
+                    <div><span style={{ color: '#525252' }}>Citizen:</span> <strong>{detail?.task.citizenName || "—"}</strong>{detail?.task.citizenNic ? ` (${detail.task.citizenNic})` : ""}</div>
+                    <div><span style={{ color: '#525252' }}>Service:</span> <strong>{detail?.task.serviceName || "—"}</strong></div>
+                    {detail?.submittedAt && (
+                      <div><span style={{ color: '#525252' }}>Submitted:</span> <strong>{new Date(detail.submittedAt).toLocaleString()}</strong></div>
+                    )}
+                  </div>
                 </div>
 
                 {detailError && (
@@ -444,7 +477,7 @@ export default function VerificationWorkspace() {
                         : '5px solid #da1e28',
                       padding: '0.875rem 1.125rem',
                       borderRadius: '4px',
-                      marginBottom: '1.5rem',
+                      marginBottom: '1.25rem',
                       display: 'flex',
                       alignItems: 'center',
                       justifyContent: 'space-between',
@@ -511,138 +544,292 @@ export default function VerificationWorkspace() {
                   </div>
                 )}
 
-                {/* Citizen's submitted form answers */}
-                <div style={{ backgroundColor: '#fff', padding: '1rem', border: '1px solid #e0e0e0', marginBottom: '2rem' }}>
-                  <h3 style={{ fontSize: '1rem', fontWeight: 600, marginBottom: '1rem' }}>Submitted Application</h3>
-                  {detail && Object.keys(detail.answers).length > 0 ? (
-                    <dl style={{ display: 'grid', gridTemplateColumns: 'minmax(8rem, 40%) 1fr', gap: '0.5rem 1rem', fontSize: '0.875rem' }}>
-                      {Object.entries(detail.answers).map(([label, value]) => (
-                        <div key={label} style={{ display: 'contents' }}>
-                          <dt style={{ color: '#525252' }}>{label}</dt>
-                          <dd style={{ fontWeight: 500, wordBreak: 'break-word' }}>{value || "—"}</dd>
-                        </div>
-                      ))}
-                    </dl>
-                  ) : (
-                    <p style={{ fontSize: '0.875rem', color: '#525252' }}>
-                      {detail ? "No form answers were submitted with this application." : "Loading…"}
-                    </p>
-                  )}
+                {/* Workspace Ergonomic Tabs */}
+                <div style={{ display: 'flex', borderBottom: '2px solid #e0e0e0', marginBottom: '1.25rem', gap: '0.25rem' }}>
+                  <button
+                    type="button"
+                    onClick={() => setWorkspaceTab('copilot')}
+                    style={{
+                      padding: '0.75rem 1.25rem',
+                      border: 'none',
+                      background: workspaceTab === 'copilot' ? '#fff' : 'transparent',
+                      borderBottom: workspaceTab === 'copilot' ? '3px solid #0f62fe' : '3px solid transparent',
+                      color: workspaceTab === 'copilot' ? '#0f62fe' : '#525252',
+                      fontWeight: workspaceTab === 'copilot' ? 700 : 500,
+                      fontSize: '0.875rem',
+                      cursor: 'pointer',
+                      display: 'flex',
+                      alignItems: 'center',
+                      gap: '0.5rem',
+                      marginBottom: '-2px'
+                    }}
+                  >
+                    <Security size={16} />
+                    <span>Statutory Verification & Compliance Copilot</span>
+                    {agentDraft?.validation && (
+                      <span style={{
+                        fontSize: '0.7rem',
+                        padding: '2px 6px',
+                        borderRadius: '10px',
+                        background: agentDraft.validation.riskLevel?.toLowerCase() === 'high' ? '#ffd7d9' : '#defbe6',
+                        color: agentDraft.validation.riskLevel?.toLowerCase() === 'high' ? '#da1e28' : '#0e6027',
+                        fontWeight: 700
+                      }}>
+                        {agentDraft.validation.riskLevel ?? 'Audited'}
+                      </span>
+                    )}
+                  </button>
+
+                  <button
+                    type="button"
+                    onClick={() => setWorkspaceTab('application')}
+                    style={{
+                      padding: '0.75rem 1.25rem',
+                      border: 'none',
+                      background: workspaceTab === 'application' ? '#fff' : 'transparent',
+                      borderBottom: workspaceTab === 'application' ? '3px solid #0f62fe' : '3px solid transparent',
+                      color: workspaceTab === 'application' ? '#0f62fe' : '#525252',
+                      fontWeight: workspaceTab === 'application' ? 700 : 500,
+                      fontSize: '0.875rem',
+                      cursor: 'pointer',
+                      display: 'flex',
+                      alignItems: 'center',
+                      gap: '0.5rem',
+                      marginBottom: '-2px'
+                    }}
+                  >
+                    <Document size={16} />
+                    <span>Application Form Details</span>
+                  </button>
+
+                  <button
+                    type="button"
+                    onClick={() => setWorkspaceTab('decision')}
+                    style={{
+                      padding: '0.75rem 1.25rem',
+                      border: 'none',
+                      background: workspaceTab === 'decision' ? '#fff' : 'transparent',
+                      borderBottom: workspaceTab === 'decision' ? '3px solid #0f62fe' : '3px solid transparent',
+                      color: workspaceTab === 'decision' ? '#0f62fe' : '#525252',
+                      fontWeight: workspaceTab === 'decision' ? 700 : 500,
+                      fontSize: '0.875rem',
+                      cursor: 'pointer',
+                      display: 'flex',
+                      alignItems: 'center',
+                      gap: '0.5rem',
+                      marginBottom: '-2px'
+                    }}
+                  >
+                    <Task size={16} />
+                    <span>Official Determination</span>
+                    {decision && (
+                      <span style={{
+                        fontSize: '0.7rem',
+                        padding: '2px 6px',
+                        borderRadius: '10px',
+                        background: decision === 'Approved' ? '#defbe6' : (decision === 'Rejected' ? '#ffd7d9' : '#fddc69'),
+                        color: '#161616',
+                        fontWeight: 700
+                      }}>
+                        {decision}
+                      </span>
+                    )}
+                  </button>
                 </div>
 
-                {/* Agent Reasoning Trail: Agent 2 eligibility + Agent 3 draft (fee, appointment, pre-filled fields) */}
-                <AgentDraftPanel
-                  draft={agentDraft}
-                  loading={agentLoading}
-                  error={agentError}
-                  answers={detail?.answers ?? {}}
-                  onRegenerate={regenerateAgentDraft}
-                />
+                {/* Tab 1: Agent 4 AI Copilot & Audit (Prominently displayed at top) */}
+                {workspaceTab === 'copilot' && (
+                  <div style={{ animation: "fadeIn 0.2s ease-in" }}>
+                    <AgentDraftPanel
+                      draft={agentDraft}
+                      loading={agentLoading}
+                      error={agentError}
+                      answers={detail?.answers ?? {}}
+                      onRegenerate={regenerateAgentDraft}
+                      onApplyDecisionOrder={(decType, text) => {
+                        setDecision(decType);
+                        setComments(text);
+                        setWorkspaceTab('decision');
+                      }}
+                    />
+                  </div>
+                )}
 
-                {/* Decision Panel */}
-                <div style={{ backgroundColor: '#fff', padding: '1.5rem', border: '1px solid #e0e0e0' }}>
-                   <h3 style={{ fontSize: '1.25rem', marginBottom: '1rem' }}>Record Decision</h3>
-                   
-                   <div style={{ display: 'flex', flexWrap: 'wrap', gap: '0.75rem', marginBottom: '0.75rem' }}>
-                      <Button 
-                         kind={decision === "Approved" ? "primary" : "tertiary"} 
-                         size="md"
-                         renderIcon={Checkmark} 
-                         onClick={() => handleDecision("Approved")}
-                         disabled={isSubmitting || (detail?.payment != null && !detail.payment.isVerified)}
-                         style={{ flex: '1 1 auto', minWidth: '160px', justifyContent: 'center' }}
-                      >
-                         {(detail?.task.maxStages ?? 1) > (detail?.task.currentStage ?? 1)
-                           ? `Approve Stage ${detail?.task.currentStage ?? 1} & Advance`
-                           : "Approve"}
-                      </Button>
-                      <Button 
-                         kind={decision === "Revision Requested" ? "primary" : "tertiary"} 
-                         size="md"
-                         renderIcon={Warning} 
-                         onClick={() => handleDecision("Revision Requested")}
-                         disabled={isSubmitting}
-                         style={{ flex: '1 1 auto', minWidth: '150px', justifyContent: 'center' }}
-                      >
-                         Request Revision
-                      </Button>
-                      <Button 
-                         kind={decision === "Rejected" ? "danger" : "danger--tertiary"} 
-                         size="md"
-                         renderIcon={Close} 
-                         onClick={() => handleDecision("Rejected")}
-                         disabled={isSubmitting}
-                         style={{ flex: '1 1 auto', minWidth: '100px', justifyContent: 'center' }}
-                      >
-                         Reject
-                      </Button>
-                   </div>
+                {/* Tab 2: Citizen's submitted form answers */}
+                {workspaceTab === 'application' && (
+                  <div style={{ backgroundColor: '#fff', padding: '1.25rem', border: '1px solid #e0e0e0', marginBottom: '1.5rem', animation: "fadeIn 0.2s ease-in" }}>
+                    <h3 style={{ fontSize: '1rem', fontWeight: 600, marginBottom: '1rem' }}>Submitted Form Fields & Data</h3>
+                    {detail && Object.keys(detail.answers).length > 0 ? (
+                      <dl style={{ display: 'grid', gridTemplateColumns: 'minmax(10rem, 35%) 1fr', gap: '0.75rem 1rem', fontSize: '0.875rem' }}>
+                        {Object.entries(detail.answers).map(([label, value]) => (
+                          <div key={label} style={{ display: 'contents' }}>
+                            <dt style={{ color: '#525252', padding: '0.25rem 0', borderBottom: '1px solid #f4f4f4' }}>{label}</dt>
+                            <dd style={{ fontWeight: 500, wordBreak: 'break-word', padding: '0.25rem 0', borderBottom: '1px solid #f4f4f4' }}>{value || "—"}</dd>
+                          </div>
+                        ))}
+                      </dl>
+                    ) : (
+                      <p style={{ fontSize: '0.875rem', color: '#525252' }}>
+                        {detail ? "No form answers were submitted with this application." : "Loading…"}
+                      </p>
+                    )}
+                  </div>
+                )}
 
-                   {detail?.payment != null && !detail.payment.isVerified && (
-                     <div
-                       style={{
-                         marginBottom: '1.5rem',
-                         padding: '0.625rem 0.875rem',
-                         backgroundColor: '#fff8f8',
-                         border: '1px solid #ffb3b8',
-                         borderRadius: 4,
-                         display: 'flex',
-                         alignItems: 'center',
-                         gap: '0.5rem',
-                         fontSize: '0.8125rem',
-                         color: '#da1e28',
-                       }}
-                     >
-                       <Warning size={16} />
-                       <span>
-                         <strong>Stage Approval Locked:</strong> Statutory fee of LKR {detail.payment.amount?.toLocaleString()} must be audited and verified by the Department Finance Officer before this stage can be approved.
-                       </span>
-                     </div>
-                   )}
-
-                   {(decision === "Rejected" || decision === "Revision Requested") && (
-                     <div style={{ animation: "fadeIn 0.2s ease-in" }}>
-                         <Select 
-                            id="reason-code" 
-                            labelText="Reason Code" 
-                            value={reasonId} 
-                            onChange={(e) => setReasonId(e.target.value)}
-                            style={{ marginBottom: '1rem' }}
-                         >
-                            <SelectItem value="" text="Choose an option" />
-                            {rejectionReasons.map(r => (
-                              <SelectItem key={r.id} value={r.id.toString()} text={`${r.code}: ${r.description}`} />
-                            ))}
-                         </Select>
-
-                        <TextArea 
-                           id="workspace-rejection-comments"
-                           labelText="Additional Comments (Visible to Citizen)" 
-                           placeholder="Explain exactly what needs to be fixed..."
-                           value={comments}
-                           onChange={(e) => setComments(e.target.value)}
-                           rows={4}
-                           style={{ marginBottom: '1rem' }}
-                           maxCount={2000}
-                           enableCounter
-                        />
-
+                {/* Tab 3: Decision Panel */}
+                {workspaceTab === 'decision' && (
+                  <div style={{ backgroundColor: '#fff', padding: '1.5rem', border: '1px solid #e0e0e0', marginBottom: '1.5rem', animation: "fadeIn 0.2s ease-in" }}>
+                     <h3 style={{ fontSize: '1.25rem', marginBottom: '1rem' }}>Record Determination</h3>
+                     
+                     <div style={{ display: 'flex', flexWrap: 'wrap', gap: '0.75rem', marginBottom: '1rem' }}>
                         <Button 
-                           renderIcon={ArrowRight} 
-                           onClick={() => submitDecision(decision)}
-                           disabled={isSubmitting}
+                           kind={decision === "Approved" ? "primary" : "tertiary"} 
+                           size="md"
+                           renderIcon={Checkmark} 
+                           onClick={() => handleDecision("Approved")}
+                           disabled={isSubmitting || (detail?.payment != null && !detail.payment.isVerified)}
+                           style={{ flex: '1 1 auto', minWidth: '160px', justifyContent: 'center' }}
                         >
-                           Submit {decision}
+                           {(detail?.task.maxStages ?? 1) > (detail?.task.currentStage ?? 1)
+                             ? `Approve Stage ${detail?.task.currentStage ?? 1} & Advance`
+                             : "Approve"}
+                        </Button>
+                        <Button 
+                           kind={decision === "Revision Requested" ? "primary" : "tertiary"} 
+                           size="md"
+                           renderIcon={Warning} 
+                           onClick={() => handleDecision("Revision Requested")}
+                           disabled={isSubmitting}
+                           style={{ flex: '1 1 auto', minWidth: '150px', justifyContent: 'center' }}
+                        >
+                           Request Revision
+                        </Button>
+                        <Button 
+                           kind={decision === "Rejected" ? "danger" : "danger--tertiary"} 
+                           size="md"
+                           renderIcon={Close} 
+                           onClick={() => handleDecision("Rejected")}
+                           disabled={isSubmitting}
+                           style={{ flex: '1 1 auto', minWidth: '100px', justifyContent: 'center' }}
+                        >
+                           Reject
                         </Button>
                      </div>
-                   )}
 
-                   {submitStatus === "success" && (
-                     <InlineNotification kind="success" title="Success" subtitle="Decision recorded. Returning to queue..." hideCloseButton style={{ marginTop: '1rem' }} />
-                   )}
-                   {submitStatus === "error" && (
-                     <InlineNotification kind="error" title="Error" subtitle="Failed to save decision. Try again." hideCloseButton style={{ marginTop: '1rem' }} />
-                   )}
+                     {detail?.payment != null && !detail.payment.isVerified && (
+                       <div
+                         style={{
+                           marginBottom: '1.5rem',
+                           padding: '0.625rem 0.875rem',
+                           backgroundColor: '#fff8f8',
+                           border: '1px solid #ffb3b8',
+                           borderRadius: 4,
+                           display: 'flex',
+                           alignItems: 'center',
+                           gap: '0.5rem',
+                           fontSize: '0.8125rem',
+                           color: '#da1e28',
+                         }}
+                       >
+                         <Warning size={16} />
+                         <span>
+                           <strong>Stage Approval Locked:</strong> Statutory fee of LKR {detail.payment.amount?.toLocaleString()} must be audited and verified by the Department Finance Officer before this stage can be approved.
+                         </span>
+                       </div>
+                     )}
+
+                     {(decision === "Rejected" || decision === "Revision Requested") && (
+                       <div style={{ animation: "fadeIn 0.2s ease-in" }}>
+                           <Select 
+                              id="reason-code" 
+                              labelText="Reason Code" 
+                              value={reasonId} 
+                              onChange={(e) => setReasonId(e.target.value)}
+                              style={{ marginBottom: '1rem' }}
+                           >
+                              <SelectItem value="" text="Choose an option" />
+                              {rejectionReasons.map(r => (
+                                <SelectItem key={r.id} value={r.id.toString()} text={`${r.code}: ${r.description}`} />
+                              ))}
+                           </Select>
+
+                          <TextArea 
+                             id="workspace-rejection-comments"
+                             labelText="Additional Comments & Statutory Findings (Visible to Citizen)" 
+                             placeholder="Explain exactly what needs to be fixed or cite legal defect..."
+                             value={comments}
+                             onChange={(e) => setComments(e.target.value)}
+                             rows={6}
+                             style={{ marginBottom: '1rem' }}
+                             maxCount={5000}
+                             enableCounter
+                          />
+
+                          <Button 
+                             renderIcon={ArrowRight} 
+                             onClick={() => submitDecision(decision)}
+                             disabled={isSubmitting}
+                          >
+                             Submit {decision}
+                          </Button>
+                       </div>
+                     )}
+
+                     {submitStatus === "success" && (
+                       <InlineNotification kind="success" title="Success" subtitle="Decision recorded. Returning to queue..." hideCloseButton style={{ marginTop: '1rem' }} />
+                     )}
+                     {submitStatus === "error" && (
+                       <InlineNotification kind="error" title="Error" subtitle="Failed to save decision. Try again." hideCloseButton style={{ marginTop: '1rem' }} />
+                     )}
+                  </div>
+                )}
+
+                {/* Docked Quick Action Bar: Always accessible at bottom across tabs */}
+                <div style={{
+                  padding: '0.875rem 1rem',
+                  backgroundColor: '#f4f4f4',
+                  border: '1px solid #e0e0e0',
+                  borderRadius: '4px',
+                  display: 'flex',
+                  alignItems: 'center',
+                  justifyContent: 'space-between',
+                  gap: '0.75rem',
+                  flexWrap: 'wrap',
+                  marginBottom: '1.5rem'
+                }}>
+                  <div style={{ fontSize: '0.8125rem', color: '#525252' }}>
+                    <strong>Action:</strong> {decision ? `Selected: ${decision}` : 'Review above and record determination'}
+                  </div>
+                  <div style={{ display: 'flex', gap: '0.5rem', flexWrap: 'wrap' }}>
+                    <Button
+                      kind={decision === "Approved" ? "primary" : "tertiary"}
+                      size="sm"
+                      renderIcon={Checkmark}
+                      onClick={() => { handleDecision("Approved"); setWorkspaceTab("decision"); }}
+                      disabled={isSubmitting || (detail?.payment != null && !detail.payment.isVerified)}
+                    >
+                      Approve
+                    </Button>
+                    <Button
+                      kind={decision === "Revision Requested" ? "primary" : "tertiary"}
+                      size="sm"
+                      renderIcon={Warning}
+                      onClick={() => { handleDecision("Revision Requested"); setWorkspaceTab("decision"); }}
+                      disabled={isSubmitting}
+                    >
+                      Request Revision
+                    </Button>
+                    <Button
+                      kind={decision === "Rejected" ? "danger" : "danger--tertiary"}
+                      size="sm"
+                      renderIcon={Close}
+                      onClick={() => { handleDecision("Rejected"); setWorkspaceTab("decision"); }}
+                      disabled={isSubmitting}
+                    >
+                      Reject
+                    </Button>
+                  </div>
+                </div>
 
                    <div style={{ marginTop: '2rem', paddingTop: '1.25rem', borderTop: '1px solid #e0e0e0' }}>
                      <p style={{ fontSize: '0.8rem', color: '#525252', marginBottom: '0.75rem' }}>
@@ -659,7 +846,6 @@ export default function VerificationWorkspace() {
                        Delete Application (Audit Logged)
                      </Button>
                    </div>
-                </div>
               </Column>
             </Grid>
 

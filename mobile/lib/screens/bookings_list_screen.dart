@@ -490,15 +490,19 @@ class _BookingsListScreenState extends ConsumerState<BookingsListScreen> {
                                 children: [
                                   const Icon(Icons.check_circle_rounded, color: AppColors.success, size: 16),
                                   const SizedBox(width: 6),
-                                  const Text(
-                                    'In-Person Slot Confirmed (Agent 3)',
-                                    style: TextStyle(
-                                      fontWeight: FontWeight.bold,
-                                      fontSize: 12,
-                                      color: AppColors.success,
+                                  const Expanded(
+                                    child: Text(
+                                      'In-Person Slot Confirmed',
+                                      maxLines: 1,
+                                      overflow: TextOverflow.ellipsis,
+                                      style: TextStyle(
+                                        fontWeight: FontWeight.bold,
+                                        fontSize: 12,
+                                        color: AppColors.success,
+                                      ),
                                     ),
                                   ),
-                                  const Spacer(),
+                                  const SizedBox(width: 8),
                                   Container(
                                     padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 2),
                                     decoration: BoxDecoration(
@@ -655,7 +659,7 @@ class _BookingsListScreenState extends ConsumerState<BookingsListScreen> {
                               const SizedBox(width: 8),
                               Expanded(
                                 child: Text(
-                                  'Ready for Collection. Please reserve an appointment slot with Agent 3 or choose postal delivery.',
+                                  'Ready for Collection. Please reserve an appointment slot or choose postal delivery.',
                                   style: TextStyle(fontSize: 11, color: Colors.amber.shade900),
                                 ),
                               ),
@@ -667,7 +671,7 @@ class _BookingsListScreenState extends ConsumerState<BookingsListScreen> {
                           width: double.infinity,
                           child: ElevatedButton.icon(
                             icon: const Icon(Icons.calendar_month_rounded, size: 16),
-                            label: const Text('Book Collection Slot (Agent 3)'),
+                            label: const Text('Book Collection Slot'),
                             style: ElevatedButton.styleFrom(
                               backgroundColor: AppColors.primary,
                               foregroundColor: Colors.white,

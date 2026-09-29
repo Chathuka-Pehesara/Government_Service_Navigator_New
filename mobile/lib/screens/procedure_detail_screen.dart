@@ -407,7 +407,7 @@ class _ProcedureDetailScreenState extends ConsumerState<ProcedureDetailScreen> {
               width: double.infinity,
               child: ElevatedButton.icon(
                 icon: const Icon(Icons.check_circle_outline),
-                label: const Text('Agent 2: Statutory Eligibility Audit', style: TextStyle(fontSize: 14, fontWeight: FontWeight.w600)),
+                label: const Text('Statutory Eligibility & Compliance Audit', style: TextStyle(fontSize: 14, fontWeight: FontWeight.w600)),
                 style: ElevatedButton.styleFrom(
                   minimumSize: const Size.fromHeight(48),
                   shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
