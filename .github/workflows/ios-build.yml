@@ -19,14 +19,15 @@ concurrency:
 
 jobs:
   build:
-    name: Build IPA (unsigned)
+    name: Build iOS App
     runs-on: macos-latest
     defaults:
       run:
         working-directory: mobile
 
     steps:
-      - uses: actions/checkout@v4
+      - name: Checkout Repository
+        uses: actions/checkout@v4
 
       - name: Setup Flutter
         uses: subosito/flutter-action@v2
@@ -40,29 +41,40 @@ jobs:
       - name: Install dependencies
         run: flutter pub get
 
-
       - name: Generate Riverpod code
         run: dart run build_runner build --delete-conflicting-outputs
 
-      # No Podfile is committed; `flutter build ios` generates ios/Podfile and
-      # runs `pod install` itself, so only the iOS engine artifacts are fetched here.
       - name: Precache iOS artifacts
         run: flutter precache --ios
 
-      - name: Build iOS app (no codesign)
-        run: flutter build ios --release --no-codesign --build-number=${{ github.run_number }}
+      # No Podfile is committed; --config-only generates ios/Podfile and
+      # Generated.xcconfig so the workspace can be built with xcodebuild.
+      - name: Configure iOS project
+        run: flutter build ios --config-only --simulator --debug
 
-      - name: Package unsigned IPA
+      - name: Install CocoaPods
+        run: cd ios && pod install
+
+      # Flutter only supports Debug builds on the simulator (Release is AOT for devices).
+      - name: Build iOS App
         run: |
-          mkdir -p build/ios/ipa/Payload
-          cp -R build/ios/iphoneos/Runner.app build/ios/ipa/Payload/
-          cd build/ios/ipa
-          zip -qr app-release-unsigned.ipa Payload
-          rm -rf Payload
+          cd ios
+          xcodebuild -workspace Runner.xcworkspace \
+            -scheme Runner \
+            -configuration Debug \
+            -sdk iphonesimulator \
+            -destination 'generic/platform=iOS Simulator' \
+            -derivedDataPath ${{ github.workspace }}/derivedData \
+            CODE_SIGNING_ALLOWED=NO \
+            build
 
-      - name: Upload IPA
+      - name: Zip the App
+        working-directory: ${{ github.workspace }}/derivedData/Build/Products/Debug-iphonesimulator
+        run: zip -qr Runner.zip Runner.app
+
+      - name: Upload Artifact
         uses: actions/upload-artifact@v4
         with:
-          name: ios-ipa-${{ github.run_number }}
-          path: mobile/build/ios/ipa/app-release-unsigned.ipa
+          name: ios-simulator-app-${{ github.run_number }}
+          path: derivedData/Build/Products/Debug-iphonesimulator/Runner.zip
           retention-days: 14
