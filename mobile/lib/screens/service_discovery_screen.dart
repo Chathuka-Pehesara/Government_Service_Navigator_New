@@ -31,13 +31,16 @@ class _ServiceDiscoveryScreenState extends ConsumerState<ServiceDiscoveryScreen>
     return services.where((service) {
       final serviceName = service['name']?.toLowerCase() ?? '';
       final serviceId = service['serviceId']?.toLowerCase() ?? '';
-      final serviceCategory = service['category'] ?? '';
+      final serviceCategory = (service['category'] as String?)?.toLowerCase() ?? '';
 
-      final matchesSearch = serviceName.contains(searchQuery.toLowerCase()) ||
-                            serviceId.contains(searchQuery.toLowerCase());
+      final q = searchQuery.toLowerCase();
+      final matchesSearch = q.isEmpty ||
+          serviceName.contains(q) ||
+          serviceId.contains(q) ||
+          serviceCategory.contains(q);
       
       final matchesCategory = selectedCategory == 'All' || 
-                            serviceCategory.toLowerCase() == selectedCategory.toLowerCase();
+                            serviceCategory == selectedCategory.toLowerCase();
       
       return matchesSearch && matchesCategory;
     }).toList();
@@ -46,7 +49,17 @@ class _ServiceDiscoveryScreenState extends ConsumerState<ServiceDiscoveryScreen>
   @override
   Widget build(BuildContext context) {
     final services = ref.watch(servicesProvider);
-    final filteredServices = applyFilters(services.value ?? const []);
+    final allServices = services.value ?? const [];
+
+    // Dynamically resolve all categories from services
+    final Set<String> dynamicCatSet = {'All'};
+    for (final s in allServices) {
+      final c = (s['category'] as String?)?.trim();
+      if (c != null && c.isNotEmpty) dynamicCatSet.add(c);
+    }
+    final activeCategories = dynamicCatSet.toList();
+
+    final filteredServices = applyFilters(allServices);
 
     return Scaffold(
       appBar: AppBar(title: Text(selectedCategory == 'All' ? 'Government Services' : '$selectedCategory Services')),
@@ -57,7 +70,7 @@ class _ServiceDiscoveryScreenState extends ConsumerState<ServiceDiscoveryScreen>
             child: TextField(
               onChanged: filterSearch,
               decoration: const InputDecoration(
-                labelText: 'Search procedures...',
+                labelText: 'Search procedures or categories...',
                 prefixIcon: Icon(Icons.search),
                 border: OutlineInputBorder(),
               ),
@@ -67,14 +80,14 @@ class _ServiceDiscoveryScreenState extends ConsumerState<ServiceDiscoveryScreen>
             height: 50,
             child: ListView.builder(
               scrollDirection: Axis.horizontal,
-              itemCount: categories.length,
+              itemCount: activeCategories.length,
               itemBuilder: (context, index) {
-                final cat = categories[index];
+                final cat = activeCategories[index];
                 return Padding(
                   padding: const EdgeInsets.symmetric(horizontal: 4.0),
                   child: ChoiceChip(
                     label: Text(cat),
-                    selected: selectedCategory == cat,
+                    selected: selectedCategory.toLowerCase() == cat.toLowerCase(),
                     onSelected: (selected) => filterCategory(cat),
                   ),
                 );
