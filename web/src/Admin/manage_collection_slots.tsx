@@ -225,14 +225,113 @@ export default function ManageCollectionSlots() {
     }
   };
 
+  const generateFallbackSchedule = (
+    slotsList: CollectionSlot[],
+    bookingsList: BookingRecord[],
+    days: number,
+    deptFilter: string
+  ): DaySchedule[] => {
+    const list: DaySchedule[] = [];
+    const now = new Date();
+    const today = new Date(now.getFullYear(), now.getMonth(), now.getDate());
+    const nowHm = `${String(now.getHours()).padStart(2, "0")}:${String(now.getMinutes()).padStart(2, "0")}`;
+
+    const activeSlots = slotsList.filter(s => {
+      if (!s.isActive) return false;
+      if (deptFilter && deptFilter !== "All" && s.departmentName) {
+        return s.departmentName.toLowerCase().includes(deptFilter.toLowerCase());
+      }
+      return true;
+    });
+
+    for (let i = 0; i < days; i++) {
+      const cur = new Date(today.getTime() + i * 24 * 60 * 60 * 1000);
+      const yyyy = cur.getFullYear();
+      const mm = String(cur.getMonth() + 1).padStart(2, "0");
+      const dd = String(cur.getDate()).padStart(2, "0");
+      const dateKey = `${yyyy}-${mm}-${dd}`;
+      const jsDow = cur.getDay();
+      const isoDow = jsDow === 0 ? 7 : jsDow;
+      const dayName = DAY_MAP[isoDow] || "Day";
+      const isToday = i === 0;
+
+      const specificSlots = activeSlots.filter(s => s.specificDate === dateKey);
+      const daySlots = specificSlots.length > 0
+        ? specificSlots
+        : activeSlots.filter(s => !s.specificDate && s.dayOfWeek === isoDow);
+
+      const isSunday = isoDow === 7;
+      const isHoliday = isSunday && specificSlots.length === 0;
+      const holidayReason = isSunday ? "Sunday (Public Holiday)" : undefined;
+
+      const renderedSlots: DailySlot[] = [];
+      let totalCap = 0;
+      let totalBooked = 0;
+
+      if (!isHoliday) {
+        const sorted = [...daySlots].sort((a, b) => a.startTime.localeCompare(b.startTime));
+        for (const s of sorted) {
+          const startHm = s.startTime.substring(0, 5);
+          const endHm = s.endTime.substring(0, 5);
+          const booked = bookingsList.filter(b =>
+            b.bookedDate === dateKey &&
+            (b.bookedSlotTime?.startsWith(startHm) || b.bookedSlotTime === `${startHm} - ${endHm}`) &&
+            b.status?.toLowerCase() === "confirmed"
+          ).length;
+
+          const remaining = Math.max(0, s.maxCapacity - booked);
+          const isRealtimeActive = isToday && nowHm >= startHm && nowHm < endHm;
+          const isPast = isToday && nowHm >= endHm;
+          const status = isRealtimeActive ? "Active Now" : (isPast ? "Ended" : (remaining === 0 ? "Fully Booked" : "Open"));
+
+          totalCap += s.maxCapacity;
+          totalBooked += booked;
+
+          renderedSlots.push({
+            slotId: s.id,
+            departmentName: s.departmentName || "General",
+            dayOfWeek: s.dayOfWeek,
+            specificDate: s.specificDate,
+            startTime: startHm,
+            endTime: endHm,
+            timeWindow: `${startHm} - ${endHm}`,
+            maxCapacity: s.maxCapacity,
+            bookedCount: booked,
+            remainingSpots: remaining,
+            isRealtimeActive,
+            isPast,
+            status,
+          });
+        }
+      }
+
+      list.push({
+        date: dateKey,
+        dayOfWeek: isoDow,
+        dayName,
+        formattedDate: cur.toLocaleDateString("en-GB", { weekday: "long", day: "2-digit", month: "short", year: "numeric" }),
+        shortDate: cur.toLocaleDateString("en-GB", { day: "2-digit", month: "short" }),
+        isToday,
+        isHoliday,
+        holidayReason,
+        totalCapacity: totalCap,
+        totalBooked,
+        remainingSpots: Math.max(0, totalCap - totalBooked),
+        slotsCount: renderedSlots.length,
+        slots: renderedSlots,
+      });
+    }
+
+    return list;
+  };
+
   const fetchDailySchedule = async () => {
     setLoadingSchedule(true);
     try {
-      const deptQuery = isDepartmentAdmin && currentUser?.department
-        ? `&department=${encodeURIComponent(currentUser.department)}`
-        : selectedDeptFilter !== "All"
-          ? `&department=${encodeURIComponent(selectedDeptFilter)}`
-          : "";
+      const deptTarget = isDepartmentAdmin && currentUser?.department ? currentUser.department : selectedDeptFilter;
+      const deptQuery = deptTarget !== "All"
+        ? `&department=${encodeURIComponent(deptTarget)}`
+        : "";
 
       const res = await fetch(
         `http://localhost:5119/api/admin/collection-slots/daily-schedule?days=${scheduleDays}${deptQuery}`,
@@ -240,10 +339,24 @@ export default function ManageCollectionSlots() {
       );
       if (res.ok) {
         const data = await res.json();
-        setDailySchedule(data);
+        if (Array.isArray(data) && data.length > 0) {
+          setDailySchedule(data);
+          return;
+        }
       }
+      // Resilient fallback from slots & bookings
+      setDailySchedule(prev => {
+        if (slots.length > 0) {
+          return generateFallbackSchedule(slots, bookings, scheduleDays, deptTarget);
+        }
+        return prev;
+      });
     } catch (err: any) {
       console.error("Failed to load daily schedule", err);
+      const deptTarget = isDepartmentAdmin && currentUser?.department ? currentUser.department : selectedDeptFilter;
+      if (slots.length > 0) {
+        setDailySchedule(generateFallbackSchedule(slots, bookings, scheduleDays, deptTarget));
+      }
     } finally {
       setLoadingSchedule(false);
     }
@@ -251,16 +364,21 @@ export default function ManageCollectionSlots() {
 
   const fetchSlots = async () => {
     try {
-      const deptQuery = isDepartmentAdmin && currentUser?.department
-        ? `?department=${encodeURIComponent(currentUser.department)}`
-        : selectedDeptFilter !== "All"
-          ? `?department=${encodeURIComponent(selectedDeptFilter)}`
-          : "";
+      const deptTarget = isDepartmentAdmin && currentUser?.department ? currentUser.department : selectedDeptFilter;
+      const deptQuery = deptTarget !== "All"
+        ? `?department=${encodeURIComponent(deptTarget)}`
+        : "";
 
       const res = await fetch(`http://localhost:5119/api/admin/collection-slots${deptQuery}`, { headers: getHeaders() });
       if (res.ok) {
         const data = await res.json();
         setSlots(data);
+        setDailySchedule(prev => {
+          if (prev.length === 0 && data.length > 0) {
+            return generateFallbackSchedule(data, bookings, scheduleDays, deptTarget);
+          }
+          return prev;
+        });
       }
     } catch (err: any) {
       console.error("Failed to load slots", err);
