@@ -12,6 +12,7 @@ import 'post_service_form_screen.dart';
 class BookingOptionsScreen extends ConsumerStatefulWidget {
   final String applicationId;
   final String serviceName;
+  final String? departmentName;
   final String? citizenNic;
   final VoidCallback? onPostalSubmitted;
   final ValueChanged<Map<String, dynamic>>? onAppointmentBooked;
@@ -24,6 +25,7 @@ class BookingOptionsScreen extends ConsumerStatefulWidget {
     super.key,
     required this.applicationId,
     required this.serviceName,
+    this.departmentName,
     this.citizenNic,
     this.onPostalSubmitted,
     this.onAppointmentBooked,
@@ -43,6 +45,9 @@ class _BookingOptionsScreenState extends ConsumerState<BookingOptionsScreen> {
   String? _bookingError;
 
   String _getAssignedDepartment() {
+    if (widget.departmentName != null && widget.departmentName!.trim().isNotEmpty && widget.departmentName != 'Department Desk') {
+      return widget.departmentName!.trim();
+    }
     final lower = widget.serviceName.toLowerCase();
     if (lower.contains('passport') || lower.contains('immigration')) {
       return 'Department of Immigration & Emigration';
@@ -59,7 +64,8 @@ class _BookingOptionsScreenState extends ConsumerState<BookingOptionsScreen> {
     if (lower.contains('birth') || lower.contains('certificate')) {
       return 'Registrar General\'s Department';
     }
-    return 'Department of Public Administration';
+    // Return empty so the backend dynamically resolves the issuing department from ServiceProcedures/WorkflowDepartments
+    return '';
   }
 
   void _handlePostService() {

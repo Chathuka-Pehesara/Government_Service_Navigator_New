@@ -576,6 +576,7 @@ class _BookingsListScreenState extends ConsumerState<BookingsListScreen> {
                                       applicationId: appId,
                                       citizenNic: _citizenNic,
                                       serviceName: serviceName,
+                                      departmentName: dept,
                                       isReschedule: true,
                                       onAppointmentBooked: (newBooking) {
                                         setState(() {
@@ -680,6 +681,7 @@ class _BookingsListScreenState extends ConsumerState<BookingsListScreen> {
                                     applicationId: appId,
                                     citizenNic: _citizenNic,
                                     serviceName: serviceName,
+                                    departmentName: dept,
                                     onPostalSubmitted: () {
                                       setState(() => _postalRequestedApps.add(appId));
                                     },

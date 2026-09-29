@@ -142,9 +142,15 @@ public class ActionAgentController : ControllerBase
 
         // 1. Resolve department of the last completed stage
         string resolvedDept = request.DepartmentName ?? string.Empty;
-        if (string.IsNullOrWhiteSpace(resolvedDept))
+        if (string.IsNullOrWhiteSpace(resolvedDept) || 
+            resolvedDept.Equals("Department of Public Administration", StringComparison.OrdinalIgnoreCase) ||
+            resolvedDept.Equals("Department Desk", StringComparison.OrdinalIgnoreCase))
         {
-            resolvedDept = await ResolveDepartmentForApplicationAsync(request.ApplicationId, request.ServiceName);
+            var dynamicDept = await ResolveDepartmentForApplicationAsync(request.ApplicationId, request.ServiceName);
+            if (!string.IsNullOrWhiteSpace(dynamicDept))
+            {
+                resolvedDept = dynamicDept;
+            }
         }
         resolvedDept = NormalizeDepartmentName(resolvedDept);
 
@@ -398,8 +404,21 @@ public class ActionAgentController : ControllerBase
         return "CITIZEN";
     }
 
+    private static string? MapCategoryToDepartment(string category)
+    {
+        var lower = category.Trim().ToLowerInvariant();
+        if (lower.Contains("police")) return "Police Department";
+        if (lower.Contains("immigration") || lower.Contains("passport")) return "Department of Immigration & Emigration";
+        if (lower.Contains("transport") || lower.Contains("motor") || lower.Contains("driving")) return "Department of Motor Traffic";
+        if (lower.Contains("civil") || lower.Contains("registration") || lower.Contains("nic")) return "Department of Registration of Persons";
+        if (lower.Contains("birth") || lower.Contains("marriage") || lower.Contains("death") || lower.Contains("registrar")) return "Registrar General's Department";
+        if (lower.Contains("public") || lower.Contains("secretariat") || lower.Contains("administration")) return "Divisional Secretariat";
+        return null;
+    }
+
     private async Task<string> ResolveDepartmentForApplicationAsync(string? applicationId, string? serviceName)
     {
+        // 1. Resolve from ApplicationSubmission (if application id exists)
         try
         {
             int numericAppId = ParseApplicationId(applicationId);
@@ -414,28 +433,94 @@ public class ActionAgentController : ControllerBase
                 {
                     if (!string.IsNullOrWhiteSpace(submission.CurrentDepartment))
                     {
-                        return submission.CurrentDepartment;
+                        return NormalizeDepartmentName(submission.CurrentDepartment);
                     }
 
-                    if (submission.ServiceProcedure != null && !string.IsNullOrWhiteSpace(submission.ServiceProcedure.WorkflowDepartments))
+                    if (submission.ServiceProcedure != null)
                     {
-                        try
+                        if (!string.IsNullOrWhiteSpace(submission.ServiceProcedure.WorkflowDepartments))
                         {
-                            var depts = JsonSerializer.Deserialize<List<string>>(submission.ServiceProcedure.WorkflowDepartments);
-                            if (depts != null && depts.Count > 0)
+                            try
                             {
-                                int stageIndex = Math.Clamp(submission.CurrentStage - 1, 0, depts.Count - 1);
-                                return depts[stageIndex];
+                                var depts = JsonSerializer.Deserialize<List<string>>(submission.ServiceProcedure.WorkflowDepartments);
+                                if (depts != null && depts.Count > 0)
+                                {
+                                    // For collection of completed document/certificate, collection occurs at final workflow desk
+                                    return NormalizeDepartmentName(depts[^1]);
+                                }
+                            }
+                            catch
+                            {
+                                var parts = submission.ServiceProcedure.WorkflowDepartments.Split(new[] { ',', ';' }, StringSplitOptions.RemoveEmptyEntries);
+                                if (parts.Length > 0) return NormalizeDepartmentName(parts[^1].Trim());
                             }
                         }
-                        catch { }
+
+                        if (!string.IsNullOrWhiteSpace(submission.ServiceProcedure.Category))
+                        {
+                            var catDept = MapCategoryToDepartment(submission.ServiceProcedure.Category);
+                            if (!string.IsNullOrWhiteSpace(catDept)) return NormalizeDepartmentName(catDept);
+                        }
                     }
                 }
             }
         }
         catch { }
 
-        // Fallback mapping from service name
+        // 2. Resolve dynamically from ServiceProcedures database table by service name
+        if (!string.IsNullOrWhiteSpace(serviceName))
+        {
+            try
+            {
+                var sName = serviceName.Trim().ToLowerInvariant();
+                var proc = await _context.ServiceProcedures
+                    .FirstOrDefaultAsync(p => p.Name.ToLower() == sName || sName.Contains(p.Name.ToLower()) || p.Name.ToLower().Contains(sName));
+
+                if (proc != null)
+                {
+                    if (!string.IsNullOrWhiteSpace(proc.WorkflowDepartments))
+                    {
+                        try
+                        {
+                            var depts = JsonSerializer.Deserialize<List<string>>(proc.WorkflowDepartments);
+                            if (depts != null && depts.Count > 0)
+                            {
+                                return NormalizeDepartmentName(depts[^1]);
+                            }
+                        }
+                        catch
+                        {
+                            var parts = proc.WorkflowDepartments.Split(new[] { ',', ';' }, StringSplitOptions.RemoveEmptyEntries);
+                            if (parts.Length > 0) return NormalizeDepartmentName(parts[^1].Trim());
+                        }
+                    }
+
+                    if (!string.IsNullOrWhiteSpace(proc.Category))
+                    {
+                        var catDept = MapCategoryToDepartment(proc.Category);
+                        if (!string.IsNullOrWhiteSpace(catDept)) return NormalizeDepartmentName(catDept);
+                    }
+                }
+            }
+            catch { }
+        }
+
+        // 3. Match against registered Departments database table
+        try
+        {
+            var sName = (serviceName ?? string.Empty).Trim().ToLowerInvariant();
+            if (!string.IsNullOrWhiteSpace(sName))
+            {
+                var registeredDepts = await _context.Departments.ToListAsync();
+                var matched = registeredDepts.FirstOrDefault(d =>
+                    sName.Contains(d.Name.ToLowerInvariant()) ||
+                    d.Name.ToLowerInvariant().Contains(sName));
+                if (matched != null) return NormalizeDepartmentName(matched.Name);
+            }
+        }
+        catch { }
+
+        // 4. Fallback mapping from service name
         var lower = (serviceName ?? string.Empty).ToLowerInvariant();
         if (lower.Contains("passport") || lower.Contains("immigration"))
             return "Department of Immigration & Emigration";
