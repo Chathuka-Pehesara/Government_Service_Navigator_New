@@ -432,6 +432,7 @@ namespace Government_Service_Navigator.Backend.Controllers
                 ";
                 var pDept = cmd.CreateParameter();
                 pDept.ParameterName = "@dept";
+                pDept.DbType = DbType.String;
                 pDept.Value = string.IsNullOrWhiteSpace(department) || department == "All" ? DBNull.Value : $"%{department.Trim()}%";
                 cmd.Parameters.Add(pDept);
 
@@ -567,6 +568,7 @@ namespace Government_Service_Navigator.Backend.Controllers
 
                 var p = queryCmd.CreateParameter();
                 p.ParameterName = "@dept";
+                p.DbType = DbType.String;
                 p.Value = string.IsNullOrWhiteSpace(department) || department == "All" ? DBNull.Value : $"%{department.Trim()}%";
                 queryCmd.Parameters.Add(p);
 
