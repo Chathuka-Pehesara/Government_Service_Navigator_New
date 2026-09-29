@@ -1,9 +1,11 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:file_picker/file_picker.dart';
 import '../models/eligibility_agent_model.dart';
 import '../services/eligibility_agent_service.dart';
 import '../theme/app_colors.dart';
 import '../utils/validators.dart';
+import '../providers/catalog_providers.dart';
 
 class Agent2StatutoryAuditorScreen extends ConsumerStatefulWidget {
   final int serviceId;
@@ -30,29 +32,69 @@ class _Agent2StatutoryAuditorScreenState
   String _employment = 'Employed';
   final TextEditingController _incomeController = TextEditingController(text: '500000');
 
-  // Selected document proof tags
-  final Set<String> _selectedDocs = {
-    'National Identity Card (NIC): nic_copy.pdf',
-    'Certified Birth Certificate Extract: birth_certificate.pdf',
-  };
+  // Uploaded evidentiary documents for statutory audit
+  final Set<String> _selectedDocs = {};
+  bool _isPickingFiles = false;
 
-  // Quick preset catalog
-  final List<({String label, String value})> _presetDocs = const [
-    (label: 'NIC Copy', value: 'National Identity Card (NIC): nic_copy.pdf'),
-    (label: 'Birth Certificate', value: 'Certified Birth Certificate Extract: birth_certificate.pdf'),
-    (label: 'Police Loss Report', value: 'Police Complaint Report for Loss: police_report.pdf'),
-    (label: 'NTMI Medical Slip', value: 'Medical Fitness Certificate (NTMI): ntmi_medical.pdf'),
-    (label: 'Biometric Photo Slip', value: 'ICAO Biometric Photo Slip: photo_slip.jpg'),
-    (label: 'Grama Niladhari Cert', value: 'Grama Niladhari Certificate: gn_residence.pdf'),
-  ];
+  Future<void> _pickFiles() async {
+    setState(() => _isPickingFiles = true);
+    try {
+      final files = await FilePicker.pickFiles(
+        type: FileType.custom,
+        allowedExtensions: const ['pdf', 'jpg', 'jpeg', 'png', 'doc', 'docx'],
+      );
 
-  // Common statutory services
-  final List<({int id, String name})> _statutoryServices = const [
-    (id: 24, name: 'National Identity Card (NIC) Issuance & Replacement'),
-    (id: 1, name: 'Passport Issuance & Renewal (Regular / Urgent)'),
-    (id: 2, name: 'Driving License New Application & Renewal'),
-    (id: 3, name: 'Police Clearance Certificate Verification'),
-  ];
+      if (files.isNotEmpty) {
+        setState(() {
+          for (final file in files) {
+            final name = file.name.trim();
+            if (name.isNotEmpty) {
+              _selectedDocs.add(name);
+            }
+          }
+          _auditResult = null;
+          _auditError = null;
+        });
+      }
+    } catch (e) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text('Failed to select file: $e')),
+        );
+      }
+    } finally {
+      if (mounted) {
+        setState(() => _isPickingFiles = false);
+      }
+    }
+  }
+
+  // Pagination for service selector (show 4 at a time)
+  int _servicePageIndex = 0;
+  static const int _servicesPerPage = 4;
+
+  List<({int id, String name})> _getAvailableServices(List<Map<String, dynamic>>? liveServices) {
+    if (liveServices == null || liveServices.isEmpty) {
+      return const [];
+    }
+    return liveServices
+        .where((s) => s['status'] != 'Retired')
+        .map((s) {
+          final id = (s['id'] as num?)?.toInt() ?? 0;
+          final name = (s['name'] as String?)?.trim() ?? '';
+          return (id: id, name: name);
+        })
+        .where((s) => s.id > 0 && s.name.isNotEmpty)
+        .toList();
+  }
+
+  int _pageForService(List<({int id, String name})> services, int id) {
+    final idx = services.indexWhere((s) => s.id == id);
+    if (idx >= 0) {
+      return (idx / _servicesPerPage).floor();
+    }
+    return 0;
+  }
 
   EligibilityAgentResponse? _auditResult;
   bool _isAuditing = false;
@@ -151,11 +193,14 @@ class _Agent2StatutoryAuditorScreenState
 
   @override
   Widget build(BuildContext context) {
+    final servicesAsync = ref.watch(servicesProvider);
+    final allServices = _getAvailableServices(servicesAsync.asData?.value);
+
     return Scaffold(
       backgroundColor: const Color(0xFFF6F8FB),
       appBar: AppBar(
         title: const Text(
-          'Agent 2: Statutory Policy Auditor',
+          'Statutory Eligibility & Compliance Auditor',
           style: TextStyle(fontSize: 16, fontWeight: FontWeight.bold),
         ),
         backgroundColor: Colors.white,
@@ -190,8 +235,8 @@ class _Agent2StatutoryAuditorScreenState
                   _buildAgent2Header(),
                   const SizedBox(height: 16),
 
-                  // 2. Target Government Service Selector
-                  _buildServiceSelectorSection(),
+                  // 2. Target Government Service Selector (4 at a time + Next Services button)
+                  _buildServiceSelectorSection(allServices),
                   const SizedBox(height: 16),
 
                   // 3. Citizen Demographics Card
@@ -266,7 +311,7 @@ class _Agent2StatutoryAuditorScreenState
                 Row(
                   children: [
                     Text(
-                      'Agent 2 Compliance Engine',
+                      'Statutory Compliance Auditor',
                       style: TextStyle(
                         fontSize: 15,
                         fontWeight: FontWeight.bold,
@@ -293,7 +338,45 @@ class _Agent2StatutoryAuditorScreenState
     );
   }
 
-  Widget _buildServiceSelectorSection() {
+  Widget _buildServiceSelectorSection(List<({int id, String name})> allServices) {
+    if (allServices.isEmpty) {
+      return Container(
+        padding: const EdgeInsets.all(16),
+        decoration: BoxDecoration(
+          color: Colors.white,
+          borderRadius: BorderRadius.circular(14),
+          border: Border.all(color: const Color(0xFFE2E8F0)),
+        ),
+        child: const Center(
+          child: Padding(
+            padding: EdgeInsets.symmetric(vertical: 8),
+            child: Row(
+              mainAxisAlignment: MainAxisAlignment.center,
+              children: [
+                SizedBox(
+                  width: 14,
+                  height: 14,
+                  child: CircularProgressIndicator(strokeWidth: 2, color: Color(0xFF1E3A6E)),
+                ),
+                SizedBox(width: 10),
+                Text(
+                  'Loading system services...',
+                  style: TextStyle(fontSize: 12, color: Color(0xFF64748B)),
+                ),
+              ],
+            ),
+          ),
+        ),
+      );
+    }
+
+    final totalPages = (allServices.length / _servicesPerPage).ceil().clamp(1, 999);
+    final safePage = _servicePageIndex.clamp(0, totalPages - 1);
+    final startIndex = safePage * _servicesPerPage;
+    final endIndex = (startIndex + _servicesPerPage).clamp(0, allServices.length);
+    final currentFourServices = allServices.sublist(startIndex, endIndex);
+    final isCurrentSelectionVisible = currentFourServices.any((s) => s.id == _serviceId);
+
     return Container(
       padding: const EdgeInsets.all(16),
       decoration: BoxDecoration(
@@ -304,21 +387,94 @@ class _Agent2StatutoryAuditorScreenState
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          const Row(
+          Row(
             children: [
-              Icon(Icons.account_balance, size: 16, color: Color(0xFF1E3A6E)),
-              SizedBox(width: 8),
-              Text(
-                'Select Government Service to Audit',
-                style: TextStyle(fontSize: 13, fontWeight: FontWeight.bold, color: Color(0xFF1A202C)),
+              const Expanded(
+                child: Row(
+                  children: [
+                    Icon(Icons.account_balance, size: 16, color: Color(0xFF1E3A6E)),
+                    SizedBox(width: 8),
+                    Flexible(
+                      child: Text(
+                        'Select Service to Audit',
+                        style: TextStyle(fontSize: 13, fontWeight: FontWeight.bold, color: Color(0xFF1A202C)),
+                        overflow: TextOverflow.ellipsis,
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+              const SizedBox(width: 6),
+              InkWell(
+                onTap: () => _showAllServicesBottomSheet(allServices),
+                borderRadius: BorderRadius.circular(8),
+                child: Container(
+                  padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+                  decoration: BoxDecoration(
+                    color: const Color(0xFFEFF6FF),
+                    borderRadius: BorderRadius.circular(8),
+                    border: Border.all(color: const Color(0xFFBFDBFE)),
+                  ),
+                  child: const Row(
+                    mainAxisSize: MainAxisSize.min,
+                    children: [
+                      Icon(Icons.format_list_bulleted_rounded, size: 13, color: Color(0xFF1E3A6E)),
+                      SizedBox(width: 4),
+                      Text(
+                        'All Services',
+                        style: TextStyle(fontSize: 11, fontWeight: FontWeight.bold, color: Color(0xFF1E3A6E)),
+                      ),
+                    ],
+                  ),
+                ),
               ),
             ],
           ),
           const SizedBox(height: 12),
+
+          // If current selection is on a different page, show an active selection indicator with quick jump
+          if (!isCurrentSelectionVisible) ...[
+            InkWell(
+              onTap: () {
+                final targetPage = _pageForService(allServices, _serviceId);
+                setState(() => _servicePageIndex = targetPage);
+              },
+              borderRadius: BorderRadius.circular(8),
+              child: Container(
+                margin: const EdgeInsets.only(bottom: 10),
+                padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
+                decoration: BoxDecoration(
+                  color: const Color(0xFFF1F5F9),
+                  borderRadius: BorderRadius.circular(8),
+                  border: Border.all(color: const Color(0xFFCBD5E1)),
+                ),
+                child: Row(
+                  children: [
+                    const Icon(Icons.check_circle_rounded, size: 14, color: Color(0xFF1E3A6E)),
+                    const SizedBox(width: 6),
+                    Expanded(
+                      child: Text(
+                        'Active Selection: ${_selectedService.split('(').first.trim()}',
+                        style: const TextStyle(fontSize: 11, fontWeight: FontWeight.w600, color: Color(0xFF1E3A6E)),
+                        maxLines: 1,
+                        overflow: TextOverflow.ellipsis,
+                      ),
+                    ),
+                    const Text(
+                      'View page →',
+                      style: TextStyle(fontSize: 10, color: Color(0xFF2563EB), fontWeight: FontWeight.bold),
+                    ),
+                  ],
+                ),
+              ),
+            ),
+          ],
+
+          // Display only 4 services at a time
           Wrap(
             spacing: 8,
             runSpacing: 8,
-            children: _statutoryServices.map((service) {
+            children: currentFourServices.map((service) {
               final isSelected = _serviceId == service.id;
               return ChoiceChip(
                 label: Text(
@@ -342,14 +498,217 @@ class _Agent2StatutoryAuditorScreenState
                     setState(() {
                       _serviceId = service.id;
                       _selectedService = service.name;
+                      _auditResult = null;
+                      _auditError = null;
                     });
                   }
                 },
               );
             }).toList(),
           ),
+
+          const SizedBox(height: 14),
+
+          // Navigation controls: Indicator and Button to move to next available services
+          Container(
+            padding: const EdgeInsets.only(top: 10),
+            decoration: const BoxDecoration(
+              border: Border(top: BorderSide(color: Color(0xFFF1F5F9))),
+            ),
+            child: Row(
+              mainAxisAlignment: MainAxisAlignment.spaceBetween,
+              children: [
+                Text(
+                  '${startIndex + 1}–$endIndex of ${allServices.length} services (Page ${safePage + 1}/$totalPages)',
+                  style: const TextStyle(
+                    fontSize: 11,
+                    color: Color(0xFF64748B),
+                    fontWeight: FontWeight.w600,
+                  ),
+                ),
+
+                Row(
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    if (totalPages > 1) ...[
+                      // Previous services button
+                      IconButton(
+                        onPressed: safePage > 0
+                            ? () => setState(() => _servicePageIndex = safePage - 1)
+                            : null,
+                        icon: const Icon(Icons.chevron_left_rounded, size: 20),
+                        tooltip: 'Previous Services',
+                        style: IconButton.styleFrom(
+                          padding: const EdgeInsets.all(4),
+                          minimumSize: const Size(32, 32),
+                          backgroundColor: safePage > 0 ? const Color(0xFFF1F5F9) : const Color(0xFFF8FAFC),
+                          foregroundColor: safePage > 0 ? const Color(0xFF1E3A6E) : const Color(0xFFCBD5E1),
+                        ),
+                      ),
+                      const SizedBox(width: 8),
+
+                      // Next services button
+                      ElevatedButton.icon(
+                        onPressed: () {
+                          setState(() {
+                            _servicePageIndex = (safePage + 1) % totalPages;
+                          });
+                        },
+                        icon: const Icon(Icons.arrow_forward_rounded, size: 14),
+                        label: Text(
+                          safePage < totalPages - 1 ? 'Next Services' : 'First Services',
+                          style: const TextStyle(fontSize: 11, fontWeight: FontWeight.bold),
+                        ),
+                        style: ElevatedButton.styleFrom(
+                          backgroundColor: const Color(0xFF1E3A6E),
+                          foregroundColor: Colors.white,
+                          padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+                          elevation: 0,
+                          minimumSize: const Size(0, 32),
+                          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
+                        ),
+                      ),
+                    ],
+                  ],
+                ),
+              ],
+            ),
+          ),
         ],
       ),
+    );
+  }
+
+  void _showAllServicesBottomSheet(List<({int id, String name})> allServices) {
+    showModalBottomSheet(
+      context: context,
+      isScrollControlled: true,
+      backgroundColor: Colors.white,
+      shape: const RoundedRectangleBorder(
+        borderRadius: BorderRadius.vertical(top: Radius.circular(20)),
+      ),
+      builder: (ctx) {
+        String filterQuery = '';
+        return StatefulBuilder(
+          builder: (context, setModalState) {
+            final filtered = filterQuery.trim().isEmpty
+                ? allServices
+                : allServices
+                    .where((s) => s.name.toLowerCase().contains(filterQuery.toLowerCase()))
+                    .toList();
+
+            return DraggableScrollableSheet(
+              initialChildSize: 0.7,
+              minChildSize: 0.4,
+              maxChildSize: 0.9,
+              expand: false,
+              builder: (context, scrollController) {
+                return Padding(
+                  padding: const EdgeInsets.fromLTRB(16, 12, 16, 16),
+                  child: Column(
+                    children: [
+                      Center(
+                        child: Container(
+                          width: 40,
+                          height: 4,
+                          decoration: BoxDecoration(
+                            color: const Color(0xFFCBD5E1),
+                            borderRadius: BorderRadius.circular(2),
+                          ),
+                        ),
+                      ),
+                      const SizedBox(height: 12),
+                      Row(
+                        mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                        children: [
+                          const Text(
+                            'Select Government Service',
+                            style: TextStyle(fontSize: 15, fontWeight: FontWeight.bold, color: Color(0xFF0F172A)),
+                          ),
+                          IconButton(
+                            icon: const Icon(Icons.close, size: 20),
+                            onPressed: () => Navigator.pop(ctx),
+                          ),
+                        ],
+                      ),
+                      const SizedBox(height: 8),
+                      TextField(
+                        decoration: InputDecoration(
+                          hintText: 'Search government services...',
+                          hintStyle: const TextStyle(fontSize: 13, color: Color(0xFF94A3B8)),
+                          prefixIcon: const Icon(Icons.search, size: 18, color: Color(0xFF64748B)),
+                          filled: true,
+                          fillColor: const Color(0xFFF8FAFC),
+                          contentPadding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+                          border: OutlineInputBorder(
+                            borderRadius: BorderRadius.circular(10),
+                            borderSide: const BorderSide(color: Color(0xFFE2E8F0)),
+                          ),
+                          enabledBorder: OutlineInputBorder(
+                            borderRadius: BorderRadius.circular(10),
+                            borderSide: const BorderSide(color: Color(0xFFE2E8F0)),
+                          ),
+                        ),
+                        onChanged: (val) => setModalState(() => filterQuery = val),
+                      ),
+                      const SizedBox(height: 12),
+                      Expanded(
+                        child: filtered.isEmpty
+                            ? const Center(
+                                child: Text('No matching services found.', style: TextStyle(color: Color(0xFF64748B))),
+                              )
+                            : ListView.separated(
+                                controller: scrollController,
+                                itemCount: filtered.length,
+                                separatorBuilder: (context, index) => const Divider(height: 1, color: Color(0xFFF1F5F9)),
+                                itemBuilder: (context, idx) {
+                                  final s = filtered[idx];
+                                  final isSelected = s.id == _serviceId;
+                                  return ListTile(
+                                    contentPadding: const EdgeInsets.symmetric(horizontal: 8, vertical: 2),
+                                    leading: CircleAvatar(
+                                      radius: 16,
+                                      backgroundColor: isSelected ? const Color(0xFF1E3A6E) : const Color(0xFFF1F5F9),
+                                      child: Icon(
+                                        Icons.account_balance_outlined,
+                                        size: 16,
+                                        color: isSelected ? Colors.white : const Color(0xFF64748B),
+                                      ),
+                                    ),
+                                    title: Text(
+                                      s.name,
+                                      style: TextStyle(
+                                        fontSize: 13,
+                                        fontWeight: isSelected ? FontWeight.bold : FontWeight.w500,
+                                        color: isSelected ? const Color(0xFF1E3A6E) : const Color(0xFF1E293B),
+                                      ),
+                                    ),
+                                    trailing: isSelected
+                                        ? const Icon(Icons.check_circle_rounded, color: Color(0xFF1E3A6E), size: 20)
+                                        : null,
+                                    onTap: () {
+                                      final targetPage = _pageForService(allServices, s.id);
+                                      setState(() {
+                                        _serviceId = s.id;
+                                        _selectedService = s.name;
+                                        _servicePageIndex = targetPage;
+                                        _auditResult = null;
+                                        _auditError = null;
+                                      });
+                                      Navigator.pop(ctx);
+                                    },
+                                  );
+                                },
+                              ),
+                      ),
+                    ],
+                  ),
+                );
+              },
+            );
+          },
+        );
+      },
     );
   }
 
@@ -509,22 +868,26 @@ class _Agent2StatutoryAuditorScreenState
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
           Row(
-            mainAxisAlignment: MainAxisAlignment.spaceBetween,
             children: [
-              const Row(
-                children: [
-                  Icon(Icons.inventory_2_outlined, size: 16, color: Color(0xFF1E3A6E)),
-                  SizedBox(width: 8),
-                  Text(
-                    'Available Evidentiary Documents',
-                    style: TextStyle(fontSize: 13, fontWeight: FontWeight.bold, color: Color(0xFF1A202C)),
-                  ),
-                ],
+              const Expanded(
+                child: Row(
+                  children: [
+                    Icon(Icons.upload_file_rounded, size: 16, color: Color(0xFF1E3A6E)),
+                    SizedBox(width: 8),
+                    Flexible(
+                      child: Text(
+                        'Upload Evidentiary Documents',
+                        style: TextStyle(fontSize: 13, fontWeight: FontWeight.bold, color: Color(0xFF1A202C)),
+                        overflow: TextOverflow.ellipsis,
+                      ),
+                    ),
+                  ],
+                ),
               ),
               TextButton.icon(
                 onPressed: _showAddCustomDocDialog,
-                icon: const Icon(Icons.add, size: 14),
-                label: const Text('Custom Ref', style: TextStyle(fontSize: 11)),
+                icon: const Icon(Icons.edit_note_rounded, size: 16),
+                label: const Text('Add Name', style: TextStyle(fontSize: 11, fontWeight: FontWeight.bold)),
                 style: TextButton.styleFrom(
                   visualDensity: VisualDensity.compact,
                   foregroundColor: const Color(0xFF1E3A6E),
@@ -532,67 +895,172 @@ class _Agent2StatutoryAuditorScreenState
               ),
             ],
           ),
-          const SizedBox(height: 10),
+          const SizedBox(height: 6),
           const Text(
-            'Select document proofs currently held by citizen (tap to toggle):',
-            style: TextStyle(fontSize: 11, color: Colors.grey),
+            'Directly attach citizen proof files (PDF, JPG, PNG) to verify statutory compliance:',
+            style: TextStyle(fontSize: 11, color: Color(0xFF64748B)),
           ),
-          const SizedBox(height: 8),
-          Wrap(
-            spacing: 6,
-            runSpacing: 6,
-            children: _presetDocs.map((item) {
-              final isAttached = _selectedDocs.contains(item.value);
-              return FilterChip(
-                avatar: Icon(
-                  isAttached ? Icons.check_circle : Icons.radio_button_unchecked,
-                  size: 14,
-                  color: isAttached ? Colors.white : const Color(0xFF1E3A6E),
-                ),
-                label: Text(
-                  item.label,
-                  style: TextStyle(
-                    fontSize: 11,
-                    fontWeight: isAttached ? FontWeight.bold : FontWeight.normal,
-                    color: isAttached ? Colors.white : const Color(0xFF2D3748),
-                  ),
-                ),
-                selected: isAttached,
-                selectedColor: const Color(0xFF1E3A6E),
-                backgroundColor: const Color(0xFFF1F5F9),
-                showCheckmark: false,
-                side: BorderSide(color: isAttached ? const Color(0xFF1E3A6E) : const Color(0xFFE2E8F0)),
-                shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
-                onSelected: (val) {
-                  setState(() {
-                    if (val) {
-                      _selectedDocs.add(item.value);
-                    } else {
-                      _selectedDocs.remove(item.value);
-                    }
-                  });
-                },
-              );
-            }).toList(),
-          ),
-          if (_selectedDocs.isNotEmpty) ...[
-            const SizedBox(height: 12),
-            Container(
-              padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
+          const SizedBox(height: 12),
+
+          // Upload action banner
+          InkWell(
+            onTap: _isPickingFiles ? null : _pickFiles,
+            borderRadius: BorderRadius.circular(10),
+            child: Container(
+              width: double.infinity,
+              padding: const EdgeInsets.symmetric(vertical: 14, horizontal: 16),
               decoration: BoxDecoration(
                 color: const Color(0xFFF8FAFC),
-                borderRadius: BorderRadius.circular(8),
+                borderRadius: BorderRadius.circular(10),
+                border: Border.all(color: const Color(0xFFCBD5E1)),
               ),
               child: Row(
+                mainAxisAlignment: MainAxisAlignment.center,
                 children: [
-                  const Icon(Icons.check_circle, size: 14, color: Color(0xFF2E7D5B)),
-                  const SizedBox(width: 6),
-                  Text(
-                    '${_selectedDocs.length} document proofs attached for statutory evaluation',
-                    style: const TextStyle(fontSize: 11, color: Color(0xFF2E7D5B), fontWeight: FontWeight.bold),
+                  if (_isPickingFiles) ...[
+                    const SizedBox(
+                      width: 16,
+                      height: 16,
+                      child: CircularProgressIndicator(strokeWidth: 2, color: Color(0xFF1E3A6E)),
+                    ),
+                    const SizedBox(width: 10),
+                    const Text(
+                      'Opening device files...',
+                      style: TextStyle(fontSize: 12, fontWeight: FontWeight.w600, color: Color(0xFF1E3A6E)),
+                    ),
+                  ] else ...[
+                    const Icon(Icons.cloud_upload_outlined, size: 20, color: Color(0xFF1E3A6E)),
+                    const SizedBox(width: 8),
+                    const Text(
+                      'Browse & Upload Documents (PDF, Images)',
+                      style: TextStyle(fontSize: 12, fontWeight: FontWeight.bold, color: Color(0xFF1E3A6E)),
+                    ),
+                  ],
+                ],
+              ),
+            ),
+          ),
+
+          // Attached documents list
+          if (_selectedDocs.isEmpty) ...[
+            const SizedBox(height: 12),
+            Container(
+              padding: const EdgeInsets.all(12),
+              decoration: BoxDecoration(
+                color: const Color(0xFFFFFBEB),
+                borderRadius: BorderRadius.circular(8),
+                border: Border.all(color: const Color(0xFFFDE68A)),
+              ),
+              child: const Row(
+                children: [
+                  Icon(Icons.info_outline_rounded, size: 16, color: Color(0xFFB45309)),
+                  SizedBox(width: 8),
+                  Expanded(
+                    child: Text(
+                      'No documents attached yet. The statutory auditor will verify eligibility once files are attached.',
+                      style: TextStyle(fontSize: 11, color: Color(0xFF92400E)),
+                    ),
                   ),
                 ],
               ),
+            ),
+          ] else ...[
+            const SizedBox(height: 14),
+            Text(
+              'Attached Documents (${_selectedDocs.length}):',
+              style: const TextStyle(fontSize: 11, fontWeight: FontWeight.bold, color: Color(0xFF334155)),
+            ),
+            const SizedBox(height: 8),
+            ListView.separated(
+              shrinkWrap: true,
+              physics: const NeverScrollableScrollPhysics(),
+              itemCount: _selectedDocs.length,
+              separatorBuilder: (context, index) => const SizedBox(height: 6),
+              itemBuilder: (context, idx) {
+                final docName = _selectedDocs.elementAt(idx);
+                final isPdf = docName.toLowerCase().endsWith('.pdf');
+                final isImage = docName.toLowerCase().endsWith('.jpg') ||
+                    docName.toLowerCase().endsWith('.jpeg') ||
+                    docName.toLowerCase().endsWith('.png');
+
+                return Container(
+                  padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 8),
+                  decoration: BoxDecoration(
+                    color: const Color(0xFFF8FAFC),
+                    borderRadius: BorderRadius.circular(8),
+                    border: Border.all(color: const Color(0xFFE2E8F0)),
+                  ),
+                  child: Row(
+                    children: [
+                      CircleAvatar(
+                        radius: 14,
+                        backgroundColor: isPdf ? const Color(0xFFFEE2E2) : (isImage ? const Color(0xFFE0E7FF) : const Color(0xFFDCFCE7)),
+                        child: Icon(
+                          isPdf ? Icons.picture_as_pdf_outlined : (isImage ? Icons.image_outlined : Icons.description_outlined),
+                          size: 15,
+                          color: isPdf ? const Color(0xFFDC2626) : (isImage ? const Color(0xFF4338CA) : const Color(0xFF15803D)),
+                        ),
+                      ),
+                      const SizedBox(width: 10),
+                      Expanded(
+                        child: Column(
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          children: [
+                            Text(
+                              docName,
+                              style: const TextStyle(fontSize: 12, fontWeight: FontWeight.w600, color: Color(0xFF1E293B)),
+                              maxLines: 1,
+                              overflow: TextOverflow.ellipsis,
+                            ),
+                            const Text(
+                              'Attached document ready for statutory audit',
+                              style: TextStyle(fontSize: 10, color: Color(0xFF64748B)),
+                            ),
+                          ],
+                        ),
+                      ),
+                      IconButton(
+                        icon: const Icon(Icons.delete_outline_rounded, size: 18, color: Color(0xFFEF4444)),
+                        tooltip: 'Remove document',
+                        visualDensity: VisualDensity.compact,
+                        padding: EdgeInsets.zero,
+                        constraints: const BoxConstraints(),
+                        onPressed: () {
+                          setState(() {
+                            _selectedDocs.remove(docName);
+                            _auditResult = null;
+                            _auditError = null;
+                          });
+                        },
+                      ),
+                    ],
+                  ),
+                );
+              },
+            ),
+            const SizedBox(height: 10),
+            Row(
+              mainAxisAlignment: MainAxisAlignment.spaceBetween,
+              children: [
+                Text(
+                  '${_selectedDocs.length} files attached',
+                  style: const TextStyle(fontSize: 11, color: Color(0xFF15803D), fontWeight: FontWeight.bold),
+                ),
+                TextButton(
+                  onPressed: () {
+                    setState(() {
+                      _selectedDocs.clear();
+                      _auditResult = null;
+                      _auditError = null;
+                    });
+                  },
+                  style: TextButton.styleFrom(
+                    visualDensity: VisualDensity.compact,
+                    foregroundColor: const Color(0xFFEF4444),
+                  ),
+                  child: const Text('Clear All', style: TextStyle(fontSize: 11)),
+                ),
+              ],
             ),
           ],
         ],
@@ -632,7 +1100,7 @@ class _Agent2StatutoryAuditorScreenState
                 Icon(Icons.psychology_rounded, size: 20),
                 SizedBox(width: 8),
                 Text(
-                  'Run Agent 2 Statutory Audit',
+                  'Run Statutory Eligibility Audit',
                   style: TextStyle(fontSize: 14, fontWeight: FontWeight.bold),
                 ),
               ],
@@ -649,16 +1117,16 @@ class _Agent2StatutoryAuditorScreenState
         border: Border.all(color: const Color(0xFFE2E8F0)),
       ),
       alignment: Alignment.center,
-      child: Column(
+      child: const Column(
         children: [
-          const CircularProgressIndicator(color: Color(0xFF1E3A6E)),
-          const SizedBox(height: 16),
-          const Text(
-            'Agent 2 Querying Neon PGVector & Groq LLM...',
+          CircularProgressIndicator(color: Color(0xFF1E3A6E)),
+          SizedBox(height: 16),
+          Text(
+            'Querying Official Gazettes & Legal Engine...',
             style: TextStyle(fontWeight: FontWeight.bold, fontSize: 14),
           ),
-          const SizedBox(height: 6),
-          const Text(
+          SizedBox(height: 6),
+          Text(
             'Retrieving statutory rules from official gazettes and evaluating proof compliance...',
             textAlign: TextAlign.center,
             style: TextStyle(fontSize: 12, color: Colors.grey),
@@ -726,33 +1194,38 @@ class _Agent2StatutoryAuditorScreenState
         children: [
           // Header Verdict Row
           Row(
-            mainAxisAlignment: MainAxisAlignment.spaceBetween,
+            crossAxisAlignment: CrossAxisAlignment.center,
             children: [
-              Row(
-                children: [
-                  Icon(statusIcon, color: statusColor, size: 28),
-                  const SizedBox(width: 10),
-                  Column(
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    children: [
-                      Text(
-                        statusTitle,
-                        style: TextStyle(
-                          fontSize: 15,
-                          fontWeight: FontWeight.bold,
-                          color: statusColor,
-                        ),
+              Icon(statusIcon, color: statusColor, size: 28),
+              const SizedBox(width: 10),
+              Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    Text(
+                      statusTitle,
+                      maxLines: 1,
+                      overflow: TextOverflow.ellipsis,
+                      style: TextStyle(
+                        fontSize: 15,
+                        fontWeight: FontWeight.bold,
+                        color: statusColor,
                       ),
-                      Text(
-                        'Agent 2 Audit for $_selectedService',
-                        style: const TextStyle(fontSize: 11, color: Colors.grey),
-                      ),
-                    ],
-                  ),
-                ],
+                    ),
+                    const SizedBox(height: 2),
+                    Text(
+                      'Statutory Audit: $_selectedService',
+                      maxLines: 1,
+                      overflow: TextOverflow.ellipsis,
+                      style: const TextStyle(fontSize: 11, color: Colors.grey),
+                    ),
+                  ],
+                ),
               ),
+              const SizedBox(width: 8),
               Container(
-                padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
+                padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 5),
                 decoration: BoxDecoration(
                   color: statusColor,
                   borderRadius: BorderRadius.circular(20),
@@ -855,9 +1328,11 @@ class _Agent2StatutoryAuditorScreenState
               children: [
                 Icon(Icons.verified, color: Color(0xFF2E7D5B), size: 16),
                 SizedBox(width: 6),
-                Text(
-                  'All required statutory documents verified!',
-                  style: TextStyle(color: Color(0xFF2E7D5B), fontWeight: FontWeight.bold, fontSize: 12),
+                Expanded(
+                  child: Text(
+                    'All required statutory documents verified!',
+                    style: TextStyle(color: Color(0xFF2E7D5B), fontWeight: FontWeight.bold, fontSize: 12),
+                  ),
                 ),
               ],
             ),

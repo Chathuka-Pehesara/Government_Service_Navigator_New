@@ -52,6 +52,7 @@ import {
   Categories,
   Document,
   Money,
+  Calendar,
 } from "@carbon/icons-react";
 
 // 1. Import Components
@@ -275,15 +276,33 @@ export default function ManageOfficers() {
                     >
                       Financial Verifications
                     </SideNavLink>
+                    <SideNavLink renderIcon={Catalog} href="/admin/services">
+                      Service Catalog (View)
+                    </SideNavLink>
+                    <SideNavLink
+                      renderIcon={UserMultiple}
+                      href="/admin/manage-officers"
+                      isActive
+                    >
+                      Manage Officers
+                    </SideNavLink>
+                    <SideNavLink
+                      renderIcon={Calendar}
+                      href="/admin/collection-slots"
+                    >
+                      Collection Slots
+                    </SideNavLink>
+                    <SideNavLink renderIcon={Security} href="/admin/audit-logs">
+                      Audit Logs
+                    </SideNavLink>
                   </>
                 )}
 
-                <SideNavLink renderIcon={Catalog} href="/admin/services">
-                  {isSysAdmin ? "Service Catalog" : "Service Catalog (View)"}
-                </SideNavLink>
-
                 {isSysAdmin && (
                   <>
+                    <SideNavLink renderIcon={Catalog} href="/admin/services">
+                      Service Catalog
+                    </SideNavLink>
                     <SideNavLink renderIcon={Rule} href="/admin/services/rules">
                       Eligibility Rules
                     </SideNavLink>
@@ -305,35 +324,35 @@ export default function ManageOfficers() {
                     >
                       Eligibility Simulator
                     </SideNavLink>
+                    <SideNavLink
+                      renderIcon={Categories}
+                      href="/admin/departments"
+                    >
+                      Department Management
+                    </SideNavLink>
+                    <SideNavLink
+                      renderIcon={UserMultiple}
+                      href="/admin/manage-officers"
+                      isActive
+                    >
+                      Manage Officers
+                    </SideNavLink>
+                    <SideNavLink
+                      renderIcon={Calendar}
+                      href="/admin/collection-slots"
+                    >
+                      Collection Slots
+                    </SideNavLink>
+                    <SideNavLink renderIcon={Security} href="/admin/audit-logs">
+                      Audit Logs
+                    </SideNavLink>
+                    <SideNavLink
+                      renderIcon={Settings}
+                      href="/admin/system-settings"
+                    >
+                      System Settings
+                    </SideNavLink>
                   </>
-                )}
-
-                {isSysAdmin && (
-                  <SideNavLink
-                    renderIcon={Categories}
-                    href="/admin/departments"
-                  >
-                    Department Management
-                  </SideNavLink>
-                )}
-
-                <SideNavLink
-                  renderIcon={UserMultiple}
-                  href="/admin/manage-officers"
-                  isActive
-                >
-                  Manage Officers
-                </SideNavLink>
-                <SideNavLink renderIcon={Security} href="/admin/audit-logs">
-                  Audit Logs
-                </SideNavLink>
-                {isSysAdmin && (
-                  <SideNavLink
-                    renderIcon={Settings}
-                    href="/admin/system-settings"
-                  >
-                    System Settings
-                  </SideNavLink>
                 )}
 
                 {/* Logout Button */}

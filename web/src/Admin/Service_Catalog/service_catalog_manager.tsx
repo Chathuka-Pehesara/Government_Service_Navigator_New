@@ -43,6 +43,7 @@ import {
   Edit,
   Document,
   Money,
+  Calendar,
 } from "@carbon/icons-react";
 import { DEPARTMENTS, getCategoryForDepartment, getDepartmentSlug } from "../../constants/departments";
 import { parseApiError } from "../../utils/validation";
@@ -356,7 +357,8 @@ export default function ServiceCatalogManager() {
               Overview
             </SideNavLink>
 
-            {deptAdmin && deptSlug && (
+            {/* For Department Admins: All 8 core sections always visible */}
+            {!canWrite && deptSlug && (
               <>
                 <SideNavLink
                   renderIcon={Document}
@@ -370,15 +372,33 @@ export default function ServiceCatalogManager() {
                 >
                   Financial Verifications
                 </SideNavLink>
+                <SideNavLink renderIcon={Catalog} href="/admin/services" isActive>
+                  Service Catalog (View)
+                </SideNavLink>
+                <SideNavLink
+                  renderIcon={UserMultiple}
+                  href="/admin/manage-officers"
+                >
+                  Manage Officers
+                </SideNavLink>
+                <SideNavLink
+                  renderIcon={Calendar}
+                  href="/admin/collection-slots"
+                >
+                  Collection Slots
+                </SideNavLink>
+                <SideNavLink renderIcon={Security} href="/admin/audit-logs">
+                  Audit Logs
+                </SideNavLink>
               </>
             )}
 
-            <SideNavLink renderIcon={Catalog} href="/admin/services" isActive>
-              {canWrite ? "Service Catalog" : "Service Catalog (View)"}
-            </SideNavLink>
-
+            {/* For System Admins */}
             {canWrite && (
               <>
+                <SideNavLink renderIcon={Catalog} href="/admin/services" isActive>
+                  Service Catalog
+                </SideNavLink>
                 <SideNavLink renderIcon={Rule} href="/admin/services/rules">
                   Eligibility Rules
                 </SideNavLink>
@@ -391,31 +411,31 @@ export default function ServiceCatalogManager() {
                 <SideNavLink renderIcon={Rule} href="/admin/services/simulator">
                   Eligibility Simulator
                 </SideNavLink>
+                <SideNavLink
+                  renderIcon={Categories}
+                  href="/admin/departments"
+                >
+                  Department Management
+                </SideNavLink>
+                <SideNavLink
+                  renderIcon={UserMultiple}
+                  href="/admin/manage-officers"
+                >
+                  Manage Officers
+                </SideNavLink>
+                <SideNavLink
+                  renderIcon={Calendar}
+                  href="/admin/collection-slots"
+                >
+                  Collection Slots
+                </SideNavLink>
+                <SideNavLink renderIcon={Security} href="/admin/audit-logs">
+                  Audit Logs
+                </SideNavLink>
+                <SideNavLink renderIcon={Settings} href="/admin/system-settings">
+                  System Settings
+                </SideNavLink>
               </>
-            )}
-
-            {canWrite && (
-              <SideNavLink
-                renderIcon={Categories}
-                href="/admin/departments"
-              >
-                Department Management
-              </SideNavLink>
-            )}
-
-            <SideNavLink
-              renderIcon={UserMultiple}
-              href="/admin/manage-officers"
-            >
-              Manage Officers
-            </SideNavLink>
-            <SideNavLink renderIcon={Security} href="/admin/audit-logs">
-              Audit Logs
-            </SideNavLink>
-            {canWrite && (
-              <SideNavLink renderIcon={Settings} href="/admin/system-settings">
-                System Settings
-              </SideNavLink>
             )}
             <div style={{ marginTop: "auto", borderTop: "1px solid #393939" }}>
               <SideNavLink renderIcon={Logout} onClick={handleLogout} style={{ cursor: 'pointer' }}>

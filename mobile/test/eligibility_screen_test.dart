@@ -19,10 +19,10 @@ void main() {
     await tester.pump();
     await tester.pumpAndSettle();
 
-    expect(find.text('Agent 2: Statutory Policy Auditor'), findsOneWidget);
+    expect(find.text('Statutory Eligibility & Compliance Auditor'), findsOneWidget);
     expect(find.text('Select Government Service to Audit'), findsOneWidget);
     expect(find.text('Applicant Statutory Profile'), findsOneWidget);
     expect(find.text('Available Evidentiary Documents'), findsOneWidget);
-    expect(find.text('Run Agent 2 Statutory Audit'), findsOneWidget);
+    expect(find.text('Run Statutory Eligibility Audit'), findsOneWidget);
   });
 }

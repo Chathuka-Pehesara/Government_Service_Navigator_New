@@ -12,6 +12,7 @@ import 'post_service_form_screen.dart';
 class BookingOptionsScreen extends ConsumerStatefulWidget {
   final String applicationId;
   final String serviceName;
+  final String? departmentName;
   final String? citizenNic;
   final VoidCallback? onPostalSubmitted;
   final ValueChanged<Map<String, dynamic>>? onAppointmentBooked;
@@ -24,6 +25,7 @@ class BookingOptionsScreen extends ConsumerStatefulWidget {
     super.key,
     required this.applicationId,
     required this.serviceName,
+    this.departmentName,
     this.citizenNic,
     this.onPostalSubmitted,
     this.onAppointmentBooked,
@@ -43,6 +45,9 @@ class _BookingOptionsScreenState extends ConsumerState<BookingOptionsScreen> {
   String? _bookingError;
 
   String _getAssignedDepartment() {
+    if (widget.departmentName != null && widget.departmentName!.trim().isNotEmpty && widget.departmentName != 'Department Desk') {
+      return widget.departmentName!.trim();
+    }
     final lower = widget.serviceName.toLowerCase();
     if (lower.contains('passport') || lower.contains('immigration')) {
       return 'Department of Immigration & Emigration';
@@ -54,12 +59,13 @@ class _BookingOptionsScreenState extends ConsumerState<BookingOptionsScreen> {
       return 'Department of Motor Traffic';
     }
     if (lower.contains('police') || lower.contains('clearance')) {
-      return 'Sri Lanka Police Headquarters';
+      return 'Police Department';
     }
     if (lower.contains('birth') || lower.contains('certificate')) {
       return 'Registrar General\'s Department';
     }
-    return 'Department of Public Administration';
+    // Return empty so the backend dynamically resolves the issuing department from ServiceProcedures/WorkflowDepartments
+    return '';
   }
 
   void _handlePostService() {
@@ -224,7 +230,7 @@ class _BookingOptionsScreenState extends ConsumerState<BookingOptionsScreen> {
               const SizedBox(height: 8),
 
               RadioListTile<String>(
-                title: const Text('Make a booking (Agent 3)'),
+                title: const Text('Reserve Department Appointment'),
                 subtitle: const Text('Collect in person at the department office on a free slot.'),
                 value: 'book',
                 groupValue: _selectedOption,
@@ -260,7 +266,7 @@ class _BookingOptionsScreenState extends ConsumerState<BookingOptionsScreen> {
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.stretch,
         children: [
-          // Agent 3 Header Badge
+          // Appointment Coordinator Header Badge
           Row(
             children: [
               Container(
@@ -269,7 +275,7 @@ class _BookingOptionsScreenState extends ConsumerState<BookingOptionsScreen> {
                   color: AppColors.primary.withValues(alpha: 0.12),
                   borderRadius: BorderRadius.circular(8),
                 ),
-                child: const Icon(Icons.smart_toy_rounded, size: 20, color: AppColors.primary),
+                child: const Icon(Icons.event_available_rounded, size: 20, color: AppColors.primary),
               ),
               const SizedBox(width: 10),
               const Expanded(
@@ -277,7 +283,7 @@ class _BookingOptionsScreenState extends ConsumerState<BookingOptionsScreen> {
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
                     Text(
-                      'Agent 3: Appointment Booking Agent',
+                      'Department Appointment & Dispatch Coordinator',
                       style: TextStyle(fontWeight: FontWeight.bold, fontSize: 13),
                     ),
                     Text(
@@ -383,7 +389,7 @@ class _BookingOptionsScreenState extends ConsumerState<BookingOptionsScreen> {
                           child: CircularProgressIndicator(strokeWidth: 2, color: Colors.white),
                         ),
                         SizedBox(width: 10),
-                        Text('Agent 3 Checking Department Slots...', style: TextStyle(fontWeight: FontWeight.bold)),
+                        Text('Checking Department Counter Slots...', style: TextStyle(fontWeight: FontWeight.bold)),
                       ],
                     )
                   : Row(
@@ -392,7 +398,7 @@ class _BookingOptionsScreenState extends ConsumerState<BookingOptionsScreen> {
                         const Icon(Icons.calendar_month_rounded, size: 18),
                         const SizedBox(width: 8),
                         Text(
-                          widget.isReschedule ? 'Change Booking Time' : 'Book Appointment with Agent 3',
+                          widget.isReschedule ? 'Change Booking Time' : 'Confirm Official Appointment',
                           style: const TextStyle(fontWeight: FontWeight.bold),
                         ),
                       ],
@@ -421,7 +427,7 @@ class _BookingOptionsScreenState extends ConsumerState<BookingOptionsScreen> {
     final date = _bookingResult?['bookedDate'] ?? 'Scheduled Date';
     final time = _bookingResult?['bookedTime'] ?? 'Scheduled Time';
     final dept = _bookingResult?['departmentName'] ?? _getAssignedDepartment();
-    final reasoning = _bookingResult?['agentReasoning'] ?? 'Appointment confirmed by Agent 3.';
+    final reasoning = _bookingResult?['agentReasoning'] ?? 'Appointment confirmed with department.';
 
     return Container(
       padding: const EdgeInsets.all(14),
@@ -439,7 +445,7 @@ class _BookingOptionsScreenState extends ConsumerState<BookingOptionsScreen> {
               const SizedBox(width: 8),
               const Expanded(
                 child: Text(
-                  'Appointment Confirmed by Agent 3',
+                  'Appointment Confirmed with Department',
                   style: TextStyle(
                     fontSize: 14,
                     fontWeight: FontWeight.bold,
@@ -468,7 +474,7 @@ class _BookingOptionsScreenState extends ConsumerState<BookingOptionsScreen> {
           _buildInfoRow(Icons.schedule, 'Time Slot', time),
           const Divider(height: 18),
           const Text(
-            'Agent 3 Confirmation Reasoning:',
+            'Official Booking & Dispatch Details:',
             style: TextStyle(fontSize: 11, fontWeight: FontWeight.bold, color: AppColors.dark),
           ),
           const SizedBox(height: 4),
@@ -566,7 +572,7 @@ class _BookingOptionsScreenState extends ConsumerState<BookingOptionsScreen> {
           ),
           const SizedBox(height: 12),
           const Text(
-            'Agent 3 Suggested Available Slots for that Day (Tap to Book):',
+            'Suggested Available Counter Slots (Tap to Book):',
             style: TextStyle(
               fontSize: 11,
               fontWeight: FontWeight.bold,

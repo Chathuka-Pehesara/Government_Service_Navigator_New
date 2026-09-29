@@ -35,7 +35,18 @@ class _HomeDashboardTabState extends ConsumerState<HomeDashboardTab> {
   @override
   Widget build(BuildContext context) {
     final services = ref.watch(servicesProvider);
-    final popularServices = services.value?.take(4).toList() ?? const [];
+    final allServices = services.value ?? const [];
+    final searchQuery = _searchController.text.trim().toLowerCase();
+    final popularServices = searchQuery.isEmpty
+        ? allServices.take(4).toList()
+        : allServices.where((s) {
+            final name = (s['name'] as String? ?? '').toLowerCase();
+            final cat = (s['category'] as String? ?? '').toLowerCase();
+            final code = (s['serviceId'] as String? ?? '').toLowerCase();
+            return name.contains(searchQuery) ||
+                cat.contains(searchQuery) ||
+                code.contains(searchQuery);
+          }).toList();
 
     return SafeArea(
       child: CustomScrollView(
@@ -156,9 +167,9 @@ class _HomeDashboardTabState extends ConsumerState<HomeDashboardTab> {
                   _buildActiveApplicationCard(),
                   const SizedBox(height: 24),
 
-                  const Text(
-                    'Popular Services',
-                    style: TextStyle(
+                  Text(
+                    searchQuery.isEmpty ? 'Popular Services' : 'Search Results (${popularServices.length})',
+                    style: const TextStyle(
                       fontSize: 20,
                       fontWeight: FontWeight.w700,
                       color: AppColors.dark,
@@ -324,7 +335,7 @@ class _HomeDashboardTabState extends ConsumerState<HomeDashboardTab> {
                       );
                     },
                     label: const Text(
-                      'Agent 2 Check',
+                      'Statutory Audit',
                       style: TextStyle(fontWeight: FontWeight.w600, fontSize: 13),
                     ),
                   ),
