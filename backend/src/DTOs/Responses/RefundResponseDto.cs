@@ -11,6 +11,7 @@ namespace Government_Service_Navigator.Backend.DTOs.Responses
         public RefundStatus Status { get; set; }
         public string? RefundTransactionRef { get; set; }
         public string RequestedByEmail { get; set; } = string.Empty;
+        public string? DepartmentName { get; set; }
         public string? DecidedByEmail { get; set; }
         public string? DecisionNote { get; set; }
         public DateTime RequestedDate { get; set; }
@@ -26,6 +27,7 @@ namespace Government_Service_Navigator.Backend.DTOs.Responses
             Status = r.Status,
             RefundTransactionRef = r.RefundTransactionRef,
             RequestedByEmail = r.RequestedByEmail,
+            DepartmentName = r.DepartmentName,
             DecidedByEmail = r.DecidedByEmail,
             DecisionNote = r.DecisionNote,
             RequestedDate = r.RequestedDate,

@@ -70,6 +70,7 @@ class RefundRequest {
   final RefundStatus status;
   final String? refundTransactionRef;
   final String? requestedByEmail;
+  final String? departmentName;
   final String? decidedByEmail;
   final String? decisionNote;
   final String? requestedDate;
@@ -84,6 +85,7 @@ class RefundRequest {
     required this.status,
     this.refundTransactionRef,
     this.requestedByEmail,
+    this.departmentName,
     this.decidedByEmail,
     this.decisionNote,
     this.requestedDate,
@@ -107,6 +109,7 @@ class RefundRequest {
       status: statusEnum,
       refundTransactionRef: json['refundTransactionRef'] as String?,
       requestedByEmail: json['requestedByEmail'] as String?,
+      departmentName: json['departmentName'] as String?,
       decidedByEmail: json['decidedByEmail'] as String?,
       decisionNote: json['decisionNote'] as String?,
       requestedDate: json['requestedDate'] as String?,

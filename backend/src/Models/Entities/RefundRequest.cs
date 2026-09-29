@@ -20,6 +20,10 @@ namespace Government_Service_Navigator.Backend.Models.Entities
 
         public string RequestedByEmail { get; set; } = string.Empty;
 
+        // Department that handles this refund, captured from the payment's application when the
+        // request is created. Finance officers only see refunds for their own department.
+        public string? DepartmentName { get; set; }
+
         // Officer who approved/rejected/completed this request.
         public string? DecidedByEmail { get; set; }
         public string? DecisionNote { get; set; }

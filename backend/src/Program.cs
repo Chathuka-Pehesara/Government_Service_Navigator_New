@@ -398,6 +398,24 @@ CREATE INDEX IF NOT EXISTS ""IX_RevokedTokens_ExpiresAt"" ON ""RevokedTokens"" (
             Console.WriteLine($"Index creation note: {iEx.Message}");
         }
 
+        // Refunds carry their department; older rows take it from the payment's application
+        try
+        {
+            context.Database.ExecuteSqlRaw(@"
+ALTER TABLE ""RefundRequests"" ADD COLUMN IF NOT EXISTS ""DepartmentName"" text NULL;
+UPDATE ""RefundRequests"" r
+SET ""DepartmentName"" = s.""CurrentDepartment""
+FROM ""Payments"" p
+JOIN ""ApplicationSubmissions"" s ON s.""Id"" = p.""ApplicationId""
+WHERE r.""PaymentId"" = p.""Id"" AND r.""DepartmentName"" IS NULL AND s.""CurrentDepartment"" IS NOT NULL;
+CREATE INDEX IF NOT EXISTS ""IX_RefundRequests_DepartmentName"" ON ""RefundRequests"" (""DepartmentName"");
+");
+        }
+        catch (Exception rdEx)
+        {
+            Console.WriteLine($"Refund department column note: {rdEx.Message}");
+        }
+
         // Tokens revoked before Redis was enabled must stay revoked
         try
         {

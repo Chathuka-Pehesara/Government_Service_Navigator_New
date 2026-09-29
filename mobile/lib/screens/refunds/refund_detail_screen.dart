@@ -139,6 +139,8 @@ class _RefundDetailScreenState extends ConsumerState<RefundDetailScreen> {
           _buildDetailCard([
             _detailRow('Refund ID', r.id),
             _detailRow('Payment ID', r.paymentId),
+            if (r.departmentName != null && r.departmentName!.isNotEmpty)
+              _detailRow('Department', r.departmentName!),
             _detailRow('Refund Amount', 'LKR ${r.refundAmount.toStringAsFixed(2)}'),
             if (r.reason != null && r.reason!.isNotEmpty)
               _detailRow('Reason', r.reason!),

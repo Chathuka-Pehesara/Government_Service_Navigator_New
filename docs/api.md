@@ -21,7 +21,7 @@ The JWT middleware is registered globally, but that only makes `Authorization: B
 | Tier | Meaning | Where |
 |---|---|---|
 | **None** | Callable with no token at all | `AuthController` (except `logout`), `AdminController`, `ServicesController`, `TemplateController`, `IntakeAgentController`, `EligibilityAgentController`, `ActionAgentController`, `RagSetupController`, `GET /api/verification/seed` |
-| **Any token** | `[Authorize]` - any valid, non-revoked token (citizen, officer or admin) | `ApplicationsController`, `NotificationsController`, `AuditLogsController`, `AnalyticsController`, `AnomalyDetectionController`, `RefundsController`, most of `PaymentsController` and `InstallmentPlansController`, `GET /api/verification/my-applications` |
+| **Any token** | `[Authorize]` - any valid, non-revoked token (citizen, officer or admin) | `ApplicationsController`, `NotificationsController`, `AuditLogsController`, `AnalyticsController`, `AnomalyDetectionController`, the citizen side of `RefundsController`, most of `PaymentsController` and `InstallmentPlansController`, `GET /api/verification/my-applications` |
 | **Role** | `[Authorize(Roles = "...")]` - checked against the token's `ClaimTypes.Role` claim | Every other `VerificationController` action, finance actions in `PaymentsController`, staff actions in `InstallmentPlansController` |
 
 The role lists used are:
@@ -34,7 +34,7 @@ Citizens' tokens carry role `User`, so they are excluded from all three.
 
 **Department scoping** is enforced server-side for the verification queue and finance payment views: the caller's `department` claim filters results, and single-item reads/writes for another department return `403`. Callers with role `Admin` or containing `System Admin` (or with no `department` claim) see everything. Everywhere else - officers, service catalog, templates - scoping is still client-side only; see `docs/adr/0004-client-side-department-scoping.md`.
 
-**Things "Any token" does not protect:** refund approve/reject/process/complete, analytics, anomaly resolution and all audit-log reads are callable by a *citizen* token too - there's no role check on them (`RefundsController` has a `TODO` saying so). Likewise `GET /api/payments/{id}`, `GET /api/payments/{id}/ledger`, `GET /api/installment-plans/{id}` and `POST /api/installment-plans/{id}/cancel` don't check that the payment/plan belongs to the caller.
+**Things "Any token" does not protect:** analytics, anomaly resolution and all audit-log reads are callable by a *citizen* token too - there's no role check on them (`RefundsController` has a `TODO` saying so). Likewise `GET /api/payments/{id}`, `GET /api/payments/{id}/ledger`, `GET /api/installment-plans/{id}` and `POST /api/installment-plans/{id}/cancel` don't check that the payment/plan belongs to the caller.
 
 ### JWT claims
 
@@ -347,7 +347,7 @@ Amounts are in `LKR`. `Payment.status` is one of `Pending`, `PendingVerification
 |---|---|---|---|
 | POST | `/api/payments/manual` | Any token | `{ applicationId, amount, userEmail, manualSlipUrl }` → `201 Payment` (`PendingVerification`) |
 | GET | `/api/payments/{id}` | Any token | → `Payment` or `404` |
-| GET | `/api/payments/mine` | Any token | → caller's payments (matched by `email` claim) |
+| GET | `/api/payments/mine` | Any token | → caller's payments (matched by `email` claim), each with a `department` field. If the caller has none, it currently returns every payment |
 | GET | `/api/payments/{id}/ledger` | Any token | → payment with refund ledger |
 | POST | `/api/payments/checkout` | Any token | `{ applicationId, amount, userEmail }` → `{ paymentId, checkoutUrl }` (Stripe Checkout) |
 | GET | `/api/payments/{id}/confirm` | Any token | → polls Stripe; marks `Paid` if the session is paid |
@@ -395,19 +395,25 @@ Rules:
 
 ## Refunds - `RefundsController`, `api/refunds`
 
-**Auth: Any token** on every action - including the officer-side approve/reject/process/complete (see the warning at the top).
+**Auth:** `POST /api/refunds`, `GET /mine`, `GET /{id}` and `GET /{id}/status` take any token. The list and the approve/reject/process/complete actions need a finance role (`Finance Officer`, `Department Admin`, `Admin`, `System Admin`).
+
+**Department scoping:** when a refund is created, the department of its payment's application (`ApplicationSubmissions.CurrentDepartment`) is saved on it as `departmentName`, and it stays with that department even if the application moves on. Refunds created before this column existed are backfilled at startup. A finance officer only sees and acts on refunds for their own `department` claim; any other refund returns `404`. `Admin` / `System Admin` see all refunds. `GET /{id}` and `/{id}/status` also return `404` unless the caller requested the refund or is finance staff of its department.
+
+**Rules on create:** the payment must belong to the caller (by `email` claim, otherwise `404`), be `Paid`, and have been paid within the last 7 days (`RefundService.RefundWindowDays`). A payment with a pending, approved, processing or completed refund cannot get another one; after a rejected or failed refund the citizen can ask again. The mobile app hides those payments from its refund list. The refund amount is always the full payment amount - `refundAmount` in the body is ignored.
+
+**Emails to the citizen:** HTML emails from `RefundEmailTemplate`: "Refund Request Received" when the request is created, "Refund Request Rejected" (with the officer's note, and whether the citizen can still ask again inside the 7-day window) when it is rejected, and "Refund Successful" when it is completed. Approve and process still send the short plain-text status emails.
 
 | Method | Path | Body → Response |
 |---|---|---|
-| GET | `/api/refunds?status=Pending` | → all refunds, optionally filtered |
-| POST | `/api/refunds` | `{ "paymentId": 0, "refundAmount": 0, "reason": "" }` → `201` refund |
+| GET | `/api/refunds?status=Pending` | Finance → the caller's department's refunds, optionally filtered |
+| POST | `/api/refunds` | `{ "paymentId": 0, "reason": "" }` → `201` refund |
 | GET | `/api/refunds/{id}` | → refund |
 | GET | `/api/refunds/{id}/status` | → `{ id, status }` |
 | GET | `/api/refunds/mine` | → caller's refunds (by `email` claim) |
-| POST | `/api/refunds/{id}/approve` | `{ "note": "" }` → refund |
-| POST | `/api/refunds/{id}/reject` | `{ "note": "" }` → refund |
-| POST | `/api/refunds/{id}/process` | `{ "transactionRef": "" }` → refund |
-| POST | `/api/refunds/{id}/complete` | → refund |
+| POST | `/api/refunds/{id}/approve` | Finance, `{ "note": "" }` → refund |
+| POST | `/api/refunds/{id}/reject` | Finance, `{ "note": "" }` → refund |
+| POST | `/api/refunds/{id}/process` | Finance, `{ "transactionRef": "" }` → refund |
+| POST | `/api/refunds/{id}/complete` | Finance → refund |
 
 Status lifecycle: `Pending → Approved | Rejected`, then `Approved → Processing → Completed` (`Failed` also exists). `create` and the decisions record the email via `User.Identity.Name`. That name isn't mapped from the `email` claim by default, so these fields can come out as `unknown@user` / `unknown@officer`.
 

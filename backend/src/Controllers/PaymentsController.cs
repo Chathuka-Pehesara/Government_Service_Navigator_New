@@ -54,7 +54,29 @@ namespace Government_Service_Navigator.Backend.Controllers
                      ?? User.Identity?.Name 
                      ?? "unknown@user";
             var payments = await _paymentService.GetByUserAsync(email);
-            return Ok(payments);
+
+            // Department name lets the app show who handles a refund before it is requested
+            var appIds = payments.Select(p => p.ApplicationId).Distinct().ToList();
+            var deptByApp = await _context.ApplicationSubmissions
+                .Where(s => appIds.Contains(s.Id))
+                .Select(s => new { s.Id, s.CurrentDepartment })
+                .ToDictionaryAsync(s => s.Id, s => s.CurrentDepartment);
+
+            return Ok(payments.Select(p => new
+            {
+                p.Id,
+                p.ApplicationId,
+                p.Amount,
+                p.Currency,
+                p.Method,
+                p.Status,
+                p.StripePaymentIntentId,
+                p.ManualSlipUrl,
+                p.UserEmail,
+                p.CreatedDate,
+                p.PaidDate,
+                Department = deptByApp.GetValueOrDefault(p.ApplicationId)
+            }));
         }
 
         // Finance Officer: list all pending manual bank transfer slips awaiting verification with citizen details

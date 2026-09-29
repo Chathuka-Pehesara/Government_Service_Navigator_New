@@ -1,4 +1,5 @@
 using Government_Service_Navigator.Backend.DTOs.Responses;
+using Government_Service_Navigator.Backend.Models.Entities;
 
 namespace Government_Service_Navigator.Backend.Services.Interfaces
 {
@@ -8,6 +9,9 @@ namespace Government_Service_Navigator.Backend.Services.Interfaces
         Task SendEmailAsync(string toEmail, string subject, string body, string? htmlBody = null);
 
         Task NotifyRefundStatusAsync(string toEmail, int refundId, string status, string? note);
+        Task NotifyRefundRequestedAsync(string toEmail, RefundRequest refund);
+        Task NotifyRefundRejectedAsync(string toEmail, RefundRequest refund);
+        Task NotifyRefundCompletedAsync(string toEmail, RefundRequest refund);
         Task NotifyPaymentStatusAsync(string toEmail, int paymentId, string status);
         Task NotifyOnlinePaymentSuccessAsync(string toEmail, OnlinePaymentReceiptDto receipt);
     }

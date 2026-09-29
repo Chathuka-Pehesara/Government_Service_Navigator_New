@@ -2,6 +2,7 @@ using System.Net;
 using System.Net.Mail;
 using System.Text;
 using Government_Service_Navigator.Backend.DTOs.Responses;
+using Government_Service_Navigator.Backend.Models.Entities;
 using Government_Service_Navigator.Backend.Services.EmailTemplates;
 using Government_Service_Navigator.Backend.Services.Interfaces;
 
@@ -72,6 +73,33 @@ namespace Government_Service_Navigator.Backend.Services
             };
 
             await SendEmailAsync(toEmail, subject, body);
+        }
+
+        public async Task NotifyRefundRequestedAsync(string toEmail, RefundRequest refund)
+        {
+            await SendEmailAsync(
+                toEmail,
+                RefundEmailTemplate.RequestedSubject(refund),
+                RefundEmailTemplate.RequestedText(refund),
+                RefundEmailTemplate.RequestedHtml(refund));
+        }
+
+        public async Task NotifyRefundRejectedAsync(string toEmail, RefundRequest refund)
+        {
+            await SendEmailAsync(
+                toEmail,
+                RefundEmailTemplate.RejectedSubject(refund),
+                RefundEmailTemplate.RejectedText(refund),
+                RefundEmailTemplate.RejectedHtml(refund));
+        }
+
+        public async Task NotifyRefundCompletedAsync(string toEmail, RefundRequest refund)
+        {
+            await SendEmailAsync(
+                toEmail,
+                RefundEmailTemplate.CompletedSubject(refund),
+                RefundEmailTemplate.CompletedText(refund),
+                RefundEmailTemplate.CompletedHtml(refund));
         }
 
         public async Task NotifyPaymentStatusAsync(string toEmail, int paymentId, string status)
