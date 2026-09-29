@@ -62,5 +62,5 @@ jobs:
         with:
           app-name: 'gsn-api'
           slot-name: 'Production'
-          package: .
+          package: ./backend/src
           
