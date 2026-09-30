@@ -2,7 +2,7 @@
 
 ## Context
 
-The database schema changes frequently during active development (16 migrations as of 2026-09-15, most recently `AddRevokedTokens` and `AddTemplateServiceProcedureLink`), across a team of four working against one shared/dev PostgreSQL instance (Neon, per `backend/src/.env`'s `DATABASE_URL`). Forgetting to run `dotnet ef database update` after pulling new migrations is a common source of "works on my machine" / 500-errors-on-missing-column friction.
+The database schema changes frequently during active development (16 migrations at the time, most recently `AddRevokedTokens` and `AddTemplateServiceProcedureLink`), across a team of four working against one shared/dev PostgreSQL instance (Neon, per `backend/src/.env`'s `DATABASE_URL`). Forgetting to run `dotnet ef database update` after pulling new migrations is a common source of "works on my machine" / 500-errors-on-missing-column friction.
 
 ## Options Considered
 
@@ -35,7 +35,7 @@ Consequences on top of the original ones:
   Both would need removing before any production use.
 - The vector DB (`VectorDbContext`) isn't migrated at startup at all. Its schema comes from design-time `dotnet ef` against the connection string hardcoded in `VectorDbContextFactory`.
 
-## Amended (2026-09-29): a silent failure, indexes and data repairs
+## Amended: a silent failure, indexes and data repairs
 
 - **The schema block had been failing on every startup.** A C# comment (`// ---> NEW BOOKING TIME SLOTS TABLE <---`) sat inside the SQL string, and PostgreSQL rejected the whole batch with `42601: syntax error at or near "//"` from commit `5e73577` onward. Because failures are only logged, nobody noticed: the column additions, the department seeding and the orphan-task cleanup after it never ran. It is now a SQL comment (`--`). This is the risk described above happening in practice, so check the startup log for `An error occurred while migrating the database` after changing this block.
 - **Hot-path indexes** (citizen NIC, application id, status and date, audit timestamp, user NIC, revoked token expiry) are created in their own `ExecuteSqlRaw` call **before** the large block, so a mistake in that block cannot skip them. They are mirrored with `HasIndex` in `AppDbContext`, which makes a third place the schema lives.

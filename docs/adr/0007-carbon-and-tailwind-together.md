@@ -8,7 +8,7 @@ The web dashboard (`web/`) is built with `@carbon/react` (IBM's Carbon Design Sy
 
 1. **Carbon's own `Grid`/`Column` breakpoint props everywhere.** Fully idiomatic Carbon, but would require rewriting large amounts of existing inline-`style`-based layout (not originally built with Carbon's grid) just to make it responsive - a much bigger diff for what was meant to be a targeted responsiveness fix.
 2. **A separate CSS-in-JS or styled-components layer.** New dependency, new pattern to learn, doesn't fit the existing "inline style objects everywhere" codebase style at all.
-3. **Tailwind utility classes alongside the existing inline styles**, used specifically where a media query is actually needed (responsive margins, hiding elements below a breakpoint, responsive widths) — Tailwind was already a dependency and globally imported, just barely used.
+3. **Tailwind utility classes alongside the existing inline styles**, used specifically where a media query is actually needed (responsive margins, hiding elements below a breakpoint, responsive widths) - Tailwind was already a dependency and globally imported, just barely used.
 
 ## Decision
 

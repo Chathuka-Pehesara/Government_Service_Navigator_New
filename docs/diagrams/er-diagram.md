@@ -1,9 +1,9 @@
 # Database ER Diagram
 
-Reflects the actual EF Core model in `backend/src/Models/Entities/`, `backend/src/Data/Context/AppDbContext.cs` and the idempotent schema SQL in `Program.cs`, as of 2026-09-27. It doesn't show the aspirational schema in `docs/Government_Service_Navigator_Project_Plan.md`.
+Reflects the actual EF Core model in `backend/src/Models/Entities/`, `backend/src/Data/Context/AppDbContext.cs` and the idempotent schema SQL in `Program.cs` and `CollectionSlotsController`. It doesn't show the aspirational schema in `docs/Government_Service_Navigator_Project_Plan.md`.
 
 There are **two databases**:
-- the **app DB** (`AppDbContext`, 27 tables)
+- the **app DB** (`AppDbContext`, 28 tables, plus 3 collection tables created with raw SQL outside EF)
 - a **vector DB** (`VectorDbContext`, one table) used by the agents
 
 The app DB is split into several diagrams below for readability. Dashed notes mark columns that look like foreign keys but aren't.
@@ -253,6 +253,7 @@ erDiagram
         string RequestedByEmail
         string DecidedByEmail
         string DecisionNote
+        string DepartmentName "department of the payment's application, set on create"
         datetime RequestedDate
         datetime DecidedDate
         datetime CompletedDate
@@ -262,6 +263,65 @@ erDiagram
     InstallmentPlan ||--o{ Installment : "cascade delete"
     Payment ||--o{ RefundRequest : "cascade delete"
 ```
+
+## Departments & collection appointments
+
+```mermaid
+erDiagram
+    Department {
+        int Id PK
+        string DepartmentCode UK "DEP-NNN, generated"
+        string Name UK
+        string Category
+        string LogoUrl "URL or data: URL"
+        string ContactNumber
+        string Email
+        string Website
+        string Address
+        string Description
+        string Status "Active, Inactive"
+        datetime CreatedAt
+        datetime UpdatedAt
+    }
+    CollectionTimeSlots {
+        int Id PK
+        int DepartmentId "nullable, no FK"
+        string DepartmentName "matched with LIKE"
+        int DayOfWeek "1 Monday - 7 Sunday"
+        date SpecificDate "null = repeats weekly"
+        time StartTime
+        time EndTime
+        int MaxCapacity
+        bool IsActive
+    }
+    DepartmentHolidays {
+        int Id PK
+        string DepartmentName "unique with HolidayDate"
+        date HolidayDate
+        string Reason
+        datetime CreatedAt
+    }
+    CollectionBookings {
+        int Id PK
+        int ApplicationId "no FK"
+        string ApplicationCode "APP-12"
+        string CitizenNic
+        string CollectionMethod "Appointment"
+        string PreferredTimes "citizen's free text"
+        string DepartmentName
+        string ServiceName
+        date BookedDate
+        string BookedSlotTime "date and HH:mm - HH:mm text"
+        string Status "Confirmed, Cancelled"
+        string ConfirmationCode "SL-APT-NNNN"
+        string AgentNotes "Agent 3 reasoning"
+        datetime CreatedAt
+    }
+```
+
+None of these tables references another. Departments are linked to officers, templates, submissions, slots and bookings **by name**, not by id: `Officer.Department`, `Template.Department`, `ApplicationSubmission.CurrentDepartment` and `RefundRequest.DepartmentName` are all plain strings. Renaming a department therefore disconnects it from everything that uses the old name.
+
+The three collection tables aren't in `AppDbContext`. `CollectionSlotsController` and `ActionAgentController` create them with `CREATE TABLE IF NOT EXISTS` on first use and read and write them with raw SQL. A slot's booked count is worked out by matching `BookedSlotTime`'s start time and `BookedDate` against the slot, so there is no link from a booking to the slot it was booked into.
 
 ## Notifications & analytics
 
@@ -327,5 +387,5 @@ This table is in a **separate PostgreSQL database** with the `pgvector` extensio
 - **Most application links are soft.** `ApplicationSubmission.Id` is the application's identity, but `VerificationTask`, `AuditLog`, `Payment`, `AgentDraft`, `SubmissionDocument` and `CitizenNotification` all reference it as a plain `int` with no foreign key. Deleting a submission leaves orphans, and nothing prevents a row pointing at an application that doesn't exist. `Program.cs` removes tasks with `ApplicationId == 0` on startup for this reason. When the task table is empty, it also **seeds four mock tasks with made-up application IDs**, so a fresh database always has orphan queue rows.
 - **Citizens are linked by NIC string, not `User.Id`.** Submissions, tasks, documents and notifications store `CitizenNic`. Payments and refunds store an email instead, so "my payments" and "my applications" match on different identifiers.
 - **Uploaded files live in the database** as `bytea` (`SubmissionDocument`, `PaymentReceipt`) - see `docs/adr/0010-uploaded-files-stored-in-database.md`.
-- **Schema isn't fully captured by migrations.** `backend/src/Migrations` is gitignored, and newer tables and columns are created with `CREATE TABLE IF NOT EXISTS` / `ADD COLUMN IF NOT EXISTS` in `Program.cs`. Those include `AgentDrafts`, `SubmissionDocuments`, `InstallmentPlans`, `Installments`, `PaymentReceipts`, `CitizenNotifications`, and the stage columns on `ApplicationSubmissions`, `VerificationTasks`, `Templates` and `ServiceProcedures`. See `docs/adr/0005-auto-apply-migrations-on-startup.md`.
+- **Schema isn't fully captured by migrations.** `backend/src/Migrations` is gitignored, and newer tables and columns are created with `CREATE TABLE IF NOT EXISTS` / `ADD COLUMN IF NOT EXISTS` in `Program.cs`. Those include `AgentDrafts`, `SubmissionDocuments`, `InstallmentPlans`, `Installments`, `PaymentReceipts`, `CitizenNotifications`, `Departments`, `RefundRequests.DepartmentName`, and the stage columns on `ApplicationSubmissions`, `VerificationTasks`, `Templates` and `ServiceProcedures`. See `docs/adr/0005-auto-apply-migrations-on-startup.md`.
 - **`OfficerReview.OfficerId`** is the string `"<email> (<department>)"` from the token, not a foreign key to `Officer.Id`.

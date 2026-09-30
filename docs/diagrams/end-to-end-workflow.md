@@ -2,7 +2,7 @@
 
 This is the minimum acceptance workflow from `docs/Government_Service_Navigator_Project_Plan.md` §3: the citizen applies in the **Flutter** app, the **ASP.NET Core** API validates and stores the application in **PostgreSQL**, the **agents** plan, check, draft and validate, an **officer in the React dashboard** decides, and the citizen's app shows the new status.
 
-The steps below are the path the code actually takes as of 2026-09-29, with each hop mapped to its screen and endpoint. Related docs:
+The steps below are the path the code actually takes, with each hop mapped to its screen and endpoint. Related docs:
 - `docs/api.md` for the request and response shapes
 - `docs/diagrams/agentic-ai-architecture.md` for the agent internals
 - `docs/diagrams/human-in-the-loop-workflow.md` for the review gate
@@ -13,9 +13,9 @@ Every cross-platform hop follows the same pattern:
 
 1. **Clients never talk to each other.** Flutter and React share no channel. All state passes through the API and the app database.
 2. **The API owns every state change.** Clients send intent (a submit, a decision); the server sets department, stage, payment status and task status.
-3. **Agents run inside the API.** They run synchronously when a submit arrives, and on demand when an officer asks. They never write a final decision.
+3. **Agents run inside the API.** They run synchronously when a submit arrives, and on demand when a citizen or officer asks. When `GROQ_API_KEY` is set they also call the Groq LLM, and fall back to their deterministic answer otherwise. They never write a final decision on an application.
 4. **A human commits every high-impact change.** Only an officer approves a stage, and only a finance officer verifies a slip. See the HITL doc.
-5. **Clients pull status.** The citizen sees updates when the app refetches `my-applications`; nothing is pushed live. Email (SMTP) is the only push channel for application status.
+5. **The server says "something changed", clients fetch the data.** A SignalR message tells the open app or dashboard to refetch over REST (see [How "real time" is achieved](#how-real-time-is-achieved)). Email covers citizens whose app is closed, for some events.
 
 ## Swimlane overview
 
@@ -28,6 +28,7 @@ flowchart LR
         C4["Application form<br/>application_form_screen"]
         C5["Pay fee<br/>payment_screen"]
         C6["Applications tab<br/>status and stage tracker"]
+        C7["Completed services<br/>book collection slot"]
     end
 
     subgraph A["ASP.NET Core API"]
@@ -37,12 +38,14 @@ flowchart LR
         A4["POST /api/applications/submit"]
         A5["POST /api/applications/{id}/finalize"]
         A6["GET /api/verification/my-applications"]
+        A7["POST /api/ActionAgent/book-appointment"]
     end
 
     subgraph AI["Agentic AI (in-process)"]
         G1["Agent 1<br/>Intake and Planning"]
         G4["Agent 4<br/>Validation and Safety"]
         G23["Agents 2 and 3<br/>Eligibility and Draft"]
+        G3B["Agent 3<br/>Booking"]
     end
 
     subgraph D["PostgreSQL"]
@@ -51,6 +54,7 @@ flowchart LR
         D3[("Payments")]
         D4[("AgentDrafts")]
         D5[("OfficerReviews<br/>AuditLogs")]
+        D6[("CollectionBookings")]
     end
 
     subgraph R["React - Officer and Finance"]
@@ -58,6 +62,7 @@ flowchart LR
         R2["Verification workspace<br/>answers, documents, agent draft"]
         R3["Finance dashboard<br/>verify deposit slip"]
         R4["Decision<br/>approve, reject, revise"]
+        R5["Collection slots<br/>timeline and bookings"]
     end
 
     C1 --> A1 --> G1 --> C2 --> C3 --> C4
@@ -74,6 +79,7 @@ flowchart LR
     R2 --> R4 --> D5
     R4 --> D2
     D2 --> A6 --> C6
+    C6 --> C7 --> A7 --> G3B --> D6 --> R5
 ```
 
 ## Step-by-step sequence (single-stage service)
@@ -94,7 +100,8 @@ sequenceDiagram
     API-->>Cit: JWT (role User, nicNumber)
     Cit->>API: POST /api/IntakeAgent/ask { text }
     API->>AG: Agent 1 GeneratePlanAsync
-    AG->>VDB: top-3 cosine match
+    AG->>VDB: top-8 cosine match
+    AG->>AG: LLM plan grounded in the chunks (or keyword match)
     AG-->>Cit: recommended service, documents, steps
 
     Note over Cit,DB: 2. Apply
@@ -143,8 +150,16 @@ sequenceDiagram
     API->>DB: task status + OfficerReview + AuditLog
 
     Note over Cit,DB: 5. Status back to citizen
+    API-->>Cit: SignalR applicationsChanged
     Cit->>API: GET /api/verification/my-applications
     API-->>Cit: status, stage, stageStatus, installment plan
+
+    Note over Cit,DB: 6. Collect the result
+    Cit->>API: POST /api/ActionAgent/book-appointment { preferredTimeInput }
+    API->>AG: Agent 3 BookAppointmentAsync (department slots, capacity)
+    AG-->>API: booked, or suggested slots
+    API->>DB: CollectionBookings (Confirmed) + CitizenNotification
+    API-->>Cit: confirmation code SL-APT-NNNN
 ```
 
 ## Multi-stage, multi-department services
@@ -197,8 +212,8 @@ The two fields are updated by different code paths:
 | SignalR push (`/hubs/applications`) | Application status, payments, installments, notifications, refunds (citizen); queue and audit lists (staff) | An EF Core interceptor sees the commit, clears the cache, and sends `applicationsChanged` / `refundUpdated` to the citizen or `queueUpdated` to staff. Clients refetch over REST (ADR-0012) |
 | Refetch on screen load / pull-to-refresh | Everything | Riverpod providers (`myApplicationsProvider`, `notificationsProvider`) and TanStack Query on the web re-query the API |
 | Fallback polling | Application list (30 s), open refund (60 s) | Only while the app is in the foreground; catches anything a dropped connection missed |
-| Email (SMTP) | Stage approved, payment status changed, installment reminder/cancellation | `NotificationService`, best effort |
-| In-app notifications | Installment reminders and cancellations only | `InstallmentMonitorService` writes `CitizenNotification` rows |
+| Email (SMTP) | Stage approved, payment status changed, online payment receipt, refund requested, rejected and completed (HTML) and approved (plain text), installment reminder/cancellation | `NotificationService`, best effort |
+| In-app notifications | Installment reminders and cancellations, collection appointment booked or moved | `InstallmentMonitorService` and `ActionAgentController` write `CitizenNotification` rows |
 
 An officer's decision normally reaches the citizen's open screen in about a second. The mobile app closes its socket in the background; on resume it refetches and reconnects. There are still no OS-level push notifications (FCM/APNs), so a citizen with the app closed only sees the change when they open it, or by email for the events above.
 
@@ -206,10 +221,11 @@ An officer's decision normally reaches the citizen's open screen in about a seco
 
 | Where | What happens | Citizen sees |
 |---|---|---|
-| Agent 1 finds no keyword match | `recommendedService: "Service Not Found"` | "Please contact the main helpdesk" plan |
+| Agent 1 finds no matching policy | `recommendedService: "Service Not Found"` | The five supported services and a pointer to the department helpdesk |
 | Required field missing | `400 { missingFields }` | Field errors on the form |
 | Agent 4 rejects (injection, age, duplicate, missing docs) | `400 { errors, summary }`, nothing saved | Rejection reasons |
 | Fee not covered on `finalize` | `402` with the outstanding amount | Payment screen again |
 | Finance rejects the slip | Payment `Failed`; officer approval stays locked | Payment status email |
 | Installment passes its due date unpaid | Hourly job cancels the plan, tasks and application | In-app notification + email |
-| Officer rejects / requests revision | Task `Rejected` / `Revised` + `OfficerReview` comment | Status change on next refresh (no email) |
+| Officer rejects / requests revision | Task `Rejected` / `Revised` + `OfficerReview` comment | Status change pushed to the open app (no email). The app can raise a concern (`raise-concern`), which is only audit-logged |
+| Requested collection time is full, on a Sunday or outside counter hours | Agent 3 books nothing | Suggested open slots for that day or the next working day |

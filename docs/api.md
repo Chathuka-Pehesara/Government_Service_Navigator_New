@@ -4,7 +4,7 @@ Base URL: `http://localhost:5119` locally, `https://gsn-api-dpa2agb6c5h7gyar.sou
 
 All request/response bodies are JSON unless marked *multipart*. ASP.NET Core's default `System.Text.Json` camelCases property names in responses (e.g. the C# `FormName` property serializes as `"formName"`), which is reflected below.
 
-Reflects `backend/src/Controllers/` as of 2026-09-29.
+Reflects the current `backend/src/Controllers/`.
 
 **Cross-cutting behaviour** (details in [Performance behaviour](#performance-behaviour)):
 - Growing lists are paged with `?page=`; without it they return at most the newest 200 rows.
@@ -20,21 +20,22 @@ The JWT middleware is registered globally, but that only makes `Authorization: B
 
 | Tier | Meaning | Where |
 |---|---|---|
-| **None** | Callable with no token at all | `AuthController` (except `logout`), `AdminController`, `ServicesController`, `TemplateController`, `IntakeAgentController`, `EligibilityAgentController`, `ActionAgentController`, `RagSetupController`, `GET /api/verification/seed` |
+| **None** | Callable with no token at all | `AuthController` (except `logout`), `AdminController`, `DepartmentsController`, `ServicesController`, `TemplateController`, `IntakeAgentController`, `EligibilityAgentController`, `ActionAgentController`, `ValidationAgentController`, `RagSetupController`, `GET /api/verification/seed`, the `GET` actions of `CollectionSlotsController` |
 | **Any token** | `[Authorize]` - any valid, non-revoked token (citizen, officer or admin) | `ApplicationsController`, `NotificationsController`, `AuditLogsController`, `AnalyticsController`, `AnomalyDetectionController`, the citizen side of `RefundsController`, most of `PaymentsController` and `InstallmentPlansController`, `GET /api/verification/my-applications` |
-| **Role** | `[Authorize(Roles = "...")]` - checked against the token's `ClaimTypes.Role` claim | Every other `VerificationController` action, finance actions in `PaymentsController`, staff actions in `InstallmentPlansController` |
+| **Role** | `[Authorize(Roles = "...")]` - checked against the token's `ClaimTypes.Role` claim | Every other `VerificationController` action, finance actions in `PaymentsController` and `RefundsController`, staff actions in `InstallmentPlansController`, writes in `CollectionSlotsController` |
 
 The role lists used are:
 
 - `OfficerRoles` (Verification): `Verifying Officer, Department Admin, Auditor, Finance Officer, Officer, Admin, System Admin`
-- `FinanceRoles` (Payments): `Finance Officer, Department Admin, Admin, System Admin`
+- `FinanceRoles` (Payments, Refunds): `Finance Officer, Department Admin, Admin, System Admin`
 - `StaffRoles` (Installments): `Finance Officer, Department Admin, Verifying Officer, Officer, Admin, System Admin`
+- Collection slot writes: `Admin, System Admin, Officer, SuperAdmin, Department Admin, DepartmentAdmin, Verifying Officer, Finance Officer`
 
-Citizens' tokens carry role `User`, so they are excluded from all three.
+Citizens' tokens carry role `User`, so they are excluded from all of these.
 
-**Department scoping** is enforced server-side for the verification queue and finance payment views: the caller's `department` claim filters results, and single-item reads/writes for another department return `403`. Callers with role `Admin` or containing `System Admin` (or with no `department` claim) see everything. Everywhere else - officers, service catalog, templates - scoping is still client-side only; see `docs/adr/0004-client-side-department-scoping.md`.
+**Department scoping** is enforced server-side for the verification queue, finance payment views and refunds: the caller's `department` claim filters results, and single-item reads/writes for another department return `403`. Callers with role `Admin` or containing `System Admin` (or with no `department` claim) see everything. Everywhere else - officers, departments, service catalog, templates, collection slots - scoping is still client-side only; see `docs/adr/0004-client-side-department-scoping.md`.
 
-**Things "Any token" does not protect:** analytics, anomaly resolution and all audit-log reads are callable by a *citizen* token too - there's no role check on them (`RefundsController` has a `TODO` saying so). Likewise `GET /api/payments/{id}`, `GET /api/payments/{id}/ledger`, `GET /api/installment-plans/{id}` and `POST /api/installment-plans/{id}/cancel` don't check that the payment/plan belongs to the caller.
+**Things "Any token" does not protect:** analytics, anomaly resolution and all audit-log reads are callable by a *citizen* token too - there's no role check on them. Likewise `GET /api/payments/{id}`, `GET /api/payments/{id}/ledger`, `GET /api/installment-plans/{id}` and `POST /api/installment-plans/{id}/cancel` don't check that the payment/plan belongs to the caller.
 
 ### JWT claims
 
@@ -96,9 +97,9 @@ Other checks worth knowing:
 
 ### `RegisterRequest`
 ```json
-{ "fullName": "string", "email": "string (email)", "password": "string (min 6 chars)", "nicNumber": "string" }
+{ "fullName": "string ([PersonName])", "email": "string ([Email])", "password": "string ([StrongPassword])", "nicNumber": "string ([SriLankaNic])" }
 ```
-Creates a `User` row (citizen). Fails with `{ success: false, errorMessage: "User with this email already exists." }` (still `200 OK`, not `409`) if the email is taken.
+Creates a `User` row (citizen). A body that breaks the [validation rules](#validation) gets the usual `400`. A taken email or NIC fails with `{ success: false, errorMessage: "User with this email already exists." }` or `"An account with this NIC number already exists."`, still `200 OK`, not `409`.
 
 ### `AuthResponse`
 ```json
@@ -125,8 +126,8 @@ Only one of `user`/`officer`/`admin` is populated. **These actions return `200 O
 |---|---|---|
 | GET | `/api/admin/officers?department=X` (optional) | → `OfficerDetailsDto[]` |
 | POST | `/api/admin/officers` | [`CreateOfficerRequest`](#createofficerrequest) → `200` with `OfficerDto`, or `400 { message }` |
-| PUT | `/api/admin/officers/{id}` | `{ "fullName": "", "department": "", "role": "" }` → `200 { message }` or `404` |
-| POST | `/api/admin/officers/{id}/reset-password` | `{ "newPassword": "string (min 6)" }` → `200 { message }` or `404` |
+| PUT | `/api/admin/officers/{id}` | `{ "fullName": "", "department": "", "role": "" }` (same rules as create) → `200 { message }` or `404` |
+| POST | `/api/admin/officers/{id}/reset-password` | `{ "newPassword": "string ([StrongPassword])" }` → `200 { message }` or `404` |
 | PATCH | `/api/admin/officers/{id}/suspend` | → `200 { message }` or `404` (sets `Status = "Suspended"`) |
 | PATCH | `/api/admin/officers/{id}/activate` | → `200 { message }` or `404` (sets `Status = "Active"`) |
 
@@ -136,7 +137,33 @@ Only one of `user`/`officer`/`admin` is populated. **These actions return `200 O
 ```json
 { "fullName": "", "email": "", "password": "", "department": "", "role": "" }
 ```
-`role` and `department` are free-form strings - only the web UI's dropdowns constrain them. Because role-gated endpoints compare against these exact strings, a typo here (e.g. `Finance officer`) silently locks that officer out of finance endpoints. Email and status can't be changed through `PUT`.
+`role` must be one of `Verifying Officer`, `Finance Officer`, `Auditor` or `Department Admin` (`[AllowedValues]`), so a typo can no longer lock an officer out of the role-gated endpoints. `department` is still a free-form string (at most 150 characters) and has to match the department names used elsewhere for scoping to work. Email and status can't be changed through `PUT`.
+
+---
+
+## Departments - `DepartmentsController`, `api/departments`
+
+**Auth: None** on every action. Used by the System Admin's department management pages and by every page that lists departments.
+
+| Method | Path | Body → Response |
+|---|---|---|
+| GET | `/api/departments?search=&status=` | → departments with officer counts (see below). `status=all` or empty returns every status |
+| GET | `/api/departments/next-code` | → `{ nextCode }`, the next free `DEP-NNN` code |
+| GET | `/api/departments/{id}` | → `Department` or `404` |
+| POST | `/api/departments` | `DepartmentCreateDto` → `201 Department`, or `400 { message }` |
+| PUT | `/api/departments/{id}` | `DepartmentUpdateDto` → `Department`, `400` or `404` |
+| PATCH | `/api/departments/{id}/status` | `{ "status": "Active" \| "Inactive" }` (empty toggles) → `{ id, status }`, `400` or `404` |
+| DELETE | `/api/departments/{id}` | → `{ message }`, or `400` while any officer is assigned to it |
+
+```json
+{ "departmentCode": "DEP-004 (optional)", "name": "3-150 chars, required on create", "category": "", "logoUrl": "https://... or data: URL",
+  "contactNumber": "0112345678 or a hotline such as 1919", "email": "", "website": "", "address": "", "description": "", "status": "Active | Inactive" }
+```
+
+- The list adds `officerCount`, `verifyingOfficerCount`, `financeOfficerCount` and `hasRequiredOfficers` to each department. Officers are matched to a department by name, case-insensitively, and suspended or inactive officers aren't counted.
+- **Two-officer rule:** a department can only be created as, updated to, or toggled to `Active` when it has at least one active Verifying Officer (roles `Verifying Officer`, `Verification Officer` or `Officer`) and one active Finance Officer. Otherwise the request fails with `400` naming what's missing. New departments default to `Inactive`.
+- Names are unique (case-insensitive). On create, a code that is empty or already taken is replaced with the next generated one; on update, a taken code is a `400`.
+- Renaming a department doesn't rename `Officer.Department`, templates or submissions, which store the name as a string.
 
 ---
 
@@ -246,8 +273,15 @@ Built from the active template for that stage: each `file`/`document`/`documentU
 | POST | `/api/applications/submit` | [`SubmitApplicationRequest`](#submitapplicationrequest) → [submitted](#submit-responses) or [payment required](#submit-responses), `400`, `404` |
 | POST | `/api/applications/submit-stage` | `{ applicationId, templateId, answers, documents }` → stage submitted or payment required |
 | POST | `/api/applications/{applicationId}/finalize` | → submitted, or `402` with payment required |
+| POST | `/api/applications/save-draft` | `{ applicationId, stageNumber, templateId, answers, documents, paymentReference, paymentMethod }` → `{ message, stage }` |
+| GET | `/api/applications/{id}/draft?stage=1` | → `{ hasDraft: true, stage, data }` or `{ hasDraft: false, stage }` |
+| POST | `/api/applications/{id}/raise-concern` | `{ subject, message, contactPhone }` → `{ ticketReference, applicationId, department, serviceName, subject, status: "ConcernLogged", message }` |
 
-`form` returns the active template for the requested stage, falling back to the lowest stage. `department.email` is the email of the earliest-created active `Department Admin` in that department.
+`form` returns the active template for the requested stage, falling back to the lowest stage.
+
+**Drafts.** `save-draft` stores the unfinished form of an existing application (the caller's own NIC only) inside `FormDataJson` under the key `"[Draft Stage N]"`. It sets `StageStatus` to `Draft` when that stage has no verification task yet. `draft` reads it back.
+
+**Concerns.** `raise-concern` doesn't check that the application belongs to the caller. It only writes an `AuditLog` row (`Citizen Support Concern Raised`) with a `CONCERN-{id}-XXXXXX` ticket reference; nothing notifies the department. `department.email` is the email of the earliest-created active `Department Admin` in that department.
 
 ### Document upload
 PDF, JPEG or PNG only, max 10 MB. The type is detected **from the file's bytes**, not the client's `Content-Type`. The upload is stored in `SubmissionDocuments` (as `bytea`) unattached; its `id` goes into `documents` on submit, which attaches it. Documents that belong to another NIC, or are already attached, fail the submit with `400`.
@@ -386,10 +420,28 @@ Amounts are in `LKR`. `Payment.status` is one of `Pending`, `PendingVerification
 | GET | `/api/payments/department-payments` | FinanceRoles | → all payments with citizen/service details, department-scoped |
 | POST | `/api/payments/{id}/verify` | FinanceRoles | `{ "approved": true, "note": "" }` → `Payment`; `403` if other department |
 | PUT | `/api/payments/{id}/status` | FinanceRoles | `{ "status": "Paid", "note": "" }` → `Payment`; `403` if other department |
+| POST | `/api/payments/department-pay` | Any token | [`DepartmentPaymentDto`](#department-pay) → payment summary, with a Stripe `checkoutUrl` for `Online` |
 
 - `verify` with `approved: true` sets `Paid` and `paidDate`, and sets the submission's `StageStatus` to `Completed`. With `approved: false` it sets `Failed`. Both write an audit row and send a payment-status email.
 - `status` normalises `paid`/`verified` → `Paid`, `failed`/`rejected` → `Failed`, and `pending`/`pendingverification` → `PendingVerification`. Any other string is stored as-is.
+- `mine` also returns each payment's `department` (the application's `CurrentDepartment`), so the app can show who will handle a refund.
 - Stripe has **no webhook**. The client calls `confirm` after the checkout page closes, and Stripe's success/cancel URLs are `https://example.com/...` placeholders (`docs/adr/0011-stripe-checkout-without-webhooks.md`).
+
+### Department pay
+
+```json
+{ "department": "Police Department", "serviceName": "", "amount": 3500, "paymentMethod": "Online | Manual | BankTransfer",
+  "applicationId": null, "citizenNic": "", "citizenName": "", "userEmail": "", "manualSlipUrl": "", "notes": "" }
+```
+
+The mobile app uses this for stage payments:
+
+- With no `applicationId`, it first creates an `ApplicationSubmission` for the department with `StageStatus: "AwaitingFeePayment"`.
+- `Online` creates a `Pending` payment and starts Stripe Checkout (`502` if Stripe fails).
+- `Manual` and `BankTransfer` need a slip (`400` otherwise) and create a `Bank Deposit` payment in `PendingVerification`. The payment links the slip given in `manualSlipUrl` or, failing that, the application's latest upload whose label or file name mentions a slip, deposit or payment.
+- The email comes from the token when it has one, and an audit row is written either way.
+
+Response: `{ paymentId, paymentReference, checkoutUrl, applicationId, department, amount, status, method, citizenNic, userEmail, paidDate, createdDate }`.
 
 ---
 
@@ -432,7 +484,7 @@ Rules:
 
 **Rules on create:** the payment must belong to the caller (by `email` claim, otherwise `404`), be `Paid`, and have been paid within the last 7 days (`RefundService.RefundWindowDays`). A payment with a pending, approved, processing or completed refund cannot get another one; after a rejected or failed refund the citizen can ask again. The mobile app hides those payments from its refund list. The refund amount is always the full payment amount - `refundAmount` in the body is ignored.
 
-**Emails to the citizen:** HTML emails from `RefundEmailTemplate`: "Refund Request Received" when the request is created, "Refund Request Rejected" (with the officer's note, and whether the citizen can still ask again inside the 7-day window) when it is rejected, and "Refund Successful" when it is completed. Approve and process still send the short plain-text status emails.
+**Emails to the citizen:** HTML emails from `RefundEmailTemplate`: "Refund Request Received" when the request is created, "Refund Request Rejected" (with the officer's note, and whether the citizen can still ask again inside the 7-day window) when it is rejected, and "Refund Successful" when it is completed. Approve still sends a short plain-text status email; process sends none.
 
 | Method | Path | Body → Response |
 |---|---|---|
@@ -446,7 +498,7 @@ Rules:
 | POST | `/api/refunds/{id}/process` | Finance, `{ "transactionRef": "" }` → refund |
 | POST | `/api/refunds/{id}/complete` | Finance → refund |
 
-Status lifecycle: `Pending → Approved | Rejected`, then `Approved → Processing → Completed` (`Failed` also exists). `create` and the decisions record the email via `User.Identity.Name`. That name isn't mapped from the `email` claim by default, so these fields can come out as `unknown@user` / `unknown@officer`.
+Status lifecycle: `Pending → Approved | Rejected`, then `Approved → Processing → Completed` (`Failed` also exists). `create` and the decisions record the caller's `email` claim, falling back to `unknown@user` only for a token without one. A reject needs a `note` (`400` otherwise), because the rejection email shows it as the reason.
 
 ---
 
@@ -504,22 +556,68 @@ The anomaly scan is rule-based. `HighAmount` flags any `Paid` payment of LKR 100
 
 ## Agentic AI endpoints
 
-The four agents live in `agentic-ai/` and run **in-process** inside the API (project reference, not a separate service). They are **deterministic - no LLM is called** (`docs/adr/0008-deterministic-in-process-agents.md`). In normal use, Agent 4 runs inside `applications/submit`, and Agents 2 + 3 run from the officer's `verification/tasks/{id}/agent-draft`. The endpoints below expose each agent directly.
+The four agents live in `agentic-ai/` and run **in-process** inside the API (project reference, not a separate service). Each agent first runs its deterministic tools. When `GROQ_API_KEY` is set, it then asks the Groq LLM (`GROQ_MODEL`, default `openai/gpt-oss-120b`) to reason over the tool results and the retrieved policy text. If the key is missing, or the LLM call fails or returns unusable JSON, the agent falls back to its deterministic answer (`docs/adr/0015-groq-llm-over-deterministic-agents.md`).
+
+In normal use, Agent 4 runs inside `applications/submit`, and Agents 2 + 3 run from the officer's `verification/tasks/{id}/agent-draft`. The endpoints below expose each agent directly.
 
 **Auth: None** on all of them.
 
 | Method | Path | Body → Response |
 |---|---|---|
-| POST | `/api/IntakeAgent/ask` | `{ "text": "I need to renew my passport" }` → `{ recommendedService, requiredDocuments, stepByStepPlan, retrievedContextSnippets }` |
+| POST | `/api/IntakeAgent/ask` | `{ "text": "I need to renew my passport" }` (2-1000 chars) → `{ recommendedService, requiredDocuments, stepByStepPlan, retrievedContextSnippets }` |
 | POST | `/api/EligibilityAgent/evaluate` | [`EligibilityAgentQueryDto`](#eligibilityagentquerydto) → eligibility + missing-documents plan |
 | POST | `/api/EligibilityAgent/orchestrate` | same body → `WorkflowExecutionState` after the Agent 2 stage |
 | POST | `/api/ActionAgent/draft` | [`ActionAgentQueryDto`](#actionagentquerydto) → pre-filled draft, fee, proposed appointment |
 | POST | `/api/ActionAgent/orchestrate` | same body → `WorkflowExecutionState` after the Agent 3 stage |
+| POST | `/api/ActionAgent/book-appointment` | [`AppointmentBookingRequestDto`](#book-appointment) → booking result or suggested slots |
+| POST | `/api/ValidationAgent/validate` | [`ValidateDraftDto`](#validatedraftdto) → `ValidationResult` |
+| POST | `/api/ValidationAgent/orchestrate` | same body → `WorkflowExecutionState` after the Agent 4 stage |
+| GET | `/api/ValidationAgent/application/{applicationId}/briefing` | → `ValidationResult` for a stored application, or `404` |
+| GET | `/api/ValidationAgent/status` | → `{ agentName, version, status, llmConfigured, llmModel, adversarialDefenseActive, blockDuplicateSubmissions, minimumLegalAge, activeFeatures }` |
+| GET | `/api/ValidationAgent/evaluation/golden-cases` | → runs 4 built-in cases (valid, bad NIC, missing document, prompt injection) → `{ totalCases, allSafelyHandled, results }` |
+| POST | `/api/ValidationAgent/dossier` | `ValidateDraftDto` → `VerificationCaseDossier` |
+| POST | `/api/ValidationAgent/decision-order` | `{ applicationId, serviceProcedureId, serviceName, citizenNic, citizenName, calculatedFee, determinationType, officerNotes, attachedDocumentNames }` → `DecisionOrderDraft` |
+| POST | `/api/ValidationAgent/remediation-notice` | `{ applicationId, serviceName, citizenNic, citizenName, defects }` → `RemediationNotice` (7-day hold) |
 
-- **Agent 1 (Intake & Planning)** embeds the text, takes the top 3 vector matches, and accepts one only if it shares a keyword with the request. Otherwise it returns `recommendedService: "Service Not Found"`.
-- **Agent 2 (Eligibility & Documents)** evaluates the catalog's eligibility rules (`CheckEligibilityRulesTool`) and required documents (`GetDocumentRequirementsTool`), plus retrieved policy chunks.
-- **Agent 3 (Action/Tool)** calls `PrefillApplicationTool`, `CalculateFeeTool` and `FindAppointmentSlotTool` (Mon-Fri 09:00-15:00 SLT, 30-min slots, ≥ 2 working days out). A slot is only a proposal until an officer approves.
-- **Agent 4 (Validation & Safety)** is not exposed directly. It runs `SchemaValidatorTool` + `DuplicateCheckTool` from `applications/submit` and `submit-stage`.
+- **Agent 1 (Intake & Planning)** embeds the text and takes the top 8 vector matches. With the LLM, it asks for a plan grounded in those chunks and answers `"Service Not Found"` (with the list of supported services) when the context holds nothing relevant. Without it, it accepts the first match that shares a keyword with the request.
+- **Agent 2 (Eligibility & Documents)** runs `CheckEligibilityRulesTool` and `GetDocumentRequirementsTool` and retrieves policy chunks. The LLM then decides `isEligible`, `matchPercentage`, missing documents and `reasoning`, matching upload names to required documents and asking for a re-upload when a file name is generic. It is told that any missing mandatory document means not eligible.
+- **Agent 3 (Action/Tool)** calls `PrefillApplicationTool`, `CalculateFeeTool` and `FindAppointmentSlotTool` (Mon-Fri 09:00-15:00 SLT, 30-min slots, ≥ 2 working days out). The LLM only rewrites the reasoning and adds officer notes; the draft, fee and slot always come from the tools.
+- **Agent 4 (Validation & Safety)** runs `SchemaValidatorTool`, `DuplicateCheckTool`, a fee check and a PII filter that masks card numbers and passwords in answers. The LLM adds a risk level, an officer briefing and consistency flags, but it **can't clear a submission**: any deterministic failure rejects it regardless of the LLM. In the normal flow it runs from `applications/submit` and `submit-stage`.
+
+### `ValidateDraftDto`
+```json
+{ "applicationId": 0, "serviceProcedureId": 0, "serviceName": "", "citizenNic": "", "citizenName": "", "citizenAge": 0,
+  "citizenIncome": 0, "calculatedFee": 0, "stage": 1, "formFields": {}, "attachedDocumentNames": [], "requiredDocuments": [] }
+```
+
+**Side effects.** `validate`, `orchestrate`, `briefing` and `dossier` all call `ValidateAndEnqueueAsync`. When the checks pass and `applicationId` is a real application, that call **creates or reuses the application's verification task and sets it back to `Pending`**, and it registers the NIC + service in the duplicate registry. The web's "compile dossier" button calls `dossier` on an application that is already in review, so it has the same effect as regenerating the agent draft (see [Known gaps](diagrams/agentic-ai-architecture.md#known-gaps)).
+
+- **Dossier:** a risk score (5-98) from the validation result and fee, a queue tier (`Fast-Track Verification Desk` below 30, `Standard Officer Desk` up to 60, `Senior Regulatory Compliance Desk` above), and a SHA-256 "integrity seal" over the key fields.
+- **Decision order:** a formal approval, revision or rejection order drafted by the LLM, or a fixed template without it. The officer can apply it in the workspace; the order itself changes nothing.
+- **Remediation notice:** always deterministic, with a 7-day hold date. It isn't sent to the citizen.
+
+### Book appointment
+
+```json
+{ "applicationId": "APP-12", "serviceName": "", "citizenNic": "CITIZEN", "preferredTimeInput": "next Tuesday around 10",
+  "departmentName": null, "serviceProcedureId": null, "stage": null }
+```
+
+Books a collection appointment from free text. In order:
+
+1. Fills in the NIC when it is empty or `CITIZEN`: from the token, else from the application's owner.
+2. Resolves the department: the one sent, else the application's `CurrentDepartment`, else the last of the service's `workflowDepartments`, else its category. Names are normalised (for example anything with "police" becomes `Police Department`).
+3. Loads that department's active [collection slots](#collection-slots---collectionslotscontroller-apiadmincollection-slots) and how many confirmed bookings each has per date.
+4. Agent 3 parses the time (LLM, with a regex fallback; a night hour without "pm" is moved to the morning) and books it when it falls inside an active slot with space.
+
+The response is `{ success, isBooked, confirmationCode, bookedDate, bookedTime, departmentName, departmentContact, departmentAddress, suggestedSlots, message, agentReasoning }`:
+
+- **Booked:** the booking is saved in `CollectionBookings` as `Confirmed` with a code `SL-APT-NNNN`, and the citizen gets an `AppointmentConfirmed` in-app notification.
+- **Not booked** (Sunday, outside a slot, or full): `isBooked: false` and `suggestedSlots` holds open slots for that day or the next working day.
+- **One booking per application:** booking again moves the existing booking and keeps its confirmation code.
+- **No slots configured:** 09:00-15:30 on any day but Sunday is accepted, with no capacity check.
+
+Declared holidays aren't checked here, only on the admin timeline, and the department contact and address in the response are fixed placeholders.
 
 ### `EligibilityAgentQueryDto`
 ```json
@@ -536,6 +634,39 @@ Missing `age`, `citizenshipStatus` and `employmentStatus` default to `25`, `Sri 
   "planSummary": null, "stage": null, "eligibility": null }
 ```
 `serviceProcedureId` and `serviceName` are required (`400` otherwise). If `eligibility` is omitted, Agent 2 runs first.
+
+---
+
+## Collection slots - `CollectionSlotsController`, `api/admin/collection-slots`
+
+Weekly counter hours per department, declared holidays, and the appointments booked into them by Agent 3. The department admin manages them on the web's **Collection Slots** page, and the mobile app reads `bookings`.
+
+**Auth:** every `GET` is anonymous (`[AllowAnonymous]`). Writes need one of the collection-slot roles listed under [auth](#how-auth-actually-works---read-this-first), with no department check.
+
+| Method | Path | Body → Response |
+|---|---|---|
+| GET | `/api/admin/collection-slots?department=` | → slots with `bookedCount` and `remainingCapacity` for the next date of that weekday, plus `nextDate` |
+| GET | `/api/admin/collection-slots/daily-schedule?department=&days=14` | → one entry per day from today (Sri Lanka time), 1-60 days, with holiday status and each slot's live status |
+| GET | `/api/admin/collection-slots/holidays?department=` | → declared holidays, oldest first |
+| POST | `/api/admin/collection-slots/holidays` | `{ departmentName, holidayDate: "yyyy-MM-dd", reason }` → `{ message }`. Declaring the same date again updates the reason |
+| DELETE | `/api/admin/collection-slots/holidays/{id}` | → `{ message }` |
+| GET | `/api/admin/collection-slots/bookings?department=&scope=` | → at most 200 bookings. `scope`: `upcoming` (today on), `past` (archived), or all |
+| POST | `/api/admin/collection-slots` | [`CollectionTimeSlotDto`](#collectiontimeslotdto) → `{ message }` or `400` |
+| PUT | `/api/admin/collection-slots/{id}` | `CollectionTimeSlotDto` → `{ message }`, `400` or `404` |
+| DELETE | `/api/admin/collection-slots/{id}` | → `{ message }` |
+
+### `CollectionTimeSlotDto`
+```json
+{ "departmentId": null, "departmentName": "Police Department", "dayOfWeek": 1, "specificDate": null,
+  "startTime": "09:00", "endTime": "12:00", "maxCapacity": 10, "isActive": true }
+```
+
+- `dayOfWeek` is 1 (Monday) to 7 (Sunday). A `specificDate` makes a one-off slot for that date, and its weekday is taken from the date. On that date, date-specific slots replace the weekly ones.
+- The [validation rules](#validation) apply: 06:00-20:00, at least 15 minutes, capacity 1-500, no overlap with the department's other slots on the same weekday or date.
+- In `daily-schedule`, a day is a holiday when it is declared or is a Sunday without a date-specific slot. Each slot's `status` is `Active Now`, `Ended`, `Fully Booked` or `Open`.
+- Department names are matched with `LIKE '%name%'`, so `Police` also matches `Police Department`.
+- The tables (`CollectionTimeSlots`, `DepartmentHolidays`, `CollectionBookings`) are created with raw SQL on first use, not by migrations. If the slot table has no department rows, the first request seeds Mon-Fri 09:00-12:00 and 13:00-15:30 slots (capacity 10) for `Police Department`.
+- Deleting a slot doesn't touch bookings already made in it.
 
 ---
 
@@ -560,7 +691,7 @@ Manages the `KnowledgeChunks` table in the **separate pgvector database** (`Conn
 
 ## Performance behaviour
 
-Added 2026-09-29 for 1000+ daily users. The reasoning is in `docs/performance-and-redis.md`; the decisions are ADR-0012 to ADR-0014.
+Added for 1000+ daily users. The reasoning is in `docs/performance-and-redis.md`; the decisions are ADR-0012 to ADR-0014.
 
 ### Paging
 

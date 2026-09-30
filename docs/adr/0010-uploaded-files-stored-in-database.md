@@ -31,7 +31,7 @@ Option 3.
 - The document content endpoint checks the officer *role* but not the officer's *department*. Any officer with a document's GUID can read it.
 - Moving to object storage later only requires swapping the `Content` column for a storage key and changing the two read endpoints, because clients only ever see the API URLs.
 
-## Amended (2026-09-29): lists never load file bytes
+## Amended: lists never load file bytes
 
 The finance slip lists in `PaymentsController` (pending slips and department payments) loaded whole `SubmissionDocument` rows, `Content` included, just to find each slip's id, name and upload time. Every page load pulled every attached file out of Neon. They now project to metadata only (`Id`, `ApplicationId`, `FieldLabel`, `FileName`, `ContentType`, `SizeBytes`, `UploadedAt`), and the single-slip lookup selects only the id.
 

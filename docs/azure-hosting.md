@@ -1,6 +1,21 @@
-# Hosting the Backend and Agentic AI on Azure
+# Hosting on Azure and Vercel
 
-This guide explains how to host the backend API (`backend/`) and the agentic AI layer (`agentic-ai/`) on Azure using **Docker** and **Azure Container Apps**.
+This guide covers how the system is hosted, and how to set the same thing up again:
+
+- The **backend API** (`backend/`) and the **agentic AI** layer (`agentic-ai/`) run as one Docker container on **Azure App Service** (Web App for Containers).
+- The **web dashboard** (`web/`) is a static Vite build on **Vercel**.
+- The **mobile app** and the **Windows app** call the hosted API by default.
+
+The reasoning is in `docs/adr/0016-container-on-azure-app-service-web-on-vercel.md`.
+
+| Piece | Where | Address |
+|---|---|---|
+| API + agents | Azure App Service `gsn-api`, Southeast Asia | `https://gsn-api-dpa2agb6c5h7gyar.southeastasia-01.azurewebsites.net` |
+| Container images | Azure Container Registry `gsnacr` (private) | `gsnacr.azurecr.io/gsn-api:<commit sha>` and `:latest` |
+| App database | Neon PostgreSQL | `DATABASE_URL` |
+| Vector database | PostgreSQL + pgvector | `ConnectionStrings:VectorDb` |
+| Web dashboard | Vercel | project root `web/` |
+| LLM | Groq | `GROQ_API_KEY` |
 
 ## 1. What gets deployed
 
@@ -10,350 +25,233 @@ The backend and the agentic AI are **one application**, not two services.
 - `backend/src/Government_Service_Navigator.Backend.csproj` references it with a `ProjectReference`.
 - `dotnet publish` compiles both into one ASP.NET Core app.
 
-So there is **one Docker image** and **one Container App**. The Docker build must run from the **repo root** so it can see both folders.
+So there is **one Docker image** and **one web app**. The Docker build runs from the **repo root** so it can see both folders.
 
 ```mermaid
 flowchart LR
     Mobile[Flutter mobile app] --> API
-    Web[Web app] --> API
+    Web["Web dashboard<br/>(Vercel)"] --> API
+    Desktop[Windows app] --> API
     subgraph Azure
-        API["Container App: gsn-api<br/>(backend + agentic-ai)"]
-        ACR[Azure Container Registry]
+        API["App Service: gsn-api<br/>(backend + agentic-ai container)"]
+        ACR[Container Registry: gsnacr]
     end
     ACR -- image --> API
-    API --> Neon[(Neon PostgreSQL + pgvector)]
-    API --> Redis[(Redis)]
+    API --> Neon[(Neon PostgreSQL)]
+    API --> VDB[(pgvector database)]
+    API --> Redis[("Redis (optional)")]
     API --> Groq[Groq LLM API]
     API --> Stripe[Stripe]
     API --> SMTP[SMTP]
-    GH[GitHub Actions] -- build and push --> ACR
+    GH["GitHub Actions<br/>main_gsn-api.yml"] -- "build, push" --> ACR
+    GH -- deploy --> API
 ```
 
-## 2. Why Docker + Azure Container Apps
+## 2. What the host must provide
 
-| What the code does | What hosting must provide | How Container Apps covers it |
+| What the code does | What hosting must provide | How it is covered |
 |---|---|---|
-| Targets .NET 10 (`net10.0`) | The .NET 10 runtime | The image carries its own runtime, so there is no wait for Azure platform support |
-| Runs `InstallmentMonitorService` and `DataRepairService` as hosted services | The process must stay running | Set **min replicas = 1** so it never scales to zero |
-| Serves a SignalR hub (`ApplicationHub`) | WebSockets | Supported by Container Apps ingress by default |
-| Runs `Database.Migrate()` on startup | Only one instance migrating at a time | Start with **max replicas = 1** |
-| Reads `Data/KnowledgeDocuments/*.md` for RAG ingestion | The files must exist on disk | The Dockerfile copies them into the image |
-| Stores uploaded documents and payment slips in the database (`byte[] Content`) | No persistent disk needed | The container can stay stateless |
-| Reads all settings from environment variables | Secrets and env vars | Container Apps secrets |
+| Targets .NET 10 (`net10.0`) | The .NET 10 runtime | The image carries its own runtime |
+| Runs `InstallmentMonitorService` and `DataRepairService` as hosted services | The process must stay running | **Always On** in App Service |
+| Serves a SignalR hub (`/hubs/applications`) | WebSockets | **Web sockets** on in App Service |
+| Runs `Database.Migrate()` and the schema SQL on startup | Only one instance migrating at a time | One instance |
+| Reads `Data/KnowledgeDocuments/*.md` for RAG ingestion | The files on disk | The Dockerfile copies them into the image |
+| Stores uploaded documents and payment slips in the database | No persistent disk | The container is stateless |
+| Reads settings from environment variables | App settings | App Service application settings |
 
-### Alternative without Docker
+## 3. The Docker files
 
-Azure App Service (code deploy, Linux) also works: publish with `dotnet publish` from GitHub Actions. If you choose it:
-
-- Check that **.NET 10** is offered as a runtime stack in your region.
-- Turn on **Always On** (the hosted services stop otherwise) and **Web sockets** (SignalR).
-- Make sure `Data/KnowledgeDocuments` ends up in the publish output (see section 9).
-
-Docker is recommended because the same image runs locally, in CI and in Azure, and it does not depend on which runtimes Azure has installed.
-
-## 3. Prerequisites
-
-- An Azure subscription
-- Azure CLI installed and logged in: `az login`
-- Container Apps extension: `az extension add --name containerapp --upgrade`
-- Docker Desktop (only for building and testing locally)
-- Your existing Neon `DATABASE_URL` (pooled connection string, host contains `-pooler`)
-
-## 4. Add the Docker files
-
-### 4.1 `Dockerfile` (repo root)
+### 3.1 `Dockerfile` (repo root)
 
 ```dockerfile
-# ---------- build ----------
 FROM mcr.microsoft.com/dotnet/sdk:10.0 AS build
 WORKDIR /src
 
-# Restore first so this layer is cached until a .csproj changes
 COPY backend/src/Government_Service_Navigator.Backend.csproj backend/src/
 COPY agentic-ai/AgenticAi.csproj agentic-ai/
 RUN dotnet restore backend/src/Government_Service_Navigator.Backend.csproj
 
-# Copy the source of both projects and publish
 COPY backend/ backend/
 COPY agentic-ai/ agentic-ai/
 RUN dotnet publish backend/src/Government_Service_Navigator.Backend.csproj \
     -c Release -o /app/publish --no-restore /p:UseAppHost=false
 
-# ---------- runtime ----------
 FROM mcr.microsoft.com/dotnet/aspnet:10.0 AS runtime
 WORKDIR /app
 
 COPY --from=build /app/publish .
-# RAG knowledge files are not part of the publish output.
-# RagSetupController falls back to <current dir>/Data/KnowledgeDocuments.
 COPY backend/src/Data/KnowledgeDocuments ./Data/KnowledgeDocuments
 
 ENV ASPNETCORE_ENVIRONMENT=Production \
     ASPNETCORE_HTTP_PORTS=8080
 EXPOSE 8080
 
-# Run as the non-root user that ships with the .NET images
 USER $APP_UID
 ENTRYPOINT ["dotnet", "Government_Service_Navigator.Backend.dll"]
 ```
 
-### 4.2 `.dockerignore` (repo root)
+- The restore layer is cached until a `.csproj` changes.
+- `RagSetupController` falls back to `<current dir>/Data/KnowledgeDocuments`, which is why the knowledge files are copied next to the app.
+- The API listens on `ASPNETCORE_HTTP_PORTS` (8080) when it is set, and on 5119 otherwise (`Program.cs`).
+- `$APP_UID` is the non-root user that ships with the .NET images.
 
-Keeps the build context small and stops local secrets from being copied into the image.
+### 3.2 `.dockerignore` (repo root)
 
-```gitignore
-**/bin/
-**/obj/
-**/.env
-**/App_Data/
-**/node_modules/
-.git/
-.github/
-mobile/
-web/
-docs/
-load/
-install/
-tui-runner/
-*.jpeg
-*.png
-```
+Keeps the build context small and stops local `.env` files from being copied into the image. It excludes `bin/`, `obj/`, `.env`, `App_Data/`, `node_modules/`, `.git/`, `.github/`, `mobile/`, `web/`, `docs/`, `load/`, `install/`, `tui-runner/` and images.
 
-### 4.3 Test the image locally
+### 3.3 Test the image locally
 
 ```bash
 docker build -t gsn-api .
-docker run --rm -p 8080:8080 --env-file backend/src/.env -e ASPNETCORE_ENVIRONMENT=Production gsn-api
+docker run --rm -p 8080:8080 --env-file backend/src/.env gsn-api
 ```
 
-Then open `http://localhost:8080`. If the app starts and connects to Neon, the image is ready.
+Then open `http://localhost:8080/api/services`. If it returns the catalog, the image connects to the database.
 
-> `Env.Load()` in `Program.cs` does nothing when no `.env` file exists, so in Azure all settings come from environment variables.
+> `Env.Load()` in `Program.cs` does nothing when no `.env` file exists, so in Azure all settings come from app settings.
 
-## 5. Create the Azure resources (one time)
+## 4. Create the Azure resources (one time)
 
-Pick a region close to your Neon database to keep query latency low. The names below are examples; the registry name must be globally unique and lowercase.
+Pick a region close to the Neon database to keep query latency low. `gsnacr` and `gsn-api` are the live names; the resource group and plan names are examples. The registry name must be globally unique and lowercase.
 
 ```bash
 RG=rg-gsn
 LOCATION=southeastasia
-ACR=gsnregistry$RANDOM
-ENV=gsn-env
+ACR=gsnacr
+PLAN=gsn-plan
 APP=gsn-api
 
-# Resource group
 az group create --name $RG --location $LOCATION
 
-# Container registry
-az acr create --resource-group $RG --name $ACR --sku Basic --admin-enabled true
+# Private registry (the image contains appsettings.json)
+az acr create --resource-group $RG --name $ACR --sku Basic
 
-# Build the image in Azure (no local Docker needed) and push it to the registry
+# First image, built in Azure
 az acr build --registry $ACR --image gsn-api:initial .
 
-# Container Apps environment
-az containerapp env create --name $ENV --resource-group $RG --location $LOCATION
+# Linux App Service plan and the container web app
+az appservice plan create --name $PLAN --resource-group $RG --is-linux --sku B1
+az webapp create --name $APP --resource-group $RG --plan $PLAN \
+  --container-image-name $ACR.azurecr.io/gsn-api:initial
 
-# The Container App itself
-az containerapp create \
-  --name $APP \
-  --resource-group $RG \
-  --environment $ENV \
-  --image $ACR.azurecr.io/gsn-api:initial \
-  --registry-server $ACR.azurecr.io \
-  --ingress external \
-  --target-port 8080 \
-  --transport auto \
-  --min-replicas 1 \
-  --max-replicas 1 \
-  --cpu 0.5 --memory 1.0Gi
+# Let the web app pull from the registry with its managed identity
+az webapp identity assign --name $APP --resource-group $RG
+PRINCIPAL=$(az webapp identity show --name $APP --resource-group $RG --query principalId -o tsv)
+az role assignment create --assignee $PRINCIPAL --role AcrPull \
+  --scope $(az acr show --name $ACR --query id -o tsv)
+az webapp config set --name $APP --resource-group $RG \
+  --generic-configurations '{"acrUseManagedIdentityCreds": true}'
+
+# Keep the process running and allow SignalR
+az webapp config set --name $APP --resource-group $RG --always-on true --web-sockets-enabled true
 ```
 
-Get the public URL:
+Pick an App Service plan tier that supports **Always On** (Basic or above). The web app's default host name is shown with:
 
 ```bash
-az containerapp show --name $APP --resource-group $RG --query properties.configuration.ingress.fqdn -o tsv
+az webapp show --name $APP --resource-group $RG --query defaultHostName -o tsv
 ```
 
-## 6. Configure secrets and environment variables
+## 5. App settings
 
-Values that are sensitive go in as **secrets**, then environment variables point at them with `secretref:`.
-
-### 6.1 Secrets
+App Service passes application settings to the container as environment variables. They are encrypted at rest. For stricter handling, store the secrets in Key Vault and use Key Vault references instead of plain values.
 
 ```bash
-az containerapp secret set --name $APP --resource-group $RG --secrets \
-  database-url="<neon pooled connection string>" \
-  jwt-key="<long random string, at least 32 characters>" \
-  stripe-secret-key="sk_live_or_test_..." \
-  groq-api-key="<groq key>" \
-  smtp-password="<smtp app password>" \
-  redis-url="<host:6380,password=...,ssl=True,abortConnect=False>"
-```
-
-### 6.2 Environment variables
-
-```bash
-az containerapp update --name $APP --resource-group $RG --set-env-vars \
-  ASPNETCORE_ENVIRONMENT=Production \
-  DATABASE_URL=secretref:database-url \
+az webapp config appsettings set --name $APP --resource-group $RG --settings \
+  WEBSITES_PORT=8080 \
+  DATABASE_URL="<neon pooled connection string>" \
   DB_MAX_POOL_SIZE=50 \
-  JWT_KEY=secretref:jwt-key \
+  JWT_KEY="<long random string, at least 32 characters>" \
   JWT_ISSUER=GovServiceNavigator \
   JWT_AUDIENCE=GovServiceNavigatorClients \
-  JWT_EXPIRY_HOURS=24 \
-  STRIPE_SECRET_KEY=secretref:stripe-secret-key \
-  GROQ_API_KEY=secretref:groq-api-key \
-  GROQ_MODEL=<model name> \
-  SMTP_HOST=smtp.gmail.com \
-  SMTP_PORT=587 \
-  SMTP_USER=<smtp user> \
-  SMTP_PASSWORD=secretref:smtp-password \
-  SMTP_FROM_EMAIL=<from address> \
-  "SMTP_FROM_NAME=Government Service Navigator" \
-  SMTP_USE_SSL=true \
+  STRIPE_SECRET_KEY="sk_test_..." \
+  GROQ_API_KEY="<groq key>" \
+  GROQ_MODEL=openai/gpt-oss-120b \
+  SMTP_HOST=smtp.gmail.com SMTP_PORT=587 SMTP_USER="<user>" SMTP_PASSWORD="<app password>" \
+  SMTP_FROM_EMAIL="<from address>" "SMTP_FROM_NAME=Government Service Navigator" SMTP_USE_SSL=true \
   RATE_LIMIT_PER_MINUTE=120 \
-  REDIS_URL=secretref:redis-url \
-  BANK_NAME=<bank> \
-  BANK_BRANCH=<branch> \
-  BANK_ACCOUNT_NAME=<account name> \
-  BANK_ACCOUNT_NUMBER=<account number>
+  BANK_NAME="<bank>" BANK_BRANCH="<branch>" BANK_ACCOUNT_NAME="<account name>" BANK_ACCOUNT_NUMBER="<account number>"
 ```
-
-### 6.3 Full variable list
 
 | Variable | Secret? | Notes |
 |---|---|---|
-| `DATABASE_URL` | Yes | Neon pooled connection string. When set, `DB_HOST`/`DB_PORT`/`DB_NAME`/`DB_USER`/`DB_PASSWORD` are not needed |
-| `DB_MAX_POOL_SIZE` | No | Npgsql pool cap per replica |
-| `JWT_KEY` | Yes | Generate a new random key for production; do not reuse the local one |
-| `JWT_ISSUER`, `JWT_AUDIENCE`, `JWT_EXPIRY_HOURS` | No | Same values the apps expect |
+| `WEBSITES_PORT` | No | Tells App Service the container listens on 8080 |
+| `DATABASE_URL` | Yes | Neon pooled connection string (host contains `-pooler`). When set, `DB_HOST`/`DB_PORT`/`DB_NAME`/`DB_USER`/`DB_PASSWORD` are not needed |
+| `ConnectionStrings__VectorDb` | Yes | Optional. Overrides the pgvector connection string baked into `appsettings.json` |
+| `DB_MAX_POOL_SIZE` | No | Npgsql pool cap per instance |
+| `JWT_KEY` | Yes | Use a new random key for production; don't reuse the local one |
+| `JWT_ISSUER`, `JWT_AUDIENCE` | No | Must match what the apps expect. `JWT_EXPIRY_HOURS` is not read (tokens last 7 days) |
 | `STRIPE_SECRET_KEY` | Yes | Use the live key only when going live |
-| `GROQ_API_KEY` | Yes | Used by the agentic AI layer |
-| `GROQ_MODEL` | No | LLM model name |
+| `GROQ_API_KEY` | Yes | Turns on the LLM layer of the agents. Without it the agents run deterministically (ADR-0015) |
+| `GROQ_MODEL` | No | Default `openai/gpt-oss-120b` |
 | `SMTP_HOST`, `SMTP_PORT`, `SMTP_USER`, `SMTP_FROM_EMAIL`, `SMTP_FROM_NAME`, `SMTP_USE_SSL` | No | Email notifications |
 | `SMTP_PASSWORD` | Yes | Gmail app password or provider key |
-| `REDIS_URL` | Yes | Optional. Leave unset to use the in-memory cache (fine with one replica) |
-| `RATE_LIMIT_PER_MINUTE` | No | Requests per user per minute before 429 |
-| `BANK_NAME`, `BANK_BRANCH`, `BANK_ACCOUNT_NAME`, `BANK_ACCOUNT_NUMBER` | No | Shown for manual bank transfer payments |
+| `REDIS_URL` | Yes | Optional. Leave unset to use the in-memory cache, which is fine with one instance |
+| `RATE_LIMIT_PER_MINUTE` | No | Requests per caller per minute before `429` |
+| `BANK_NAME`, `BANK_BRANCH`, `BANK_ACCOUNT_NAME`, `BANK_ACCOUNT_NUMBER` | No | Shown for manual bank transfers. Not in `.env.example` |
 
-### 6.4 Redis options
+Redis options, when it is needed: **Azure Cache for Redis** (Basic C0 is enough to start) in the same region, or **Upstash**: `your-host.upstash.io:6379,password=xxxx,ssl=True,abortConnect=False`.
 
-Redis is optional while you run one replica. When you need it:
+## 6. Automatic deploys: `.github/workflows/main_gsn-api.yml`
 
-- **Azure Cache for Redis** (Basic C0 is enough to start), same region as the app, or
-- **Upstash** (serverless, pay per request): `your-host.upstash.io:6379,password=xxxx,ssl=True,abortConnect=False`
+The workflow runs on every push to `main` that touches `backend/**`, `agentic-ai/**`, `Dockerfile`, `.dockerignore` or the workflow itself, and on manual dispatch. Runs don't overlap (`concurrency: deploy-gsn-api`).
 
-## 7. Automatic deploys with GitHub Actions
+1. **Log in to Azure with OIDC.** `azure/login@v2` uses a client id, tenant id and subscription id stored as repository secrets (`AZUREAPPSERVICE_CLIENTID_*`, `AZUREAPPSERVICE_TENANTID_*`, `AZUREAPPSERVICE_SUBSCRIPTIONID_*`). There is no stored password: GitHub's OIDC token is exchanged for an Azure token, which is why the job has `id-token: write`.
+2. **Log in to the registry** with `az acr login --name gsnacr`.
+3. **Build and push** the image on the runner, tagged with the commit SHA and `latest`.
+4. **Deploy** the SHA tag to the web app with `azure/webapps-deploy@v3`.
 
-### 7.1 Create a service principal for GitHub
+The identity behind the secrets needs **AcrPush** on the registry and permission to update the web app (for example **Website Contributor** on it). The App Service Deployment Center can create it and the secrets; to do it by hand, create an app registration with a federated credential for `repo:<org>/<repo>:ref:refs/heads/main`.
 
-```bash
-az ad sp create-for-rbac \
-  --name gsn-github-deploy \
-  --role contributor \
-  --scopes /subscriptions/<subscription-id>/resourceGroups/rg-gsn \
-  --json-auth
-```
-
-Save the JSON output as a GitHub repository secret named **`AZURE_CREDENTIALS`**. Also add these repository **variables**: `ACR_NAME`, `AZURE_RG` (`rg-gsn`) and `CONTAINER_APP` (`gsn-api`).
-
-Give the service principal permission to push images:
+To roll back, deploy an older SHA tag:
 
 ```bash
-ACR_ID=$(az acr show --name $ACR --query id -o tsv)
-SP_ID=$(az ad sp list --display-name gsn-github-deploy --query "[0].appId" -o tsv)
-az role assignment create --assignee $SP_ID --role AcrPush --scope $ACR_ID
+az webapp config container set --name $APP --resource-group $RG \
+  --container-image-name $ACR.azurecr.io/gsn-api:<older sha>
 ```
 
-### 7.2 Workflow: `.github/workflows/deploy-azure.yml`
+## 7. The web dashboard on Vercel
 
-```yaml
-name: Deploy API to Azure
+- **Project root:** `web/`. Build command `npm run build`, output directory `dist`.
+- **API address:** `web/.env.production` sets `BASE_URL` to the hosted API. `vite.config.ts` passes it into the build as `__BASE_URL__`, and `web/src/utils/api.ts` exports it as `API_BASE_URL`. A `BASE_URL` environment variable set in Vercel takes priority over the file.
+- **Client-side routes:** `web/vercel.json` rewrites every path to `/index.html`, so refreshing `/officer/dashboard` or opening a deep link doesn't return `404`.
+- `npm run dev` uses `web/.env` (`http://localhost:5119`) instead.
 
-on:
-  push:
-    branches: [ "main" ]
-    paths:
-      - "backend/**"
-      - "agentic-ai/**"
-      - "Dockerfile"
-      - ".dockerignore"
-      - ".github/workflows/deploy-azure.yml"
-  workflow_dispatch:
+## 8. Point the other clients at Azure
 
-concurrency:
-  group: deploy-azure
-  cancel-in-progress: false
+- **Mobile:** `mobile/lib/config/app_config.dart` defaults to the hosted API. To use a local backend, run with `--dart-define=API_URL=http://localhost:5119`, or `http://10.0.2.2:5119` on the Android emulator. The SignalR hub URL is derived from the same value.
+- **Windows app:** `windows-software-build.yml` runs `npm run build`, so the installer uses `web/.env.production` and calls the hosted API.
 
-jobs:
-  deploy:
-    name: Build and deploy
-    runs-on: ubuntu-latest
-
-    steps:
-      - name: Checkout
-        uses: actions/checkout@v4
-
-      - name: Azure login
-        uses: azure/login@v2
-        with:
-          creds: ${{ secrets.AZURE_CREDENTIALS }}
-
-      # Builds the Dockerfile inside Azure and pushes it to the registry
-      - name: Build and push image
-        run: |
-          az acr build \
-            --registry ${{ vars.ACR_NAME }} \
-            --image gsn-api:${{ github.sha }} \
-            --image gsn-api:latest \
-            .
-
-      - name: Deploy new image
-        run: |
-          az containerapp update \
-            --name ${{ vars.CONTAINER_APP }} \
-            --resource-group ${{ vars.AZURE_RG }} \
-            --image ${{ vars.ACR_NAME }}.azurecr.io/gsn-api:${{ github.sha }}
-```
-
-Each push to `main` that touches the backend or agentic AI builds a new image tagged with the commit SHA and rolls the Container App to it. To roll back, run `az containerapp update` with an older SHA tag.
-
-## 8. Point the clients at Azure
-
-Replace the local API base URL in the mobile and web apps with the Container App URL from section 5:
-
-```
-https://gsn-api.<random>.<region>.azurecontainerapps.io
-```
-
-SignalR clients connect to the same host (`ApplicationHub.Path`). Container Apps serves HTTPS on port 443 and forwards to port 8080 inside the container, so no port is needed in the URL.
+App Service serves HTTPS on port 443 and forwards to 8080 inside the container, so no port is needed in any client URL.
 
 ## 9. Things to fix or watch
 
-1. **Test packages in `AgenticAi.csproj`.** It references `xunit`, `xunit.runner.visualstudio`, `Microsoft.NET.Test.Sdk` and `coverlet.collector`, and those flow into the published backend. Move them into a separate test project (for example `agentic-ai/tests/AgenticAi.Tests.csproj`) so the production image stays small.
-2. **Scaling past one replica.** Before raising `--max-replicas` above 1:
+1. **The image holds `appsettings.json`.** It contains connection strings, so the registry must stay private. Only `ConnectionStrings:VectorDb` is read (the app database comes from `DATABASE_URL`, and `ConnectionStrings:Default` is unused). Set `ConnectionStrings__VectorDb` as an app setting and remove both values from the file.
+2. **Test packages in `AgenticAi.csproj`.** It references `xunit`, `xunit.runner.visualstudio`, `Microsoft.NET.Test.Sdk` and `coverlet.collector`, and those flow into the published backend. Move the tests into a separate test project so the production image stays small.
+3. **Scaling past one instance.** Before adding instances:
    - Set `REDIS_URL` so the cache, token revocation and SignalR backplane are shared.
-   - Enable sticky sessions for SignalR: `az containerapp ingress sticky-sessions set --name $APP --resource-group $RG --affinity sticky`.
-   - Make sure `InstallmentMonitorService` and `DataRepairService` are safe to run on every replica at once, or move them into a separate single-replica job.
-   - Move `Database.Migrate()` out of startup into a deploy step so replicas do not migrate at the same time.
-3. **CORS.** The API currently allows any origin (`AllowAllOrigins`). For production, restrict it to your web app domain.
-4. **Swagger** is only enabled in `Development`, so it is off in Azure. This is intended.
-5. **Stripe webhooks.** If you add webhooks later, point them at `https://<app url>/...` and store the signing secret as a Container Apps secret.
-6. **Logs.** View live logs with:
+   - Keep **ARR affinity** on, so each SignalR client stays on one instance.
+   - Make sure `InstallmentMonitorService` and `DataRepairService` are safe to run on every instance at once, or move them into a single-instance job.
+   - Move `Database.Migrate()` out of startup into a deploy step, so instances don't migrate at the same time.
+4. **CORS.** The API allows any origin (`AllowAllOrigins`). Restrict it to the Vercel domain.
+5. **Swagger** is only enabled in `Development`, so it is off in Azure. This is intended.
+6. **Stripe.** The success and cancel URLs are still `https://example.com/...` placeholders, and there is no webhook (ADR-0011). If you add webhooks, point them at the web app's URL and store the signing secret as an app setting.
+7. **Unauthenticated endpoints are now on the internet.** `Admin`, `Departments`, `Services`, `Templates`, the agent controllers and `RagSetup` have no `[Authorize]` (`docs/api.md`). Anyone who finds the URL can create officers or wipe the knowledge base.
+8. **Logs.** Turn on container logging, then stream it:
 
    ```bash
-   az containerapp logs show --name $APP --resource-group $RG --follow
+   az webapp log config --name $APP --resource-group $RG --docker-container-logging filesystem
+   az webapp log tail --name $APP --resource-group $RG
    ```
-
-7. **Cost.** With `--min-replicas 1` the app is always running, so it is billed continuously. That is required for the background services and SignalR.
 
 ## 10. Checklist
 
-- [ ] `Dockerfile` and `.dockerignore` added at the repo root
-- [ ] Image builds and runs locally with `docker run`
-- [ ] Resource group, ACR, Container Apps environment and Container App created
-- [ ] Secrets and environment variables set
-- [ ] App URL responds and connects to Neon
-- [ ] `AZURE_CREDENTIALS` secret and `ACR_NAME`, `AZURE_RG`, `CONTAINER_APP` variables added to GitHub
-- [ ] `deploy-azure.yml` workflow added and first deploy succeeded
-- [ ] Mobile and web apps updated to the Azure URL
+- [x] `Dockerfile` and `.dockerignore` at the repo root
+- [x] Registry `gsnacr`, App Service `gsn-api` created
+- [x] `main_gsn-api.yml` workflow deploying on push to `main`
+- [x] Web dashboard on Vercel with `vercel.json` rewrites and `web/.env.production`
+- [x] Mobile app and Windows app default to the hosted API
+- [ ] Connection strings moved out of `appsettings.json`
+- [ ] CORS narrowed to the web dashboard's domain
+- [ ] `[Authorize]` added to the open admin, catalog, agent and RAG endpoints
+- [ ] Stripe success/cancel URLs pointed at real pages

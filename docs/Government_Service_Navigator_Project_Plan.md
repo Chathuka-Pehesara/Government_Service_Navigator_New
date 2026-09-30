@@ -1,5 +1,7 @@
-# Government Service Navigator — Project Workflow & Documentation Plan
-SE3090 Assignment 1 | 9-Week Plan (31 July – 30 September 2026)
+# Government Service Navigator - Project Workflow & Documentation Plan
+SE3090 Assignment 1 | 9-Week Plan
+
+> **Status:** this is the original plan, kept as written. The system as built differs in places: the agents run inside the API rather than as a separate service, a Groq-hosted LLM sits over deterministic tools, and the API is hosted on Azure App Service. See `docs/README.md` for the documentation of the actual system and `docs/adr/` for the decisions.
 
 ---
 
@@ -7,9 +9,9 @@ SE3090 Assignment 1 | 9-Week Plan (31 July – 30 September 2026)
 
 **Problem:** Citizens don't know which government procedure applies to their situation, what documents are required, what fees apply, or what the status of their application is. Officers, in turn, need a structured queue of applications to review, verify, and approve rather than ad-hoc paper/email trails.
 
-**Product:** A platform where a citizen describes their need in plain language (e.g. "I want to register a small business" or "I lost my driving licence"), gets a guided procedure with a document checklist, submits an application/appointment, and tracks it end-to-end — while officers review, verify, and approve through a web dashboard.
+**Product:** A platform where a citizen describes their need in plain language (e.g. "I want to register a small business" or "I lost my driving licence"), gets a guided procedure with a document checklist, submits an application/appointment, and tracks it end-to-end - while officers review, verify, and approve through a web dashboard.
 
-### User Roles (minimum 3 required — this design uses 4)
+### User Roles (minimum 3 required - this design uses 4)
 | Role | Responsibilities | Client |
 |---|---|---|
 | **Citizen/Applicant** | Search services, get guidance, submit applications, upload documents, pay fees, track status | Flutter |
@@ -33,17 +35,17 @@ Pick one and route it through ASP.NET Core:
 - **Maps API** for nearest government office/branch locator, **or**
 - **SMS/Email (Twilio/SendGrid sandbox)** for status notifications.
 
-(Maps + Notifications together is a strong combo if you want two lightweight integrations — but only one is required.)
+(Maps + Notifications together is a strong combo if you want two lightweight integrations - but only one is required.)
 
 ---
 
-## 2. Agentic AI Subsystem — "Navigator Agent Workflow"
+## 2. Agentic AI Subsystem - "Navigator Agent Workflow"
 
 **Objective given to the system:** *"Help this citizen complete [X] procedure."*
 
 ### Four Distinct Agents (required minimum)
 | Agent | Responsibility | Input → Output | Tools it may call |
-|---|---|---|---|
+|---|---|---|
 | **1. Intake & Planning Agent** | Parses the citizen's free-text need, matches it to a service in the catalog, produces a structured multi-step plan | Free text query → structured plan (service ID, steps, assigned agents) | `search_service_catalog` |
 | **2. Eligibility & Document Analysis Agent** | Checks citizen data against eligibility rules, determines missing documents | Plan + citizen profile → eligibility result, missing-doc list | `check_eligibility_rules`, `get_document_requirements` |
 | **3. Action/Tool Agent** | Prepares the draft application: pre-fills form fields, calculates fees, proposes an appointment slot | Eligibility result → draft application object | `calculate_fee`, `find_appointment_slot`, `prefill_application` |
@@ -55,7 +57,7 @@ Pick one and route it through ASP.NET Core:
 
 **Safe failure example:** if the citizen's query doesn't match any known service, or eligibility fails, the agent returns a clear "no matching procedure" or "not eligible - missing X" result rather than guessing.
 
-### Agentic AI Service — Folder Structure
+### Agentic AI Service - Folder Structure
 
 Deployed as its own service (see startup order in §5.1: DB → API → **Agentic AI service** → React → Flutter). Scaffolding only at this stage - implementation language/framework is finalized in the ADR (§5.2, decision 3) before any code is written.
 
@@ -113,17 +115,17 @@ This single path is your **minimum acceptance workflow** - get it airtight befor
 
 ## 4. Nine-Week Execution Plan
 
-| Week | Dates (approx.) | Focus | Key Deliverables |
-|---|---|---|---|
-| **1** | 31 Jul – 6 Aug | Domain lock-in, requirements, roles, GitHub repo setup | ER diagram draft, initial ADR entries, GitHub repo + project board, role split |
-| **2** | 7–13 Aug | Database schema, EF Core migrations, JWT auth skeleton | PostgreSQL schema + migrations, working auth endpoints |
-| **3** | 14–20 Aug | Core CRUD APIs per component; React & Flutter skeletons | 4 components' basic endpoints, Swagger docs, app shells with routing |
-| **4** | 21–27 Aug | Design & build the 4 agents; tool functions; local agent testing | Agent framework chosen (justify in ADR), agents callable individually |
-| **5** | 28 Aug – 3 Sep | Wire agents into ASP.NET Core; persisted workflow state; approval endpoint | End-to-end workflow (Step 3 above) working with one golden case |
-| **6** | 4–10 Sep | Full React officer dashboard; full Flutter citizen flows; device feature | Approve/reject/revise UI, document upload, notifications, maps/camera/etc. |
-| **7** | 11–17 Sep | Testing sweep: unit, integration, agent evaluation, performance; CI pipeline green | Test suites for all layers, GitHub Actions CI passing, agent golden-case tests |
-| **8** | 18–24 Sep | Deployment (API, DB, React live; Flutter APK); write all documentation | Live URLs, Swagger URL, APK, README, ADRs, reports drafted |
-| **9** | 25–30 Sep | Freeze features, rehearse demo, finalize individual reports, record demo video, submit | Consolidated PDF, demo video, final submission by leader |
+| Week | Focus | Key Deliverables |
+|---|---|---|
+| **1** | Domain lock-in, requirements, roles, GitHub repo setup | ER diagram draft, initial ADR entries, GitHub repo + project board, role split |
+| **2** | Database schema, EF Core migrations, JWT auth skeleton | PostgreSQL schema + migrations, working auth endpoints |
+| **3** | Core CRUD APIs per component; React & Flutter skeletons | 4 components' basic endpoints, Swagger docs, app shells with routing |
+| **4** | Design & build the 4 agents; tool functions; local agent testing | Agent framework chosen (justify in ADR), agents callable individually |
+| **5** | Wire agents into ASP.NET Core; persisted workflow state; approval endpoint | End-to-end workflow (Step 3 above) working with one golden case |
+| **6** | Full React officer dashboard; full Flutter citizen flows; device feature | Approve/reject/revise UI, document upload, notifications, maps/camera/etc. |
+| **7** | Testing sweep: unit, integration, agent evaluation, performance; CI pipeline green | Test suites for all layers, GitHub Actions CI passing, agent golden-case tests |
+| **8** | Deployment (API, DB, React live; Flutter APK); write all documentation | Live URLs, Swagger URL, APK, README, ADRs, reports drafted |
+| **9** | Freeze features, rehearse demo, finalize individual reports, record demo video, submit | Consolidated PDF, demo video, final submission by leader |
 
 **Rule of thumb:** don't start polishing UI until the Week 5 end-to-end workflow works - that single path is worth the most marks (Integrated Architecture criterion, 10 marks; Agentic AI Contribution, 12 marks each).
 
@@ -143,7 +145,7 @@ Everything below goes into **one consolidated PDF**, named `SE3090_GroupNumber.p
 - Individual contributions summary table, challenges, security considerations
 - Consolidated **group AI usage declaration**
 
-### 5.2 Architecture Decision Record (ADR) — 3 to 6 decisions, one page each
+### 5.2 Architecture Decision Record (ADR) - 3 to 6 decisions, one page each
 Minimum required decisions:
 1. React state-management approach (e.g. Context API vs Redux Toolkit) - for officer dashboard
 2. Flutter state-management approach - for citizen app
@@ -170,22 +172,22 @@ Each student's section must include:
 - Signed declaration
 
 ### 5.4 Testing, Agentic AI Evaluation, Performance, Deployment Reports
-- **Testing report (6–10 pages):** backend/DB/React/Flutter/E2E test evidence, coverage summary
-- **Agentic AI evaluation report (5–8 pages):** golden-case results, rule-based assertions + schema validation (not LLM-as-judge alone), prompt-injection resistance test, failure-recovery test
-- **Performance report (3–5 pages):** concurrent request handling, response times, agent latency
-- **Deployment report (3–5 pages):** URLs, health/Swagger endpoints, DB deployment evidence, APK, setup reproducibility
+- **Testing report (6-10 pages):** backend/DB/React/Flutter/E2E test evidence, coverage summary
+- **Agentic AI evaluation report (5-8 pages):** golden-case results, rule-based assertions + schema validation (not LLM-as-judge alone), prompt-injection resistance test, failure-recovery test
+- **Performance report (3-5 pages):** concurrent request handling, response times, agent latency
+- **Deployment report (3-5 pages):** URLs, health/Swagger endpoints, DB deployment evidence, APK, setup reproducibility
 
 ### 5.5 Submission Checklist (quick reference)
 - [ ] One consolidated PDF (Group Report + all Individual Reports + ADRs + diagrams)
 - [ ] Repo URL, React URL, API health/Swagger URL, DB deployment evidence
 - [ ] Flutter APK + install instructions
 - [ ] 10-minute demo video (link-accessible, no request-access needed)
-- [ ] Everything live/accessible until **21 October 2026**
+- [ ] Everything live/accessible until the end of the assessment period
 - [ ] Naming convention: `SE3090_GroupNumber`
 
 ---
 
 ## 6. Immediate Next Steps
-1. Confirm the exact service scope (pick 3–5 real procedures to model, e.g. driving licence renewal, business registration, land permit, passport application) so eligibility rules and documents feel authentic.
+1. Confirm the exact service scope (pick 3-5 real procedures to model, e.g. driving licence renewal, business registration, land permit, passport application) so eligibility rules and documents feel authentic.
 2. Split the 4 components across the team and start Week 1 tasks today.
-3. Open the GitHub repo now — don't wait for the design to be "finished"; commit history from Day 1 is graded.
+3. Open the GitHub repo now - don't wait for the design to be "finished"; commit history from Day 1 is graded.

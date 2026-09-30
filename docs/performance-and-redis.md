@@ -2,7 +2,7 @@
 
 This guide explains why the mobile app and web dashboard load slowly now that the system has **1000+ users every day**, and the step-by-step fix: less polling, database indexes, pagination, push updates with SignalR, and a Redis cache layer. It is written for the current codebase (ASP.NET Core on .NET 10, PostgreSQL on Neon, Flutter mobile, React web).
 
-> **Status:** implemented on 2026-09-29 (all five phases). The sections below explain the reasoning; [section 10](#10-what-was-built) lists exactly what was built, where it differs from the original plan, and what still needs a real-traffic check.
+> **Status:** implemented (all five phases). The sections below explain the reasoning; [section 10](#10-what-was-built) lists exactly what was built, where it differs from the original plan, and what still needs a real-traffic check.
 
 ## The short answer
 
@@ -721,7 +721,7 @@ Use these as the "done" check for each PR:
 | Phase | Change | Files |
 |---|---|---|
 | 1 | One 30 s fallback poll, only while the app is in the foreground. Screen timers removed. Refund poll 60 s. Timeout 15 s | `mobile/lib/providers/application_providers.dart`, `refund_providers.dart`, `applications_tab.dart`, `verification_detail_screen.dart`, `verification_api_service.dart` |
-| 1 | TanStack Query client, `VITE_API_URL` base, paged helpers | `web/src/main.tsx`, `web/src/utils/queryClient.ts`, `web/src/utils/api.ts`, `web/src/utils/useDebouncedValue.ts` |
+| 1 | TanStack Query client, one API base (`VITE_API_URL` at the time, replaced by `BASE_URL` in v2.0.0), paged helpers | `web/src/main.tsx`, `web/src/utils/queryClient.ts`, `web/src/utils/api.ts`, `web/src/utils/useDebouncedValue.ts` |
 | 1 | Route-level code splitting: first load 1.46 MB down to 286 KB (88 KB gzipped) | `web/src/App.tsx` |
 | 2 | 11 indexes created on startup and mirrored in the model | `backend/src/Program.cs`, `AppDbContext.cs` |
 | 2 | Writes removed from GET endpoints; the repairs run in a background job at startup and every 10 minutes | `Services/DataRepairService.cs`, `VerificationService.cs`, `VerificationController.cs` |
@@ -760,7 +760,7 @@ The schema block in `Program.cs` contained a C# comment (`// ---> NEW BOOKING TI
 
 ### 10.5 Verified, and still to check
 
-Checked against the real database on 2026-09-29: all indexes are created, the paged endpoints and summaries return correct envelopes, and `my-applications` returns the same JSON fields as before. Brotli shrinks that response by about 60%, and a cache hit is served without the database. Citizens and staff connect to the hub over WebSockets, and a bad token is rejected.
+Checked against the real database: all indexes are created, the paged endpoints and summaries return correct envelopes, and `my-applications` returns the same JSON fields as before. Brotli shrinks that response by about 60%, and a cache hit is served without the database. Citizens and staff connect to the hub over WebSockets, and a bad token is rejected.
 
 Not checked live, because it needs a real write: the push after an officer decision. To confirm it, open an application in the citizen app, approve its task on the web, and the status should change within about a second without pull-to-refresh.
 

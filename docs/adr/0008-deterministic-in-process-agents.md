@@ -39,3 +39,14 @@ Option 3.
 - The agent endpoints and `RagSetup` have no `[Authorize]`, so the knowledge base can be wiped by anyone who can reach the API (`docs/api.md`).
 - `agentic-ai/README.md` still describes the pre-implementation scaffold ("No implementation yet", "its own deployable") and is out of date.
 - Swapping in an LLM later would be localised: the agents sit behind interfaces (`IIntakePlanningAgent`, `IEligibilityDocumentAgent`, `IActionToolAgent`, `IValidationSafetyAgent`), and `IEmbeddingService` can be replaced with a model-backed implementation, followed by a re-seed.
+
+## Partially superseded
+
+ADR-0015 put a Groq-hosted LLM on top of these agents. What still holds from this ADR:
+
+- The agents are in-process, behind the same interfaces, with the backend implementing their repositories.
+- Embeddings are still local hashed keywords in pgvector.
+- Every tool is still deterministic, and Agent 4's schema, duplicate and fee gates still decide whether a submission is rejected.
+- With no `GROQ_API_KEY`, each agent returns exactly the deterministic answer described above.
+
+What no longer holds when the key is set: "no API keys, no network dependency, identical output for identical input", and "there's no LLM downstream for an injection to affect". Agent 1 also retrieves the top 8 chunks now, not 3, and passes them all to the LLM instead of applying the keyword gate.
