@@ -1,5 +1,7 @@
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:riverpod_annotation/riverpod_annotation.dart';
+import '../services/session_storage.dart';
+import 'service_providers.dart';
 
 part 'session_provider.g.dart';
 
@@ -24,16 +26,33 @@ class SessionState {
 
 /// App-wide auth session. Kept alive for the whole app run so every screen and
 /// service provider can read the token instead of having it passed down by hand.
+/// It is also saved on the device, so closing the app keeps the user signed in
+/// until they sign out (or the token expires).
 @Riverpod(keepAlive: true)
 class Session extends _$Session {
   @override
   SessionState build() => const SessionState.signedOut();
 
-  void signIn({required String token, required String email, Map<String, dynamic>? user}) {
-    state = SessionState(token: token, email: email, user: user);
+  /// Restores the session saved by an earlier run. Returns true when the user is signed in.
+  Future<bool> restore() async {
+    final saved = await SessionStorage.load();
+    if (saved != null) {
+      state = SessionState(token: saved.token, email: saved.email, user: saved.user);
+    }
+    return state.isSignedIn;
   }
 
-  void signOut() => state = const SessionState.signedOut();
+  void signIn({required String token, required String email, Map<String, dynamic>? user}) {
+    state = SessionState(token: token, email: email, user: user);
+    SessionStorage.save(token: token, email: email, user: user);
+  }
+
+  void signOut() {
+    final token = state.token;
+    state = const SessionState.signedOut();
+    SessionStorage.clear();
+    if (token.isNotEmpty) ref.read(authServiceProvider).logout(token);
+  }
 }
 
 /// Just the bearer token. Service providers watch this so they rebuild on login/logout.

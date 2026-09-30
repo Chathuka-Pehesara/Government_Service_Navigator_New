@@ -92,4 +92,16 @@ class AuthService {
       );
     }
   }
+
+  /// Revokes the token on the server. Best effort: sign out still happens locally if this fails.
+  Future<void> logout(String token) async {
+    try {
+      await http.post(
+        Uri.parse('$baseUrl/auth/logout'),
+        headers: {'Authorization': 'Bearer $token'},
+      ).timeout(const Duration(seconds: 5));
+    } catch (e) {
+      debugPrint('Logout request failed: $e');
+    }
+  }
 }

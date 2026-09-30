@@ -5,8 +5,10 @@ import 'landing_page.dart';
 import '../../theme/glass_theme.dart';
 import '../../theme/app_colors.dart';
 import '../login_page.dart';
+import '../dashboard_screen.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import '../../providers/auth_provider.dart';
+import '../../providers/session_provider.dart';
 
 /// Splash screen: calm light backdrop, a frosted emblem card with a soft light sweep,
 /// a slowly rotating navy ring, and a navy progress bar. Then routes to onboarding or login.
@@ -41,18 +43,26 @@ class _LoadingPageState extends ConsumerState<LoadingPage> with TickerProviderSt
     _navigateNext();
   }
 
-  /// First launch: slides → terms → sign up. After the user has signed up or logged in once: login page.
+  /// Still signed in from an earlier run: straight to the dashboard. First launch: slides → terms → sign up.
+  /// After the user has signed out: login page.
   Future<void> _navigateNext() async {
     final results = await Future.wait([
       ref.read(onboardingCompletedProvider.future),
+      ref.read(sessionProvider.notifier).restore(),
       Future.delayed(_splashDuration),
     ]);
     if (!mounted) return;
     final onboardingCompleted = results[0] as bool;
+    final signedIn = results[1] as bool;
+    final Widget next = signedIn
+        ? const DashboardScreen()
+        : onboardingCompleted
+            ? const LoginPage()
+            : const LandingPage();
     Navigator.of(context).pushReplacement(
       PageRouteBuilder(
         transitionDuration: const Duration(milliseconds: 700),
-        pageBuilder: (_, _, _) => onboardingCompleted ? const LoginPage() : const LandingPage(),
+        pageBuilder: (_, _, _) => next,
         transitionsBuilder: (_, animation, _, child) => FadeTransition(opacity: animation, child: child),
       ),
     );
