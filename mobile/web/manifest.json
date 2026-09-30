@@ -1,11 +1,11 @@
 {
-    "name": "mobile",
-    "short_name": "mobile",
+    "name": "Government Service Navigator",
+    "short_name": "Gov Navigator",
     "start_url": ".",
     "display": "standalone",
-    "background_color": "#0175C2",
-    "theme_color": "#0175C2",
-    "description": "A new Flutter project.",
+    "background_color": "#FFFFFF",
+    "theme_color": "#0B2559",
+    "description": "Find, apply for, pay for and track Sri Lankan government services.",
     "orientation": "portrait-primary",
     "prefer_related_applications": false,
     "icons": [
