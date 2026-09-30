@@ -1,6 +1,6 @@
 {
     "name": "Government Service Navigator",
-    "short_name": "Gov Navigator",
+    "short_name": "LankaServe",
     "start_url": ".",
     "display": "standalone",
     "background_color": "#FFFFFF",
