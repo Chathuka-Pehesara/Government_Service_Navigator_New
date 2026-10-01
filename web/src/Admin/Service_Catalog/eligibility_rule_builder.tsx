@@ -36,10 +36,12 @@ import {
   Categories,
   TrashCan,
   Document,
+  Launch,
 } from "@carbon/icons-react";
 import { parseApiError } from "../../utils/validation";
 import { rulesError } from "./serviceCatalogValidation";
 import { API_BASE_URL } from "../../utils/api";
+import { ServiceProcedurePickerModal } from "../../components/ServiceProcedurePickerModal";
 
 interface Service {
   id: number;
@@ -91,6 +93,7 @@ export default function EligibilityRuleBuilder() {
   const [searchQuery, setSearchQuery] = useState("");
   const [serviceSearchQuery, setServiceSearchQuery] = useState("");
   const [selectedCategoryFilter, setSelectedCategoryFilter] = useState("All");
+  const [isPickerModalOpen, setIsPickerModalOpen] = useState(false);
   const [notification, setNotification] = useState<{
     type: "success" | "error";
     title: string;
@@ -451,7 +454,7 @@ export default function EligibilityRuleBuilder() {
           <div
             style={{
               display: "grid",
-              gridTemplateColumns: "repeat(auto-fit, minmax(240px, 1fr))",
+              gridTemplateColumns: "repeat(auto-fit, minmax(220px, 1fr)) auto",
               gap: "1rem",
               alignItems: "flex-end",
             }}
@@ -460,8 +463,8 @@ export default function EligibilityRuleBuilder() {
             <div>
               <Search
                 id="rules-procedure-search"
-                labelText="Search Procedures"
-                placeholder="Search by code (e.g. GSN-IMM) or name..."
+                labelText="Quick Filter"
+                placeholder="Search by code or name..."
                 size="md"
                 value={serviceSearchQuery}
                 onChange={(e) => setServiceSearchQuery(e.target.value)}
@@ -515,6 +518,19 @@ export default function EligibilityRuleBuilder() {
                 )}
               </Select>
             </div>
+
+            {/* Browse All Catalog Modal Button */}
+            <div>
+              <Button
+                kind="tertiary"
+                size="md"
+                renderIcon={Launch}
+                onClick={() => setIsPickerModalOpen(true)}
+                style={{ width: "100%", whiteSpace: "nowrap" }}
+              >
+                Browse Catalog ({visibleServices.length})
+              </Button>
+            </div>
           </div>
 
           {/* Active Filter Bar & Reset */}
@@ -553,6 +569,17 @@ export default function EligibilityRuleBuilder() {
             </div>
           )}
         </Tile>
+
+        {/* Modal for browsing & picking services from entire catalog */}
+        <ServiceProcedurePickerModal
+          isOpen={isPickerModalOpen}
+          onClose={() => setIsPickerModalOpen(false)}
+          services={visibleServices}
+          selectedServiceId={selectedServiceId}
+          onSelectService={(srv) => {
+            setSelectedServiceId(srv.id.toString());
+          }}
+        />
 
         <Tile style={{ width: "100%" }}>
           <h3 style={{ marginBottom: "1.5rem", fontWeight: 500 }}>

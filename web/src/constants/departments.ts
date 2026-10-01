@@ -24,6 +24,15 @@ export const SERVICE_CATEGORIES = [
 
 export type ServiceCategory = typeof SERVICE_CATEGORIES[number];
 
+export const CATEGORY_PREFIX_MAP: Record<string, string> = {
+  "Personal & Family": "PER",
+  "Transport & Travel": "TRN",
+  "Legal & Security": "LEG",
+  "Business & Trade": "BIZ",
+  "Public & Community Services": "PUB",
+  "General": "GEN",
+};
+
 export function getDepartmentSlug(department: string): string | null {
   const normalized = department.trim().toLowerCase();
   const match = DEPARTMENTS.find((d) => d.label.toLowerCase() === normalized);

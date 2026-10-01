@@ -45,7 +45,7 @@ import {
   Money,
   Calendar,
 } from "@carbon/icons-react";
-import { SERVICE_CATEGORIES, getCategoryForDepartment, getDepartmentSlug } from "../../constants/departments";
+import { SERVICE_CATEGORIES, CATEGORY_PREFIX_MAP, getCategoryForDepartment, getDepartmentSlug } from "../../constants/departments";
 import { parseApiError } from "../../utils/validation";
 import { serviceError } from "./serviceCatalogValidation";
 import { API_BASE_URL } from "../../utils/api";
@@ -145,14 +145,15 @@ export default function ServiceCatalogManager() {
     fetchServices();
   }, []);
 
-  const generateNextServiceId = () => {
+  const generateNextServiceId = (category: string = "Personal & Family") => {
+    const prefix = CATEGORY_PREFIX_MAP[category] || "SRV";
     const maxNumber = services.reduce((max, service) => {
-      const match = service.serviceId?.match(/GSN-SRV-(\d+)$/i);
+      const match = service.serviceId?.match(/GSN-[A-Za-z]+-(\d+)$/i);
       const num = match ? parseInt(match[1], 10) : 0;
       return num > max ? num : max;
     }, 0);
     const nextNumber = maxNumber + 1;
-    return `GSN-SRV-${String(nextNumber).padStart(3, "0")}`;
+    return `GSN-${prefix}-${String(nextNumber).padStart(3, "0")}`;
   };
 
   const openCreateModal = () => {
@@ -160,10 +161,11 @@ export default function ServiceCatalogManager() {
     setIsEditMode(false);
     setCurrentServiceId(null);
     const defaultDept = currentUser.department || "Civil Department";
+    const initialCategory = scopedCategory ?? "Personal & Family";
     setFormData({
-      serviceId: generateNextServiceId(),
+      serviceId: generateNextServiceId(initialCategory),
       name: "",
-      category: scopedCategory ?? "Personal & Family",
+      category: initialCategory,
       status: "Draft",
       totalStages: 1,
       workflowDepartments: [defaultDept],
@@ -271,11 +273,14 @@ export default function ServiceCatalogManager() {
     }
   };
 
-  // Filter out retired services so they don't clutter the active catalog view, plus apply search query.
+  const [selectedCategory, setSelectedCategory] = useState<string>("All");
+
+  // Filter out retired services so they don't clutter the active catalog view, plus apply search query and category filter.
   // Department Admins see only services scoped to their department category (read-only).
   const filteredServices = services
     .filter((service) => service.status !== "Retired")
     .filter((service) => !deptAdmin || !scopedCategory || service.category === scopedCategory)
+    .filter((service) => selectedCategory === "All" || service.category === selectedCategory)
     .filter(
       (service) =>
         service.serviceId?.toLowerCase().includes(searchQuery.toLowerCase()) ||
@@ -288,7 +293,7 @@ export default function ServiceCatalogManager() {
 
   useEffect(() => {
     setPage(1);
-  }, [searchQuery]);
+  }, [searchQuery, selectedCategory]);
 
   const pagedServices = filteredServices.slice((page - 1) * pageSize, page * pageSize);
 
@@ -532,9 +537,14 @@ export default function ServiceCatalogManager() {
               labelText="Category"
               helperText="Select the service category."
               value={formData.category}
-              onChange={(e) =>
-                setFormData({ ...formData, category: e.target.value })
-              }
+              onChange={(e) => {
+                const newCat = e.target.value;
+                setFormData((prev) => ({
+                  ...prev,
+                  category: newCat,
+                  serviceId: isEditMode ? prev.serviceId : generateNextServiceId(newCat),
+                }));
+              }}
             >
               {SERVICE_CATEGORIES.map((cat) => (
                 <SelectItem key={cat} value={cat} text={cat} />
@@ -568,6 +578,64 @@ export default function ServiceCatalogManager() {
           </div>
         </Modal>
 
+        {/* Search & Category Filter Bar */}
+        <div
+          style={{
+            backgroundColor: "#ffffff",
+            padding: "1rem 1.25rem",
+            borderRadius: "4px",
+            border: "1px solid #e0e0e0",
+            marginBottom: "1rem",
+            display: "grid",
+            gridTemplateColumns: "repeat(auto-fit, minmax(240px, 1fr)) auto",
+            gap: "1rem",
+            alignItems: "flex-end",
+          }}
+        >
+          <Search
+            id="catalog-search-input"
+            labelText="Search Services"
+            placeholder="Search by code (e.g. GSN-TRN) or procedure name..."
+            size="md"
+            value={searchQuery}
+            onChange={(e) => setSearchQuery(e.target.value)}
+            onClear={() => setSearchQuery("")}
+          />
+
+          <Select
+            id="catalog-category-select"
+            labelText="Filter by Category"
+            size="md"
+            value={selectedCategory}
+            onChange={(e) => setSelectedCategory(e.target.value)}
+          >
+            <SelectItem
+              value="All"
+              text={`All Categories (${services.filter((s) => s.status !== "Retired").length})`}
+            />
+            {SERVICE_CATEGORIES.map((cat) => (
+              <SelectItem
+                key={cat}
+                value={cat}
+                text={`${cat} (${services.filter((s) => s.status !== "Retired" && s.category === cat).length})`}
+              />
+            ))}
+          </Select>
+
+          {(searchQuery || selectedCategory !== "All") && (
+            <Button
+              kind="ghost"
+              size="md"
+              onClick={() => {
+                setSearchQuery("");
+                setSelectedCategory("All");
+              }}
+            >
+              Reset Filters
+            </Button>
+          )}
+        </div>
+
         {isLoading ? (
           <Loading description="Loading services" withOverlay={false} />
         ) : (
@@ -581,7 +649,7 @@ export default function ServiceCatalogManager() {
             }) => (
               <TableContainer
                 title="Active Services"
-                description="Procedures available for citizen submissions."
+                description={`Showing ${filteredServices.length} procedure${filteredServices.length === 1 ? "" : "s"} available for citizen submissions.`}
               >
                 <Table {...getTableProps()}>
                   <TableHead>
@@ -641,9 +709,19 @@ export default function ServiceCatalogManager() {
                                       <>
                                         <Button
                                           size="sm"
+                                          kind="ghost"
+                                          renderIcon={Settings}
+                                          iconDescription="Configure Service (Documents, Fees, Policy, Stages)"
+                                          hasIconOnly
+                                          onClick={() => {
+                                            window.location.href = `/admin/services/config?serviceId=${row.id}`;
+                                          }}
+                                        />
+                                        <Button
+                                          size="sm"
                                           kind="tertiary"
                                           renderIcon={Edit}
-                                          iconDescription="Edit"
+                                          iconDescription="Edit Details"
                                           hasIconOnly
                                           onClick={() => {
                                             const serviceToEdit = services.find(
