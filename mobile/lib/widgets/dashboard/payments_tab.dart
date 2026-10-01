@@ -20,6 +20,7 @@ import '../../screens/refunds/refund_request_screen.dart';
 import '../../screens/refunds/my_refunds_screen.dart';
 import '../../services/service_api_client.dart';
 import '../../utils/validators.dart';
+import '../../providers/catalog_providers.dart';
 
 class PaymentsDashboardTab extends ConsumerStatefulWidget {
   const PaymentsDashboardTab({super.key});
@@ -43,62 +44,85 @@ class _PaymentsDashboardTabState extends ConsumerState<PaymentsDashboardTab> {
   bool _isSubmitting = false;
   String? _errorMessage;
 
-  static const List<Map<String, dynamic>> _departmentOptions = [
-    {
-      'name': 'Department of Immigration & Emigration',
-      'icon': CupertinoIcons.airplane,
-      'services': [
+  List<Map<String, dynamic>> _getDynamicDepartmentOptions(List<Map<String, dynamic>> liveServices) {
+    final Map<String, Set<String>> deptServicesMap = {
+      'Department of Immigration & Emigration': {
         'Passport Issuance & Renewal',
         'Urgent One-Day Passport Service',
         'Dual Citizenship Processing',
         'Residence Visa Statutory Fee',
-        'General Immigration Fine/Fee',
-      ],
-    },
-    {
-      'name': 'Department of Motor Traffic',
-      'icon': CupertinoIcons.car_detailed,
-      'services': [
+      },
+      'Department of Motor Traffic': {
         'Driving License New / Renewal',
         'Vehicle Revenue License',
         'Vehicle Registration Transfer',
         'Motor Traffic Statutory Fine',
-        'Learner Permit Examination Fee',
-      ],
-    },
-    {
-      'name': 'Police Department',
-      'icon': CupertinoIcons.shield,
-      'services': [
+      },
+      'Police Department': {
         'Police Clearance Certificate',
         'Traffic Violation Surcharge',
-        'Event & Procession Permit Fee',
         'Special Security Clearance',
-        'Administrative Filing Fee',
-      ],
-    },
-    {
-      'name': 'Department of Registration of Persons',
-      'icon': CupertinoIcons.person_crop_rectangle,
-      'services': [
+      },
+      'Department of Registration of Persons': {
         'National Identity Card (NIC) Issue',
         'Duplicate NIC Replacement',
         'Correction of NIC Data Fee',
-        'Priority Identity Verification',
-      ],
-    },
-    {
-      'name': 'Divisional Secretariat',
-      'icon': CupertinoIcons.building_2_fill,
-      'services': [
+      },
+      'Divisional Secretariat': {
         'Business Name Registration',
         'Birth / Marriage Certificate Extract',
         'Grama Niladhari Verification Fee',
-        'Timber Transport Permit',
-        'Statutory Stamp Duty Payment',
-      ],
-    },
-  ];
+      },
+    };
+
+    // Dynamically inject live services from the active database
+    for (final s in liveServices) {
+      if (s['status'] == 'Retired') continue;
+      final name = (s['name'] as String?)?.trim();
+      final cat = (s['category'] as String?)?.toLowerCase() ?? '';
+      if (name == null || name.isEmpty) continue;
+
+      if (cat.contains('travel') || cat.contains('immigra')) {
+        deptServicesMap['Department of Immigration & Emigration']?.add(name);
+      } else if (cat.contains('transport')) {
+        deptServicesMap['Department of Motor Traffic']?.add(name);
+      } else if (cat.contains('legal') || cat.contains('security') || cat.contains('police')) {
+        deptServicesMap['Police Department']?.add(name);
+      } else if (cat.contains('personal') || cat.contains('family') || cat.contains('identity') || cat.contains('civil')) {
+        deptServicesMap['Department of Registration of Persons']?.add(name);
+      } else {
+        deptServicesMap['Divisional Secretariat']?.add(name);
+      }
+    }
+
+    return [
+      {
+        'name': 'Department of Immigration & Emigration',
+        'icon': CupertinoIcons.airplane,
+        'services': deptServicesMap['Department of Immigration & Emigration']!.toList()..sort(),
+      },
+      {
+        'name': 'Department of Motor Traffic',
+        'icon': CupertinoIcons.car_detailed,
+        'services': deptServicesMap['Department of Motor Traffic']!.toList()..sort(),
+      },
+      {
+        'name': 'Police Department',
+        'icon': CupertinoIcons.shield,
+        'services': deptServicesMap['Police Department']!.toList()..sort(),
+      },
+      {
+        'name': 'Department of Registration of Persons',
+        'icon': CupertinoIcons.person_crop_rectangle,
+        'services': deptServicesMap['Department of Registration of Persons']!.toList()..sort(),
+      },
+      {
+        'name': 'Divisional Secretariat',
+        'icon': CupertinoIcons.building_2_fill,
+        'services': deptServicesMap['Divisional Secretariat']!.toList()..sort(),
+      },
+    ];
+  }
 
   static const List<int> _presetAmounts = [1500, 3500, 5000, 10000, 25000];
 
@@ -597,9 +621,13 @@ class _PaymentsDashboardTabState extends ConsumerState<PaymentsDashboardTab> {
   }
 
   Widget _buildDepartmentPaymentCard() {
-    final currentDeptObj = _departmentOptions.firstWhere(
+    final servicesAsync = ref.watch(servicesProvider);
+    final liveServices = servicesAsync.value ?? const [];
+    final departmentOptions = _getDynamicDepartmentOptions(liveServices);
+
+    final currentDeptObj = departmentOptions.firstWhere(
       (d) => d['name'] == _selectedDepartment,
-      orElse: () => _departmentOptions.first,
+      orElse: () => departmentOptions.first,
     );
     final availableServices = (currentDeptObj['services'] as List<String>);
 
@@ -682,7 +710,7 @@ class _PaymentsDashboardTabState extends ConsumerState<PaymentsDashboardTab> {
                 value: _selectedDepartment,
                 isExpanded: true,
                 icon: const Icon(CupertinoIcons.chevron_down, size: 16, color: AppColors.secondaryLabel),
-                items: _departmentOptions.map((dept) {
+                items: departmentOptions.map((dept) {
                   return DropdownMenuItem<String>(
                     value: dept['name'] as String,
                     child: Row(
@@ -704,7 +732,7 @@ class _PaymentsDashboardTabState extends ConsumerState<PaymentsDashboardTab> {
                   if (newDept != null) {
                     setState(() {
                       _selectedDepartment = newDept;
-                      final deptObj = _departmentOptions.firstWhere((d) => d['name'] == newDept);
+                      final deptObj = departmentOptions.firstWhere((d) => d['name'] == newDept);
                       _selectedService = (deptObj['services'] as List<String>).first;
                     });
                   }
