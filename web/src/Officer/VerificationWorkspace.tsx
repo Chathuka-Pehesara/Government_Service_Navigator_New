@@ -44,6 +44,7 @@ interface TaskDetail {
     citizenName?: string | null;
     citizenNic?: string | null;
     serviceName?: string | null;
+    department?: string | null;
     currentStage?: number;
     maxStages?: number;
   };
@@ -565,14 +566,24 @@ export default function VerificationWorkspace() {
                     }}
                   >
                     <Security size={16} />
-                    <span>Statutory Verification & Compliance Copilot</span>
+                    <span>Statutory Advisor</span>
                     {agentDraft?.validation && (
                       <span style={{
                         fontSize: '0.7rem',
-                        padding: '2px 6px',
+                        padding: '2px 8px',
                         borderRadius: '10px',
-                        background: agentDraft.validation.riskLevel?.toLowerCase() === 'high' ? '#ffd7d9' : '#defbe6',
-                        color: agentDraft.validation.riskLevel?.toLowerCase() === 'high' ? '#da1e28' : '#0e6027',
+                        background:
+                          agentDraft.validation.riskLevel?.toLowerCase() === 'high'
+                            ? '#ffd7d9'
+                            : agentDraft.validation.riskLevel?.toLowerCase() === 'medium'
+                            ? '#fed2aa'
+                            : '#defbe6',
+                        color:
+                          agentDraft.validation.riskLevel?.toLowerCase() === 'high'
+                            ? '#da1e28'
+                            : agentDraft.validation.riskLevel?.toLowerCase() === 'medium'
+                            ? '#bc4a04'
+                            : '#0e6027',
                         fontWeight: 700
                       }}>
                         {agentDraft.validation.riskLevel ?? 'Audited'}
@@ -645,6 +656,12 @@ export default function VerificationWorkspace() {
                       loading={agentLoading}
                       error={agentError}
                       answers={detail?.answers ?? {}}
+                      serviceName={detail?.task.serviceName ?? undefined}
+                      currentStage={detail?.task.currentStage ?? 1}
+                      maxStages={detail?.task.maxStages ?? 1}
+                      departmentName={detail?.task.department ?? 'Government Department'}
+                      citizenName={detail?.task.citizenName ?? undefined}
+                      citizenNic={detail?.task.citizenNic ?? undefined}
                       onRegenerate={regenerateAgentDraft}
                       onApplyDecisionOrder={(decType, text) => {
                         setDecision(decType);

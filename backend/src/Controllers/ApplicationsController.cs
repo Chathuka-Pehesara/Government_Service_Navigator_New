@@ -29,6 +29,15 @@ namespace Government_Service_Navigator.Backend.Controllers
         // Service Catalog category -> department; mirrors web/src/constants/departments.ts.
         private static readonly Dictionary<string, string> DepartmentByCategory = new(StringComparer.OrdinalIgnoreCase)
         {
+            // Common Thematic Categories
+            ["Personal & Family"] = "Department of Registration of Persons",
+            ["Transport & Travel"] = "Department of Motor Traffic",
+            ["Legal & Security"] = "Police Department",
+            ["Business & Trade"] = "Divisional Secretariat",
+            ["Public & Community Services"] = "Divisional Secretariat",
+            ["General"] = "Divisional Secretariat",
+
+            // Legacy mappings (for backward compatibility)
             ["Immigration"] = "Department of Immigration & Emigration",
             ["Transport"] = "Department of Motor Traffic",
             ["Police"] = "Police Department",
@@ -333,7 +342,9 @@ namespace Government_Service_Navigator.Backend.Controllers
                 FormFields = request.Answers,
                 AttachedDocumentNames = attachedDocList,
                 CalculatedFee = stageInitialFee,
-                Stage = stageOrder
+                Stage = stageOrder,
+                MaxStages = maxStages,
+                DepartmentName = finalDept
             };
 
             // Identify required document fields for this template/stage

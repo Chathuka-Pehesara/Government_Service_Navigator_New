@@ -155,7 +155,9 @@ public class ApplicationDraftingService : IApplicationDraftingService
             CalculatedFee = action.Fee?.TotalAmount ?? 0m,
             FormFields = citizenAnswers,
             AttachedDocumentNames = providedDocuments,
-            Stage = currentStage
+            Stage = currentStage,
+            MaxStages = submission.MaxStages > 0 ? submission.MaxStages : 1,
+            DepartmentName = submission.CurrentDepartment ?? service.Category ?? "Government Service"
         };
 
         var validation = await _safetyAgent.ValidateAndEnqueueAsync(draftForValidation, eligibility.RequiredDocuments, cancellationToken);

@@ -464,11 +464,11 @@ class _HomeDashboardTabState extends ConsumerState<HomeDashboardTab> {
 
   Widget _buildCategoriesHorizontalScroll(BuildContext context) {
     final categories = [
-      {'title': 'Commerce', 'icon': CupertinoIcons.briefcase_fill},
-      {'title': 'Transport', 'icon': CupertinoIcons.car_detailed},
-      {'title': 'Identity', 'icon': CupertinoIcons.person_crop_circle_fill},
-      {'title': 'Housing', 'icon': CupertinoIcons.house_fill},
-      {'title': 'Taxes', 'icon': CupertinoIcons.doc_chart_fill},
+      {'title': 'Personal & Family', 'display': 'Personal', 'icon': CupertinoIcons.person_2_fill},
+      {'title': 'Transport & Travel', 'display': 'Transport', 'icon': CupertinoIcons.car_detailed},
+      {'title': 'Legal & Security', 'display': 'Security', 'icon': CupertinoIcons.shield_fill},
+      {'title': 'Business & Trade', 'display': 'Business', 'icon': CupertinoIcons.briefcase_fill},
+      {'title': 'Public & Community Services', 'display': 'Public', 'icon': CupertinoIcons.building_2_fill},
     ];
 
     return SizedBox(
@@ -481,6 +481,7 @@ class _HomeDashboardTabState extends ConsumerState<HomeDashboardTab> {
         itemBuilder: (context, index) {
           final cat = categories[index];
           final catTitle = cat['title'] as String;
+          final displayTitle = (cat['display'] as String?) ?? catTitle;
           return GestureDetector(
             onTap: () {
               Navigator.push(
@@ -514,12 +515,14 @@ class _HomeDashboardTabState extends ConsumerState<HomeDashboardTab> {
                   ),
                   const SizedBox(height: 8),
                   Text(
-                    catTitle,
+                    displayTitle,
                     style: const TextStyle(
                       fontSize: 13,
                       fontWeight: FontWeight.w600,
                       color: AppColors.dark,
                     ),
+                    maxLines: 1,
+                    overflow: TextOverflow.ellipsis,
                   ),
                 ],
               ),

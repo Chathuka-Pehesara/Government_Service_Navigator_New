@@ -195,6 +195,11 @@ namespace Government_Service_Navigator.AgenticAi.Agents.ValidationSafety
                             foreach (var flag in aiSafetyResult.Inconsistencies)
                             {
                                 complianceChecks.Add(new ComplianceCheckItem("Semantic Consistency Audit", false, flag));
+                                rejectionReasons.Add($"INCONSISTENCY-FLAG: {flag}");
+                            }
+                            if (riskLevel.Equals("Low", StringComparison.OrdinalIgnoreCase))
+                            {
+                                riskLevel = "Medium";
                             }
                         }
                         else
@@ -229,8 +234,8 @@ namespace Government_Service_Navigator.AgenticAi.Agents.ValidationSafety
                 return ValidationResult.Rejected(
                     reasons: rejectionReasons,
                     checks: complianceChecks,
-                    summary: $"Agent 4 halted application #{draft.ApplicationId}. Found {rejectionReasons.Count} compliance violation(s).",
-                    riskLevel: "High",
+                    summary: $"Agent 4 flagged application #{draft.ApplicationId}. Found {rejectionReasons.Count} statutory compliance violation(s) or documentary inconsistency.",
+                    riskLevel: string.IsNullOrWhiteSpace(riskLevel) || riskLevel.Equals("Low", StringComparison.OrdinalIgnoreCase) ? "High" : riskLevel,
                     officerBriefing: officerBriefing,
                     toolCalls: toolCalls
                 );
@@ -275,15 +280,19 @@ namespace Government_Service_Navigator.AgenticAi.Agents.ValidationSafety
         {
             if (_llmService == null) return null;
 
-            var systemPrompt = @"You are Agent 4 (Validation & Safety Agent) for the Sri Lanka Government Service Navigator.
-Your role is to perform cognitive safety auditing, anomaly detection, semantic consistency analysis, and summarize findings for human Verifying Officers.
-Evaluate the application data. Identify any contradictions, suspicious declarations, or compliance risks.
+            var systemPrompt = @"You are the Statutory Verification & Safety Assurance Copilot for the Sri Lanka Government Service Navigator.
+Your role is to formulate a clear, professional executive briefing and risk analysis for human Verifying Officers (senior civil servants).
+Do NOT use software developer jargon or mention tool names like validate_schema. Write in dignified, plain institutional English.
+Focus on:
+1. Identifying the specific Service and whether prerequisites for THIS active Stage are satisfied.
+2. Auditing attached proofs vs mandatory requirements for this active stage.
+3. Formulating a direct, actionable officer recommendation (e.g. 'Recommended Action: APPROVE Stage 1' or 'Recommended Action: REQUEST REVISION of Birth Certificate').
 Respond strictly with a JSON object matching this schema:
 {
   ""riskLevel"": ""Low"" | ""Medium"" | ""High"" | ""Critical"",
   ""isSemanticallyConsistent"": true | false,
-  ""executiveSummary"": ""Concise 1-2 sentence safety summary."",
-  ""officerBriefing"": ""Bullet-pointed summary of verified facts, documents, and recommendations for the human Verifying Officer."",
+  ""executiveSummary"": ""Concise 1-2 sentence executive verdict for the Verifying Officer."",
+  ""officerBriefing"": ""Structured bullet points:\n• Identity & Profile: Verified details.\n• Stage Documents: Document verification status for this stage.\n• Compliance & Fraud: Anti-duplicate & integrity status.\n• Recommended Action: Clear sign-off directive."",
   ""inconsistencies"": [""list of contradictions or anomalies if any""]
 }";
 
@@ -292,6 +301,9 @@ Respond strictly with a JSON object matching this schema:
                 draft.ApplicationId,
                 draft.ServiceProcedureId,
                 draft.ServiceName,
+                draft.Stage,
+                draft.MaxStages,
+                Department = draft.DepartmentName,
                 draft.CitizenNic,
                 draft.CitizenName,
                 draft.CitizenAge,
@@ -299,11 +311,11 @@ Respond strictly with a JSON object matching this schema:
                 draft.CalculatedFee,
                 draft.FormFields,
                 draft.AttachedDocumentNames,
-                RequiredDocuments = requiredDocuments ?? new List<string>(),
+                RequiredDocumentsForStage = requiredDocuments ?? new List<string>(),
                 ExistingValidationErrors = existingErrors
             };
 
-            var userPrompt = $"Analyze this government service application payload:\n{JsonSerializer.Serialize(userPayload, new JsonSerializerOptions { WriteIndented = true })}";
+            var userPrompt = $"Analyze this government service application payload for Stage {draft.Stage} of {draft.MaxStages}:\n{JsonSerializer.Serialize(userPayload, new JsonSerializerOptions { WriteIndented = true })}";
 
             var responseJson = await _llmService.GenerateChatCompletionAsync(systemPrompt, userPrompt, jsonMode: true, cancellationToken);
             if (string.IsNullOrWhiteSpace(responseJson)) return null;
@@ -322,15 +334,22 @@ Respond strictly with a JSON object matching this schema:
         {
             var attached = draft.AttachedDocumentNames ?? new List<string>();
             var required = requiredDocuments ?? new List<string>();
+            var stageContext = draft.MaxStages > 1 ? $"Stage {draft.Stage} of {draft.MaxStages}" : "Full Service";
+            var deptContext = !string.IsNullOrWhiteSpace(draft.DepartmentName) ? $"({draft.DepartmentName})" : string.Empty;
 
             if (errors.Any())
             {
-                return $"Officer Attention: Application flagged with {errors.Count} compliance defect(s). Direct review required on: {string.Join("; ", errors)}.";
+                return $"• Review Alert: Application #{draft.ApplicationId} for '{draft.ServiceName}' flagged with {errors.Count} compliance defect(s) during {stageContext} review.\n" +
+                       $"• Unmet Requirements: {string.Join("; ", errors)}.\n" +
+                       $"• Recommended Action: Request citizen revision or reject non-compliant submission.";
             }
 
-            return $"Safety Audit Clear: Citizen {draft.CitizenName} (NIC: {draft.CitizenNic}, Age: {draft.CitizenAge}) submitted valid application for {draft.ServiceName}. " +
-                   $"All {required.Count} required document(s) verified ({string.Join(", ", attached)}). Statutory fee calculated at LKR {draft.CalculatedFee:N2}. " +
-                   "No duplicate applications or adversarial injection patterns detected. Ready for officer determination.";
+            var verifiedDocsText = attached.Any() ? string.Join(", ", attached) : "Statutory identity record";
+            return $"• Identity & Profile: Citizen {draft.CitizenName} (NIC: {draft.CitizenNic}, Age: {draft.CitizenAge}) verified with zero registry collisions.\n" +
+                   $"• Stage Proofs Evaluated: {required.Count} required document(s) verified for {stageContext} {deptContext} ({verifiedDocsText}).\n" +
+                   $"• Financial & Statutory Audit: Statutory fee reconciled at LKR {draft.CalculatedFee:N2}.\n" +
+                   $"• Anti-Fraud & Security Shield: Passed with zero adversarial tokens or duplicate submissions detected.\n" +
+                   $"• Recommended Action: All {stageContext} criteria satisfied. Recommended for officer approval.";
         }
 
         public async Task<VerificationCaseDossier> CompileCaseDossierAsync(

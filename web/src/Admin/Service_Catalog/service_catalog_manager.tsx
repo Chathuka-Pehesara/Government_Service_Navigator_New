@@ -45,7 +45,7 @@ import {
   Money,
   Calendar,
 } from "@carbon/icons-react";
-import { DEPARTMENTS, getCategoryForDepartment, getDepartmentSlug } from "../../constants/departments";
+import { SERVICE_CATEGORIES, getCategoryForDepartment, getDepartmentSlug } from "../../constants/departments";
 import { parseApiError } from "../../utils/validation";
 import { serviceError } from "./serviceCatalogValidation";
 import { API_BASE_URL } from "../../utils/api";
@@ -163,7 +163,7 @@ export default function ServiceCatalogManager() {
     setFormData({
       serviceId: generateNextServiceId(),
       name: "",
-      category: scopedCategory ?? "Commerce",
+      category: scopedCategory ?? "Personal & Family",
       status: "Draft",
       totalStages: 1,
       workflowDepartments: [defaultDept],
@@ -536,8 +536,8 @@ export default function ServiceCatalogManager() {
                 setFormData({ ...formData, category: e.target.value })
               }
             >
-              {DEPARTMENTS.map((dept) => (
-                <SelectItem key={dept.category} value={dept.category} text={dept.category} />
+              {SERVICE_CATEGORIES.map((cat) => (
+                <SelectItem key={cat} value={cat} text={cat} />
               ))}
             </Select>
             {saveError && (
