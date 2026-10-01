@@ -271,17 +271,29 @@ public class RagSetupController : ControllerBase
         foreach (var file in files)
         {
             var fileName = Path.GetFileName(file);
-            string serviceId = fileName switch
-            {
-                var f when f.Contains("passport") => "GSN-IMM-001",
-                var f when f.Contains("driving") => "GSN-DMT-002",
-                var f when f.Contains("police") => "GSN-POL-003",
-                var f when f.Contains("business") => "GSN-COM-004",
-                var f when f.Contains("death") => "GSN-CIV-005",
-                _ => string.Empty
-            };
+            var baseName = Path.GetFileNameWithoutExtension(fileName).ToLowerInvariant();
 
-            var service = await _appDb.ServiceProcedures.FirstOrDefaultAsync(s => s.ServiceId == serviceId);
+            // Match dynamically against active catalog by ServiceId or procedure Name
+            var allProcedures = await _appDb.ServiceProcedures.ToListAsync();
+            var service = allProcedures.FirstOrDefault(s =>
+                (!string.IsNullOrEmpty(s.ServiceId) && baseName.Contains(s.ServiceId.ToLowerInvariant())) ||
+                (!string.IsNullOrEmpty(s.Name) && (baseName.Contains(s.Name.ToLowerInvariant()) || s.Name.ToLowerInvariant().Contains(baseName)))
+            );
+
+            // Keyword fallback for legacy document names
+            if (service == null)
+            {
+                service = baseName switch
+                {
+                    var f when f.Contains("passport") => allProcedures.FirstOrDefault(s => s.ServiceId == "GSN-IMM-001" || s.Name.Contains("Passport")),
+                    var f when f.Contains("driving") => allProcedures.FirstOrDefault(s => s.ServiceId == "GSN-DMT-002" || s.Name.Contains("Driving")),
+                    var f when f.Contains("police") => allProcedures.FirstOrDefault(s => s.ServiceId == "GSN-POL-003" || s.Name.Contains("Police")),
+                    var f when f.Contains("business") => allProcedures.FirstOrDefault(s => s.ServiceId == "GSN-COM-004" || s.Name.Contains("Business")),
+                    var f when f.Contains("death") => allProcedures.FirstOrDefault(s => s.ServiceId == "GSN-CIV-005" || s.Name.Contains("Death")),
+                    _ => null
+                };
+            }
+
             if (service == null) continue;
 
             var content = await System.IO.File.ReadAllTextAsync(file);

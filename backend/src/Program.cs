@@ -680,6 +680,33 @@ CREATE UNIQUE INDEX IF NOT EXISTS ""IX_Departments_Name"" ON ""Departments"" (""
             Console.WriteLine("Seeded initial Departments into the database.");
         }
 
+        // Migrate legacy service categories to modern common thematic categories
+        var legacyServices = context.ServiceProcedures.ToList();
+        bool anyMigrated = false;
+        foreach (var srv in legacyServices)
+        {
+            var oldCat = (srv.Category ?? "").Trim();
+            string newCat = oldCat switch
+            {
+                "Identity" => "Transport & Travel", // GSN-IMM-001 is Passport Application & Renewal
+                "Transport" => "Transport & Travel",
+                "Police" => "Legal & Security",
+                "Commerce" => "Business & Trade",
+                "Civil" => "Personal & Family",
+                _ => string.Empty
+            };
+            if (!string.IsNullOrEmpty(newCat) && oldCat != newCat)
+            {
+                srv.Category = newCat;
+                anyMigrated = true;
+            }
+        }
+        if (anyMigrated)
+        {
+            context.SaveChanges();
+            Console.WriteLine("Migrated legacy service categories to common thematic categories.");
+        }
+
         // Remove any orphan tasks with ApplicationId == 0 that may have been created by previous test runs
         var zeroTasks = context.VerificationTasks.Where(t => t.ApplicationId == 0).ToList();
         if (zeroTasks.Any())
