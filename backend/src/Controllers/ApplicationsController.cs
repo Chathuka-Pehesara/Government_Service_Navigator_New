@@ -1023,7 +1023,8 @@ namespace Government_Service_Navigator.Backend.Controllers
             // If an uploaded document with this filename exists without ApplicationId or uploaded recently, link it
             if (!string.IsNullOrWhiteSpace(dto.DocumentAttachmentName))
             {
-                var cleanName = Path.GetFileName(dto.DocumentAttachmentName);
+                // Browsers send "C:\fakepath\name", so strip both separator styles regardless of host OS
+                var cleanName = dto.DocumentAttachmentName.Split('\\', '/')[^1];
                 var recentDoc = await _context.SubmissionDocuments
                     .Where(d => d.FileName == cleanName && (d.ApplicationId == null || d.ApplicationId == id))
                     .OrderByDescending(d => d.UploadedAt)
