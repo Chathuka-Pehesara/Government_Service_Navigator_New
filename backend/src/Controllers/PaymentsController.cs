@@ -619,37 +619,55 @@ namespace Government_Service_Navigator.Backend.Controllers
             int appId = dto.ApplicationId ?? 0;
             if (appId == 0)
             {
-                // Create a statutory department payment application submission record so it binds to the department
+                // Re-use an existing unsubmitted draft/placeholder submission if one exists for this citizen and department
                 var defaultProc = await _context.ServiceProcedures.FirstOrDefaultAsync(s => s.WorkflowDepartments != null && s.WorkflowDepartments.Contains(dto.Department))
                                   ?? await _context.ServiceProcedures.FirstOrDefaultAsync();
 
-                var submission = new ApplicationSubmission
-                {
-                    ServiceProcedureId = defaultProc?.Id ?? 1,
-                    CitizenNic = nic,
-                    UserEmail = email,
-                    CurrentDepartment = dto.Department,
-                    CurrentStage = 1,
-                    MaxStages = 1,
-                    // An online payment completes this when Stripe confirms it
-                    StageStatus = "AwaitingFeePayment",
-                    SubmittedAt = DateTime.UtcNow,
-                    FormDataJson = System.Text.Json.JsonSerializer.Serialize(new
-                    {
-                        PaymentType = "Direct Department Payment",
-                        Department = dto.Department,
-                        ServiceName = dto.ServiceName ?? "Department Statutory Fee",
-                        CitizenName = dto.CitizenName ?? "Citizen",
-                        CitizenNic = nic,
-                        Amount = dto.Amount,
-                        PaymentReference = paymentRef,
-                        Notes = dto.Notes
-                    })
-                };
+                var existingDraft = await _context.ApplicationSubmissions
+                    .OrderByDescending(s => s.Id)
+                    .FirstOrDefaultAsync(s => s.CitizenNic == nic && 
+                                              (defaultProc == null || s.ServiceProcedureId == defaultProc.Id) &&
+                                              (s.StageStatus == "AwaitingFeePayment" || s.StageStatus == "Draft"));
 
-                _context.ApplicationSubmissions.Add(submission);
-                await _context.SaveChangesAsync();
-                appId = submission.Id;
+                if (existingDraft != null)
+                {
+                    appId = existingDraft.Id;
+                    if (!string.IsNullOrEmpty(dto.Department))
+                    {
+                        existingDraft.CurrentDepartment = dto.Department;
+                    }
+                    await _context.SaveChangesAsync();
+                }
+                else
+                {
+                    var submission = new ApplicationSubmission
+                    {
+                        ServiceProcedureId = defaultProc?.Id ?? 1,
+                        CitizenNic = nic,
+                        UserEmail = email,
+                        CurrentDepartment = dto.Department,
+                        CurrentStage = 1,
+                        MaxStages = 1,
+                        // An online payment completes this when Stripe confirms it
+                        StageStatus = "AwaitingFeePayment",
+                        SubmittedAt = DateTime.UtcNow,
+                        FormDataJson = System.Text.Json.JsonSerializer.Serialize(new
+                        {
+                            PaymentType = "Direct Department Payment",
+                            Department = dto.Department,
+                            ServiceName = dto.ServiceName ?? "Department Statutory Fee",
+                            CitizenName = dto.CitizenName ?? "Citizen",
+                            CitizenNic = nic,
+                            Amount = dto.Amount,
+                            PaymentReference = paymentRef,
+                            Notes = dto.Notes
+                        })
+                    };
+
+                    _context.ApplicationSubmissions.Add(submission);
+                    await _context.SaveChangesAsync();
+                    appId = submission.Id;
+                }
             }
             else
             {

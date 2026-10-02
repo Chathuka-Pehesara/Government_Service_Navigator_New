@@ -29,15 +29,22 @@ namespace Government_Service_Navigator.AgenticAi.Tools.CheckDuplicateApplication
                     existingRef == $"APP-{currentApplicationId}" ||
                     existingRef == $"APP-2026-{currentApplicationId}");
 
-                // When currentApplicationId > 0 and repository is available, verify with database ground truth
-                if (!isSameApp && currentApplicationId > 0 && _repository != null)
+                // When repository is available, verify with database ground truth to prevent stale memory registry blocking
+                if (!isSameApp && _repository != null)
                 {
                     bool isDuplicateInDb = await _repository.HasDuplicateAsync(citizenNic, serviceProcedureId, currentApplicationId);
                     if (!isDuplicateInDb)
                     {
-                        // In DB, no OTHER application exists for this citizen/procedure; this is the same application!
+                        // In DB, no conflicting application exists for this citizen/procedure; this is safe!
                         isSameApp = true;
-                        ActiveApplicationRegistry[key] = $"APP-2026-{currentApplicationId}";
+                        if (currentApplicationId > 0)
+                        {
+                            ActiveApplicationRegistry[key] = $"APP-2026-{currentApplicationId}";
+                        }
+                        else
+                        {
+                            ActiveApplicationRegistry.TryRemove(key, out _);
+                        }
                     }
                 }
 

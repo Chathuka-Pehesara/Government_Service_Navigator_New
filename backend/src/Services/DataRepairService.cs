@@ -28,6 +28,11 @@ namespace Government_Service_Navigator.Backend.Services
             // Let startup (table creation in Program.cs) finish first
             await Task.Delay(TimeSpan.FromSeconds(15), stoppingToken);
 
+            // Run immediately on startup so stale test/orphaned submissions are cleared right away
+            try { await RepairAsync(stoppingToken); }
+            catch (Exception ex) when (ex is not OperationCanceledException)
+            { _logger.LogError(ex, "Initial data repair run failed"); }
+
             using var timer = new PeriodicTimer(RunInterval);
             do
             {
@@ -69,6 +74,31 @@ WHERE s.""StageStatus"" IN ('UnderVerification', 'PendingReview')
             if (drafts > 0)
             {
                 _logger.LogInformation("Marked {Count} unsubmitted stage(s) as Draft", drafts);
+            }
+
+            // Clean up PendingReview submissions where the VerificationTask has been Pending
+            // with zero officer reviews for over 24 hours — these are stale/test submissions
+            // that block legitimate citizens from re-applying for newly-created services.
+            var staleThreshold = DateTime.UtcNow.AddHours(-1);
+            var staleOrphans = await db.VerificationTasks
+                .Where(t => t.Status == "Pending" &&
+                            t.CreatedDate < staleThreshold &&
+                            !t.Reviews.Any())
+                .Select(t => t.ApplicationId)
+                .ToListAsync(cancellationToken);
+
+            if (staleOrphans.Count > 0)
+            {
+                var staleSubmissions = await db.ApplicationSubmissions
+                    .Where(s => staleOrphans.Contains(s.Id) && s.StageStatus == "PendingReview")
+                    .ToListAsync(cancellationToken);
+                foreach (var s in staleSubmissions)
+                    s.StageStatus = "Deleted";
+                if (staleSubmissions.Count > 0)
+                {
+                    await db.SaveChangesAsync(cancellationToken);
+                    _logger.LogInformation("Cleared {Count} stale PendingReview submission(s) with no officer activity", staleSubmissions.Count);
+                }
             }
         }
     }

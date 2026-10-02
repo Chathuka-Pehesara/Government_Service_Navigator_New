@@ -72,9 +72,11 @@ public class IntakePlanningAgent : IIntakePlanningAgent
                 "1. Ground your recommendations strictly on the provided Official Catalog Context and knowledge base retrieval.\n" +
                 "2. Understand natural variations, citizen situations, and policy circulars attached to services in the catalog context.\n" +
                 "3. IF RELEVANT POLICY CHUNKS OR CIRCULARS EXIST in the provided catalog context for the citizen's inquiry:\n" +
-                "   - Set 'recommendedService' to the official service name that contains or governs this policy (from the chunk header or the matched catalog service).\n" +
-                "   - Extract all mandatory documents specified in the policy into 'requiredDocuments' (e.g. Original Birth Certificate, Police Report, Grama Niladhari certificate, Photo slip).\n" +
+                "   - Set 'recommendedService' to the EXACT official service name specified in the chunk headers (e.g. '[ServiceName - ...]' -> use the exact ServiceName without alteration or paraphrase).\n" +
+                "   - Extract all mandatory documents specified in the policy into 'requiredDocuments' (e.g. Original Birth Certificate, ICAO Photo Studio Receipt, Grama Niladhari Certificate).\n" +
                 "   - Formulate a comprehensive 'stepByStepPlan' detailing the official statutory procedure, exact fees, office locations, and biometric protocols directly from the embedded policy.\n" +
+                "   - In the step-by-step plan, explicitly dedicate a step (e.g. Step 2) naming the exact mandatory documents (e.g., Original Birth Certificate, ICAO Photo Studio Receipt, Grama Niladhari Certificate) that the citizen must prepare.\n" +
+                "   - STRICT GROUNDING: State ONLY the fee amounts, payment methods, and exemptions explicitly mentioned in the provided policy context. Do NOT invent, assume, or fabricate additional fee tiers, tariffs, penalty amounts, or regulations (e.g. Gazette numbers) not written in the context.\n" +
                 "4. ONLY IF the provided catalog context contains NO relevant policy, circular, or rules for the citizen's request (e.g., land deeds, customs tax, unsupported inquiries):\n" +
                 "   - Set 'recommendedService' to 'Service Not Found'.\n" +
                 "   - Set 'requiredDocuments' to an empty array [].\n" +

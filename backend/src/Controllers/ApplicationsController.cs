@@ -268,19 +268,52 @@ namespace Government_Service_Navigator.Backend.Controllers
 
             var maxStages = service.TotalStages > 0 ? service.TotalStages : 1;
 
-            var submission = new ApplicationSubmission
+            ApplicationSubmission? submission = null;
+            if (request.ApplicationId.HasValue && request.ApplicationId.Value > 0)
             {
-                ServiceProcedureId = service.Id,
-                TemplateId = request.TemplateId,
-                CitizenNic = nic,
-                UserEmail = User.FindFirstValue(ClaimTypes.Email) ?? string.Empty,
-                FormDataJson = JsonSerializer.Serialize(request.Answers),
-                SubmittedAt = DateTime.UtcNow,
-                CurrentStage = stageOrder,
-                MaxStages = maxStages,
-                CurrentDepartment = finalDept,
-                StageStatus = "PendingReview"
-            };
+                submission = await _context.ApplicationSubmissions
+                    .FirstOrDefaultAsync(s => s.Id == request.ApplicationId.Value && s.CitizenNic == nic);
+            }
+
+            if (submission == null)
+            {
+                // If citizen has an unsubmitted draft, awaiting-fee placeholder, or a PendingReview record
+                // that never made it to an officer's queue (no VerificationTask), adopt it instead of blocking.
+                submission = await _context.ApplicationSubmissions
+                    .OrderByDescending(s => s.Id)
+                    .FirstOrDefaultAsync(s => s.CitizenNic == nic && 
+                                              s.ServiceProcedureId == service.Id && 
+                                              (s.StageStatus == "AwaitingFeePayment" || s.StageStatus == "Draft" ||
+                                               (s.StageStatus == "PendingReview" && !_context.VerificationTasks.Any(t => t.ApplicationId == s.Id))));
+            }
+
+            if (submission != null)
+            {
+                submission.TemplateId = request.TemplateId;
+                submission.UserEmail = User.FindFirstValue(ClaimTypes.Email) ?? submission.UserEmail;
+                submission.FormDataJson = JsonSerializer.Serialize(request.Answers);
+                submission.SubmittedAt = DateTime.UtcNow;
+                submission.CurrentStage = stageOrder;
+                submission.MaxStages = maxStages;
+                submission.CurrentDepartment = finalDept;
+                submission.StageStatus = "PendingReview";
+            }
+            else
+            {
+                submission = new ApplicationSubmission
+                {
+                    ServiceProcedureId = service.Id,
+                    TemplateId = request.TemplateId,
+                    CitizenNic = nic,
+                    UserEmail = User.FindFirstValue(ClaimTypes.Email) ?? string.Empty,
+                    FormDataJson = JsonSerializer.Serialize(request.Answers),
+                    SubmittedAt = DateTime.UtcNow,
+                    CurrentStage = stageOrder,
+                    MaxStages = maxStages,
+                    CurrentDepartment = finalDept,
+                    StageStatus = "PendingReview"
+                };
+            }
 
             // 1. Build Draft Application for Agent 4
             var derivedAge = ApplicationDraftingService.AgeFromNic(nic, DateTime.UtcNow);
@@ -333,7 +366,7 @@ namespace Government_Service_Navigator.Backend.Controllers
 
             var draft = new DraftApplication
             {
-                ApplicationId = 0, // will be set upon save
+                ApplicationId = submission.Id, // Set to existing ID if adopting, or 0 if brand new
                 ServiceProcedureId = service.Id,
                 ServiceName = service.Name,
                 CitizenNic = nic,
@@ -372,8 +405,38 @@ namespace Government_Service_Navigator.Backend.Controllers
                 });
             }
 
-            _context.ApplicationSubmissions.Add(submission);
+            if (submission.Id == 0)
+            {
+                _context.ApplicationSubmissions.Add(submission);
+            }
             await _context.SaveChangesAsync();
+
+            // Clean up any remaining older placeholder drafts or orphaned PendingReview records
+            // (PendingReview with no VerificationTask = stuck from a previous failed submission attempt)
+            var orphanedPendingIds = await _context.ApplicationSubmissions
+                .Where(s => s.CitizenNic == nic &&
+                            s.ServiceProcedureId == service.Id &&
+                            s.Id != submission.Id &&
+                            s.StageStatus == "PendingReview" &&
+                            !_context.VerificationTasks.Any(t => t.ApplicationId == s.Id))
+                .Select(s => s.Id)
+                .ToListAsync();
+
+            var olderDrafts = await _context.ApplicationSubmissions
+                .Where(s => s.CitizenNic == nic && 
+                            s.ServiceProcedureId == service.Id && 
+                            s.Id != submission.Id && 
+                            (s.StageStatus == "AwaitingFeePayment" || s.StageStatus == "Draft" ||
+                             orphanedPendingIds.Contains(s.Id)))
+                .ToListAsync();
+            foreach (var od in olderDrafts)
+            {
+                od.StageStatus = "Deleted";
+            }
+            if (olderDrafts.Count > 0)
+            {
+                await _context.SaveChangesAsync();
+            }
 
             _duplicateTool.RegisterApplication(nic, service.Id, $"APP-2026-{submission.Id}");
 
@@ -447,9 +510,10 @@ namespace Government_Service_Navigator.Backend.Controllers
                                         ?? (!isOnline ? documents.Values.LastOrDefault() : null);
 
                                     var existingPayment = await _context.Payments
-                                        .FirstOrDefaultAsync(p => p.ApplicationId == submission.Id && (p.StripePaymentIntentId == cleanRef || p.StripePaymentIntentId == refVal));
+                                        .FirstOrDefaultAsync(p => (p.ApplicationId == submission.Id || p.StripePaymentIntentId == cleanRef || p.StripePaymentIntentId == refVal) && (p.StripePaymentIntentId == cleanRef || p.StripePaymentIntentId == refVal));
                                     if (existingPayment != null)
                                     {
+                                        existingPayment.ApplicationId = submission.Id;
                                         if (fallbackSlipDoc != null && (string.IsNullOrEmpty(existingPayment.ManualSlipUrl) || existingPayment.ManualSlipUrl.StartsWith("ref-") || existingPayment.ManualSlipUrl.StartsWith("slip-")))
                                         {
                                             existingPayment.ManualSlipUrl = $"/api/verification/documents/{fallbackSlipDoc.Id}/content";

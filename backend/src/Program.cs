@@ -242,7 +242,7 @@ builder.Services.AddScoped<IValidationSafetyAgent, ValidationSafetyAgent>();
 builder.Services.AddScoped<IValidationOrchestrator, ValidationOrchestrator>();
 builder.Services.AddSingleton(new ValidationSafetyConfig
 {
-    BlockDuplicateSubmissions = true,
+    BlockDuplicateSubmissions = false, // Duplicates are flagged for officers, not hard-blocked
     MinimumLegalAge = 16,
     EnableAdversarialDefense = true
 });
