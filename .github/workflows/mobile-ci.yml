@@ -52,9 +52,9 @@ jobs:
     - name: Analyze
       if: steps.filter.outputs.changed == 'true'
       run: flutter analyze
-    # Note: Uncomment below if you have tests
-    # - name: Run tests
-    #   run: flutter test
+    - name: Run tests
+      if: steps.filter.outputs.changed == 'true'
+      run: flutter test
     - name: Skipped (no mobile changes)
       if: steps.filter.outputs.changed != 'true'
       run: echo "No changes under mobile/ — skipping build."

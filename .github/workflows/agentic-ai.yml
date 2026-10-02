@@ -35,7 +35,7 @@ jobs:
           fi
           if [ -z "$BASE" ] || [ "$BASE" = "0000000000000000000000000000000000000000" ]; then
             echo "changed=true" >> "$GITHUB_OUTPUT"
-          elif git diff --name-only "$BASE" "$HEAD" | grep -qE '^(agentic-ai/|\.github/workflows/agentic-ai\.yml$)'; then
+          elif git diff --name-only "$BASE" "$HEAD" | grep -qE '^(agentic-ai/|test/AgenticAi\.Tests/|\.github/workflows/agentic-ai\.yml$)'; then
             echo "changed=true" >> "$GITHUB_OUTPUT"
           else
             echo "changed=false" >> "$GITHUB_OUTPUT"
@@ -81,14 +81,17 @@ jobs:
           fi
           echo "Agentic AI scaffold structure OK."
 
-      # TODO: once the agent framework/language is chosen (ADR — project plan
-      # §5.2, decision 3), replace the step above with real install/lint/test
-      # steps, e.g.:
-      #   - Setup runtime (dotnet/node/python) matching the ADR decision
-      #   - Install dependencies
-      #   - Lint
-      #   - Run unit tests (agentic-ai/tests/unit)
-      #   - Run golden-case evaluation (agentic-ai/tests/golden-cases)
+      - name: Setup .NET 10
+        if: steps.filter.outputs.changed == 'true'
+        uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: '10.0.x'
+
+      # Agents, tools and golden cases, with fakes for the database, vector store and LLM
+      - name: Run agent tests
+        if: steps.filter.outputs.changed == 'true'
+        working-directory: .
+        run: dotnet test test/AgenticAi.Tests/AgenticAi.Tests.csproj --configuration Release
 
       - name: Skipped (no agentic-ai changes)
         if: steps.filter.outputs.changed != 'true'

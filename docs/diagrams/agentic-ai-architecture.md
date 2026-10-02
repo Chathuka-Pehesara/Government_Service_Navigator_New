@@ -307,12 +307,9 @@ Chunks are text snapshots. After catalog, template or embedding changes, re-run 
 
 ## Evaluation
 
-The xUnit suites in `agentic-ai/tests/` use fakes for the repositories and the vector retriever, and a stub `ILlmService`, so they never call Groq:
-- `IntakeAndEligibilityAgentTests` - 7 tests
-- `ActionToolAgentTests` - 8 tests
-- `ValidationSafetyAgentTests` - 9 tests, including one that checks the LLM risk level and briefing are used
+The xUnit project `test/AgenticAi.Tests` uses fakes for the repositories and the vector retriever, and a stub `ILlmService`, so it never calls Groq. It covers every deterministic tool, the text utilities, the four agents and the golden cases, and Agent 4's LLM paths: the consistency-flag filter, duplicates as a flag rather than a block, PII masking and the fallback briefing. See `test/README.md`.
 
-`GET /api/ValidationAgent/evaluation/golden-cases` runs four scenarios against the live Agent 4: a valid application, a malformed NIC, a missing required document and a prompt injection. `tests/golden-cases/` still holds only a README. The `agentic-ai.yml` workflow runs the build and a scaffold-structure check on changes under `agentic-ai/`.
+`GET /api/ValidationAgent/evaluation/golden-cases` runs four scenarios against the live Agent 4: a valid application, a malformed NIC, a missing required document and a prompt injection. The same four scenarios run as tests in `ValidationSafetyAgentTests`. The `agentic-ai.yml` workflow runs a scaffold-structure check and the test project on changes under `agentic-ai/` or `test/AgenticAi.Tests/`.
 
 ## Known gaps
 
@@ -320,7 +317,7 @@ The xUnit suites in `agentic-ai/tests/` use fakes for the repositories and the v
 - **Bookings are confirmed without an officer**, don't check declared holidays, and return a fixed placeholder contact and address for every department.
 - **The LLM can now block a submission.** Agent 4's consistency flags used to be advisory. Any flag the code filter doesn't recognise is now a rejection reason, so a model mistake returns `400` to the citizen. The filter is a list of keywords (`department`, `payment`, `slip`, `extra`, `ambiguous` and so on), so it also drops a genuine flag that happens to use one of them.
 - **Duplicate detection only flags.** With `BlockDuplicateSubmissions = false`, a citizen can submit the same service twice; the officer sees the duplicate check fail in the compliance list. The in-memory registry is now checked against the database on every call, so a finished application no longer blocks a new one until a restart.
-- **The LLM's eligibility verdict isn't checked against the rule tool.** The prompt says a missing mandatory document means not eligible, but code doesn't enforce agreement (ADR-0015).
+- **Agent 2's eligibility verdict is only checked one way.** After the LLM answers, code forces "not eligible" when a mandatory document is still missing, a criterion is missing or the rule tool failed. It never turns the model's "not eligible" into "eligible".
 - **Citizen data is sent to Groq** when the key is set: names, NICs, ages, income, form answers and document file names.
 - **Agent 1's no-LLM fallback lists five hardcoded services** (the ones with knowledge documents). The LLM prompt no longer lists them.
 - **Agent 1's catalog matching is loose.** `IntakeAgentController` accepts a catalog service when either name contains the other, so a short service name can capture an unrelated recommendation.

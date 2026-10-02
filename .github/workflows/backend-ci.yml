@@ -32,7 +32,7 @@ jobs:
           fi
           if [ -z "$BASE" ] || [ "$BASE" = "0000000000000000000000000000000000000000" ]; then
             echo "changed=true" >> "$GITHUB_OUTPUT"
-          elif git diff --name-only "$BASE" "$HEAD" | grep -qE '^(backend/|\.github/workflows/backend-ci\.yml$)'; then
+          elif git diff --name-only "$BASE" "$HEAD" | grep -qE '^(backend/|agentic-ai/|test/Backend\.Tests/|\.github/workflows/backend-ci\.yml$)'; then
             echo "changed=true" >> "$GITHUB_OUTPUT"
           else
             echo "changed=false" >> "$GITHUB_OUTPUT"
@@ -68,6 +68,10 @@ jobs:
       - name: Build project
         if: steps.filter.outputs.changed == 'true'
         run: dotnet build backend/src/Government_Service_Navigator.Backend.csproj --no-restore --configuration Release
+
+      - name: Run backend tests
+        if: steps.filter.outputs.changed == 'true'
+        run: dotnet test test/Backend.Tests/Backend.Tests.csproj --configuration Release
 
       - name: Skipped (no backend changes)
         if: steps.filter.outputs.changed != 'true'

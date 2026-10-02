@@ -35,7 +35,7 @@ jobs:
           fi
           if [ -z "$BASE" ] || [ "$BASE" = "0000000000000000000000000000000000000000" ]; then
             echo "changed=true" >> "$GITHUB_OUTPUT"
-          elif git diff --name-only "$BASE" "$HEAD" | grep -qE '^(web/|\.github/workflows/web-ci\.yml$)'; then
+          elif git diff --name-only "$BASE" "$HEAD" | grep -qE '^(web/|test/web/|\.github/workflows/web-ci\.yml$)'; then
             echo "changed=true" >> "$GITHUB_OUTPUT"
           else
             echo "changed=false" >> "$GITHUB_OUTPUT"
@@ -60,6 +60,10 @@ jobs:
       - name: Type check
         if: steps.filter.outputs.changed == 'true'
         run: npx tsc --noEmit
+
+      - name: Unit tests
+        if: steps.filter.outputs.changed == 'true'
+        run: npm test
 
       - name: Build
         if: steps.filter.outputs.changed == 'true'

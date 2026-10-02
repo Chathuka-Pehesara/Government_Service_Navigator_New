@@ -31,7 +31,7 @@ Option 3.
 
 ## Consequences
 
-- No API keys, no per-request cost, no network dependency, and identical output for identical input. That makes the xUnit tests in `agentic-ai/tests/` and the golden cases reproducible.
+- No API keys, no per-request cost, no network dependency, and identical output for identical input. That makes the xUnit tests (now in `test/AgenticAi.Tests`) and the golden cases reproducible.
 - **"Semantic" search is really keyword overlap.** Synonyms and paraphrases that share no tokens with a catalog chunk ("travel document" vs "passport") won't match. The keyword gate in Agent 1 makes misses explicit, but they are misses.
 - The prompt-injection defence is a fixed keyword list. It catches the evaluation's test strings, not a determined attacker. And there's no LLM downstream for an injection to affect anyway.
 - Agent 4's duplicate check also uses a static in-memory registry that's never cleared. Within one API process, a citizen can't apply for the same service a second time, even after the first application completes.

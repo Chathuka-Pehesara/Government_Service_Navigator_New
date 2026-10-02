@@ -182,7 +182,8 @@ namespace Government_Service_Navigator.AgenticAi.Tests
                 ServiceId: 1,
                 Profile: new CitizenProfile { Age = 28, CitizenshipStatus = "Citizen", ProvidedDocuments = new() { "nic_scan.pdf", "old_passport.pdf" } }));
 
-            Assert.True(result.IsEligible);
+            // The LLM said eligible, but a mandatory document is still missing, so the code guardrail overrides it
+            Assert.False(result.IsEligible);
             Assert.Equal(85, result.MatchPercentage);
             Assert.Empty(result.MissingCriteria);
             Assert.Contains("Birth Certificate", result.MissingDocuments);

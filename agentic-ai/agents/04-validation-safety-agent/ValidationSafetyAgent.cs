@@ -272,12 +272,18 @@ namespace Government_Service_Navigator.AgenticAi.Agents.ValidationSafety
                 officerBriefing = GenerateDeterministicBriefing(draft, requiredDocuments, rejectionReasons);
             }
 
+            // The LLM gave no usable briefing (no answer, unparseable JSON or an empty field): use the deterministic one
+            if (string.IsNullOrWhiteSpace(officerBriefing))
+            {
+                officerBriefing = GenerateDeterministicBriefing(draft, requiredDocuments, rejectionReasons);
+            }
+
             // =========================================================================
             // 6. Safe Failure Gate: If any deterministic or critical checks failed, HALT!
             // =========================================================================
             if (rejectionReasons.Any())
             {
-                return ValidationResult.Rejected(
+                var rejected = ValidationResult.Rejected(
                     reasons: rejectionReasons,
                     checks: complianceChecks,
                     summary: $"Agent 4 flagged application #{draft.ApplicationId}. Found {rejectionReasons.Count} statutory compliance violation(s) or documentary inconsistency.",
@@ -285,6 +291,8 @@ namespace Government_Service_Navigator.AgenticAi.Agents.ValidationSafety
                     officerBriefing: officerBriefing,
                     toolCalls: toolCalls
                 );
+                rejected.SanitizedFormFields = sanitizedFields;
+                return rejected;
             }
 
             // =========================================================================
@@ -308,7 +316,7 @@ namespace Government_Service_Navigator.AgenticAi.Agents.ValidationSafety
             int regAppId = draft.ApplicationId > 0 ? draft.ApplicationId : taskId;
             _duplicateTool.RegisterApplication(draft.CitizenNic, draft.ServiceProcedureId, $"APP-2026-{regAppId}");
 
-            return ValidationResult.Success(
+            var success = ValidationResult.Success(
                 verificationTaskId: taskId,
                 checks: complianceChecks,
                 summary: $"Application #{draft.ApplicationId} cleared all safety, schema, anti-fraud, and compliance audits. Enqueued as Verification Task #{taskId}.",
@@ -316,6 +324,8 @@ namespace Government_Service_Navigator.AgenticAi.Agents.ValidationSafety
                 officerBriefing: officerBriefing,
                 toolCalls: toolCalls
             );
+            success.SanitizedFormFields = sanitizedFields;
+            return success;
         }
 
         private async Task<AiSafetyResponse?> EvaluateCognitiveSafetyAsync(

@@ -31,4 +31,5 @@ Documentation for Government Service Navigator v3.0.0, as built. The citizen mob
 
 - Update a document whenever you change what it describes. Don't add dates to the docs; git history records when things changed.
 - New decisions go in `adr/` as the next numbered ADR, and in `adr/README.md`.
+- Automated tests are in `test/` (and `mobile/test/` for the app); `test/README.md` explains how to run them. Some tests pin known gaps described in these docs, so update both together.
 - Validation rules live in three places (`backend/src/Validation`, `mobile/lib/utils/validators.dart`, `web/src/utils/validation.ts`) and are summarised in `api.md`. Change all of them together.

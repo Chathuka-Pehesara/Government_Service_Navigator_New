@@ -1,8 +1,5 @@
 # Tests
 
-- `golden-cases/` — golden-case scenarios for agent evaluation (rule-based
-  assertions + schema validation, prompt-injection resistance, failure
-  recovery — see project plan §5.4, Agentic AI evaluation report).
-- `unit/` — unit tests per agent and tool.
+The agent and tool tests are in `test/AgenticAi.Tests` at the repository root, as a separate xUnit project, so the test framework isn't shipped inside the API. See `test/README.md` for how to run them.
 
-Not implemented yet.
+- `golden-cases/` - notes on the golden-case scenarios. The cases themselves run as tests (`ValidationSafetyAgentTests`) and live against the API through `GET /api/ValidationAgent/evaluation/golden-cases`.
