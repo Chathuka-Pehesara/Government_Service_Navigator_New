@@ -795,10 +795,7 @@ class _ApplicationsTabState extends ConsumerState<ApplicationsTab> {
               ),
             ],
             if (app.status.toLowerCase() == 'rejected' ||
-                (app.verificationTask?.status.toLowerCase() == 'rejected') ||
-                app.status.toLowerCase() == 'revision requested' ||
-                app.status.toLowerCase() == 'revised' ||
-                app.stageStatus.toLowerCase() == 'actionrequired') ...[
+                (app.verificationTask?.status.toLowerCase() == 'rejected')) ...[
               const SizedBox(height: 10),
               Container(
                 padding: const EdgeInsets.all(12),
@@ -816,7 +813,7 @@ class _ApplicationsTabState extends ConsumerState<ApplicationsTab> {
                         SizedBox(width: 6),
                         Expanded(
                           child: Text(
-                            'Review Unsuccessful / Needs Attention',
+                            'Review Unsuccessful / Application Rejected',
                             style: TextStyle(
                               fontSize: 12.5,
                               fontWeight: FontWeight.bold,
@@ -828,7 +825,7 @@ class _ApplicationsTabState extends ConsumerState<ApplicationsTab> {
                     ),
                     const SizedBox(height: 4),
                     const Text(
-                      'Your application review has issues or was not approved. You can submit an official concern or request customer support assistance.',
+                      'Your application review was not approved. You can submit an official concern or request customer support assistance.',
                       style: TextStyle(fontSize: 11.5, color: AppColors.dark, height: 1.3),
                     ),
                     const SizedBox(height: 10),
@@ -846,6 +843,75 @@ class _ApplicationsTabState extends ConsumerState<ApplicationsTab> {
                             SizedBox(width: 6),
                             Text(
                               'Raise Concern / Customer Support',
+                              style: TextStyle(fontSize: 12, fontWeight: FontWeight.bold, color: Colors.white),
+                            ),
+                          ],
+                        ),
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+            ] else if (app.status.toLowerCase() == 'revision requested' ||
+                       app.status.toLowerCase() == 'revised' ||
+                       app.stageStatus.toLowerCase() == 'actionrequired') ...[
+              const SizedBox(height: 10),
+              Container(
+                padding: const EdgeInsets.all(12),
+                decoration: BoxDecoration(
+                  color: AppColors.warning.withValues(alpha: 0.1),
+                  borderRadius: BorderRadius.circular(12),
+                  border: Border.all(color: AppColors.warning.withValues(alpha: 0.35), width: 0.8),
+                ),
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    const Row(
+                      children: [
+                        Icon(CupertinoIcons.arrow_counterclockwise_circle_fill, size: 16, color: AppColors.warning),
+                        SizedBox(width: 6),
+                        Expanded(
+                          child: Text(
+                            'Officer Revisions Requested',
+                            style: TextStyle(
+                              fontSize: 12.5,
+                              fontWeight: FontWeight.bold,
+                              color: AppColors.warning,
+                            ),
+                          ),
+                        ),
+                      ],
+                    ),
+                    const SizedBox(height: 4),
+                    const Text(
+                      'The verifying officer reviewed your submission and requested additional clarification or corrected documentation. Please resolve remarks to resume processing.',
+                      style: TextStyle(fontSize: 11.5, color: AppColors.dark, height: 1.3),
+                    ),
+                    const SizedBox(height: 10),
+                    SizedBox(
+                      width: double.infinity,
+                      child: CupertinoButton(
+                        padding: const EdgeInsets.symmetric(vertical: 8, horizontal: 12),
+                        color: AppColors.primary,
+                        borderRadius: BorderRadius.circular(10),
+                        onPressed: () async {
+                          final result = await Navigator.push<ApplicationItemModel>(
+                            context,
+                            CupertinoPageRoute(
+                              builder: (context) => VerificationDetailScreen(application: app),
+                            ),
+                          );
+                          if (result != null) {
+                            _loadApplications();
+                          }
+                        },
+                        child: const Row(
+                          mainAxisAlignment: MainAxisAlignment.center,
+                          children: [
+                            Icon(CupertinoIcons.doc_text_fill, size: 15, color: Colors.white),
+                            SizedBox(width: 6),
+                            Text(
+                              'Resolve & Re-Submit Documents',
                               style: TextStyle(fontSize: 12, fontWeight: FontWeight.bold, color: Colors.white),
                             ),
                           ],

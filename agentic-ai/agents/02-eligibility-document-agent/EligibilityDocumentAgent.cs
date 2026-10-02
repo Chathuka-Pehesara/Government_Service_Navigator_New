@@ -125,16 +125,17 @@ public class EligibilityDocumentAgent : IEligibilityDocumentAgent
                 "1. Ground your evaluation on the provided Official Statutory Policy Context and deterministic tool baselines.\n" +
                 "2. Evaluate age, citizenship, and any specific legal prerequisites from the regulations.\n" +
                 "3. Analyze provided documents with semantic intelligence:\n" +
-                "   - Match uploaded filenames/labels to required documents. If an upload has a descriptive name or label (e.g. 'nic_front.jpg', 'National Identity Card: image.jpg', 'birth_certificate.pdf'), match it to the corresponding statutory requirement.\n" +
-                "   - If an uploaded file is generic or unlabelled (e.g. 'WhatsApp Image...', 'IMG_001.jpg', 'photo.png'), EXPLICITLY identify it by name in 'reasoning': explain that the AI Agent cannot determine which document requirement this generic file represents, and instruct the citizen to re-upload it with a descriptive filename (e.g. 'nic_front.jpg') or tag it with the document type.\n" +
+                "   - Different services require diverse statutory proofs (e.g. Title Deeds, Surveyor Plans, Business Registration Form 1, Tax Clearance, Medical Certificates, Salary/Income Slips, Police Clearance Reports, Grama Niladhari Certificates, Identity Documents, Passports, etc.). Never assume all services require only an NIC or Birth Certificate. Audit strictly against the required documents specified for this service and stage.\n" +
+                "   - SEMANTIC RELEVANCE & INTEGRITY CHECK: Do NOT blindly accept an upload merely because the form slot or prefix mentions the required document name. Scrutinize the underlying filename. If the filename indicates an unrelated asset, technical diagram, packaging label, screenshot, code file, meme, or unrelated graphic (e.g., 'decoder_transformer...', 'diagram...', 'snack...', 'packaging...', 'label_design...', 'screenshot...', 'code...'), you MUST flag it as UNVERIFIED / SUSPICIOUS. In 'reasoning', explicitly note that although submitted into the slot, the filename indicates it is not a genuine copy of the requested document and requires officer visual audit or citizen re-upload.\n" +
+                "   - If an uploaded file is generic, ambiguous, or unlabelled (e.g. 'WhatsApp Image...', 'IMG_001.jpg', 'photo.png'), identify it by name in 'reasoning' and note that it cannot be confirmed as the required statutory document without visual officer inspection.\n" +
                 "4. STRICT DETERMINATION OF ELIGIBILITY ('isEligible'):\n" +
-                "   - 'isEligible' MUST be TRUE ONLY IF: the applicant satisfies all statutory criteria (age, citizenship, etc.) AND has provided all mandatory required documents.\n" +
-                "   - If ANY mandatory document is missing or unverified, 'isEligible' MUST be FALSE.\n" +
+                "   - 'isEligible' MUST be TRUE ONLY IF: the applicant satisfies all statutory criteria AND all mandatory required documents for this stage are provided with authentic, semantically consistent files.\n" +
+                "   - If ANY mandatory document is missing, unlabelled, or suspicious/unrelated, 'isEligible' MUST be FALSE.\n" +
                 "5. Compute 'matchPercentage' (0 to 100):\n" +
-                "   - 100% only when all criteria and all mandatory documents are fully satisfied.\n" +
-                "   - If mandatory documents are missing or unlabelled, deduct points proportionally (e.g., if 0 of 2 required documents are verified, match percentage must be 40% or lower).\n" +
+                "   - 100% ONLY when all criteria and all mandatory documents are fully and legitimately satisfied.\n" +
+                "   - If mandatory documents are suspicious, unlabelled, or missing, deduct points significantly (e.g., match percentage must be 50% or lower).\n" +
                 "6. In 'reasoning':\n" +
-                "   - Transparently explain the decision as a cognitive government service agent. Mention each uploaded file by name, stating whether it was recognized or unlabelled, and give actionable instructions for missing documents.\n" +
+                "   - Transparently explain the decision as an objective government advisory agent. Mention each required document and each uploaded file by name, noting whether it matches semantically or appears suspicious.\n" +
                 "7. Output ONLY a valid JSON object matching this schema:\n" +
                 "{\n" +
                 "  \"isEligible\": boolean,\n" +

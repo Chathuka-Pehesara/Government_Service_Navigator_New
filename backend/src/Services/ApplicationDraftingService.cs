@@ -87,10 +87,8 @@ public class ApplicationDraftingService : IApplicationDraftingService
             .ToListAsync(cancellationToken);
 
         var providedDocuments = dbDocs
-            .Select(d => $"{(!string.IsNullOrWhiteSpace(d.FieldLabel) ? d.FieldLabel : "Document")}: {d.FileName}")
-            .Concat(dbDocs.Select(d => d.FileName))
-            .Concat(dbDocs.Where(d => !string.IsNullOrWhiteSpace(d.FieldLabel)).Select(d => d.FieldLabel!))
-            .Distinct()
+            .Select(d => !string.IsNullOrWhiteSpace(d.FieldLabel) ? $"{d.FieldLabel}: {d.FileName}" : d.FileName)
+            .Distinct(StringComparer.OrdinalIgnoreCase)
             .ToList();
 
         // Applications submitted before uploads existed: answers to the template's "file" fields
@@ -115,20 +113,44 @@ public class ApplicationDraftingService : IApplicationDraftingService
         var age = derivedAge ?? (int.TryParse(FindAnswer(citizenAnswers, "age"), out var a) ? a : 0);
         decimal.TryParse(FindAnswer(citizenAnswers, "income", "salary"), NumberStyles.Any, CultureInfo.InvariantCulture, out var income);
 
+        var service = submission.ServiceProcedure;
+        var currentStage = submission.CurrentStage > 0 ? submission.CurrentStage : 1;
+
+        // If multi-stage, identify the document fields configured for the active stage
+        var currentStageTemplate = await _context.Templates
+            .Include(t => t.Fields)
+            .FirstOrDefaultAsync(tmpl => tmpl.ServiceProcedureId == service.Id && tmpl.StageOrder == currentStage, cancellationToken);
+
+        var currentStageFieldLabels = currentStageTemplate?.Fields
+            .Where(f => f.Type == "file" || f.Type == "document" || f.Type == "documentUpload")
+            .Select(f => f.Label.Trim().TrimEnd(':').Trim())
+            .ToHashSet(StringComparer.OrdinalIgnoreCase);
+
+        var stageProvidedDocuments = (currentStageFieldLabels != null && currentStageFieldLabels.Count > 0)
+            ? dbDocs
+                .Where(d => !string.IsNullOrWhiteSpace(d.FieldLabel) && currentStageFieldLabels.Contains(d.FieldLabel.Trim().TrimEnd(':').Trim()))
+                .Select(d => $"{d.FieldLabel}: {d.FileName}")
+                .Distinct(StringComparer.OrdinalIgnoreCase)
+                .ToList()
+            : providedDocuments;
+
+        // Fallback for single-stage or legacy submissions
+        if (stageProvidedDocuments.Count == 0 && providedDocuments.Count > 0 && currentStage <= 1)
+        {
+            stageProvidedDocuments = providedDocuments;
+        }
+
         var profile = new CitizenProfile
         {
             Age = age,
             CitizenshipStatus = FindAnswer(citizenAnswers, "citizenship", "nationality") ?? "Sri Lankan",
             AnnualIncome = income,
             EmploymentStatus = FindAnswer(citizenAnswers, "employment", "occupation") ?? string.Empty,
-            ProvidedDocuments = providedDocuments,
+            ProvidedDocuments = stageProvidedDocuments.Count > 0 ? stageProvidedDocuments : providedDocuments,
             AdditionalAttributes = citizenAnswers
         };
 
-        var service = submission.ServiceProcedure;
-
         // Agent 2 → Agent 3 with CurrentStage context
-        var currentStage = submission.CurrentStage > 0 ? submission.CurrentStage : 1;
         var eligibility = await _eligibilityAgent.EvaluateEligibilityAsync(
             new EligibilityPlanRequest(service.Name, service.Id, profile, Stage: currentStage), cancellationToken);
 
@@ -170,13 +192,19 @@ public class ApplicationDraftingService : IApplicationDraftingService
             CitizenIncome = profile.AnnualIncome,
             CalculatedFee = effectiveFee,
             FormFields = citizenAnswers,
-            AttachedDocumentNames = providedDocuments,
+            AttachedDocumentNames = stageProvidedDocuments.Count > 0 ? stageProvidedDocuments : providedDocuments,
             Stage = currentStage,
             MaxStages = submission.MaxStages > 0 ? submission.MaxStages : 1,
-            DepartmentName = submission.CurrentDepartment ?? service.Category ?? "Government Service"
         };
+        var effectiveMaxStages = Math.Max(
+            Math.Max(submission.MaxStages, service.TotalStages),
+            currentStage
+        );
+        draftForValidation.Stage = currentStage;
+        draftForValidation.MaxStages = effectiveMaxStages;
+        draftForValidation.DepartmentName = submission.CurrentDepartment ?? service.Category ?? "Government Service";
         draftForValidation.CalculatedFee = effectiveFee;
-        draftForValidation.AttachedDocumentNames = providedDocuments;
+        draftForValidation.AttachedDocumentNames = stageProvidedDocuments.Count > 0 ? stageProvidedDocuments : providedDocuments;
 
         var validation = await _safetyAgent.ValidateAndEnqueueAsync(draftForValidation, eligibility.RequiredDocuments, cancellationToken);
 

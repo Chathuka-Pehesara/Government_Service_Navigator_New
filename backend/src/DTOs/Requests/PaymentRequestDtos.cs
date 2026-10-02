@@ -124,4 +124,15 @@ namespace Government_Service_Navigator.Backend.DTOs.Requests
         [SriLankaPhone]
         public string? ContactPhone { get; set; }
     }
+
+    public class SubmitRevisionDto
+    {
+        [Required(ErrorMessage = "Revision note is required.")]
+        [StringLength(2000, MinimumLength = 5, ErrorMessage = "Revision note must be 5-2000 characters.")]
+        [PlainText]
+        public string Notes { get; set; } = string.Empty;
+
+        [MaxLength(255)]
+        public string? DocumentAttachmentName { get; set; }
+    }
 }

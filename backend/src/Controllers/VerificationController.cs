@@ -213,18 +213,22 @@ namespace Government_Service_Navigator.Backend.Controllers
                 .FirstOrDefaultAsync();
 
             // Load active template for the current stage to inspect required file & payment fields
-            string[] paymentKeywords = ["slip", "deposit", "payment", "fee", "bank", "receipt", "transfer", "standard"];
+            string[] paymentKeywords = ["slip", "deposit", "payment", "receipt", "transfer", "bank slip", "bank deposit"];
             HashSet<string> stageFileLabels = new(StringComparer.OrdinalIgnoreCase);
             HashSet<string> stagePaymentLabels = new(StringComparer.OrdinalIgnoreCase);
             decimal stageFeeAmount = 0m;
             bool stageHasPaymentField = false;
+
+            int activeReviewStage = submission?.CurrentStage > 0
+                ? submission.CurrentStage
+                : (task.CurrentStage > 0 ? task.CurrentStage : (task.StageNumber > 0 ? task.StageNumber : 1));
 
             if (submission != null)
             {
                 var stageTemplate = await _context.Templates
                     .Include(t => t.Fields)
                     .Where(t => t.ServiceProcedureId == submission.ServiceProcedureId
-                                && t.StageOrder == task.StageNumber
+                                && t.StageOrder == activeReviewStage
                                 && t.Status == "Active")
                     .OrderByDescending(t => t.CreatedAt)
                     .FirstOrDefaultAsync();
@@ -269,7 +273,7 @@ namespace Government_Service_Navigator.Backend.Controllers
                 // or contains payment keywords in label or filename.
                 bool isPaymentSlip = (payment != null && !string.IsNullOrEmpty(payment.ManualSlipUrl) && payment.ManualSlipUrl.Contains(d.Id.ToString(), StringComparison.OrdinalIgnoreCase))
                     || stagePaymentLabels.Contains(label)
-                    || paymentKeywords.Any(k => label.Contains(k, StringComparison.OrdinalIgnoreCase) || d.FileName.Contains(k, StringComparison.OrdinalIgnoreCase));
+                    || paymentKeywords.Any(k => (!string.IsNullOrEmpty(label) && label.Contains(k, StringComparison.OrdinalIgnoreCase)) || d.FileName.Contains(k, StringComparison.OrdinalIgnoreCase));
 
                 if (isPaymentSlip)
                 {
@@ -278,11 +282,11 @@ namespace Government_Service_Navigator.Backend.Controllers
                 // 2. Stage document check:
                 // If single-stage application, all non-payment documents belong to this stage.
                 // If no file template fields defined, treat as stage-relevant.
-                // Or if the label matches (or fuzzy matches) a file field for this stage.
+                // Or if the label matches (or fuzzy matches) a file field for this active stage.
                 else if ((submission?.MaxStages <= 1)
                     || stageFileLabels.Count == 0
-                    || stageFileLabels.Contains(label)
-                    || stageFileLabels.Any(s => s.Contains(label, StringComparison.OrdinalIgnoreCase) || label.Contains(s, StringComparison.OrdinalIgnoreCase)))
+                    || (!string.IsNullOrEmpty(label) && stageFileLabels.Contains(label))
+                    || (!string.IsNullOrEmpty(label) && stageFileLabels.Any(s => s.Contains(label, StringComparison.OrdinalIgnoreCase) || label.Contains(s, StringComparison.OrdinalIgnoreCase))))
                 {
                     category = "stage";
                 }
@@ -510,6 +514,11 @@ namespace Government_Service_Navigator.Backend.Controllers
                     sub.StageStatus = "ActionRequired";
                 }
                 else if (string.Equals(request.Status, "Rejected", StringComparison.OrdinalIgnoreCase))
+                {
+                    sub.StageStatus = "ActionRequired";
+                }
+                else if (string.Equals(request.Status, "Revised", StringComparison.OrdinalIgnoreCase) ||
+                         string.Equals(request.Status, "Revision Requested", StringComparison.OrdinalIgnoreCase))
                 {
                     sub.StageStatus = "ActionRequired";
                 }

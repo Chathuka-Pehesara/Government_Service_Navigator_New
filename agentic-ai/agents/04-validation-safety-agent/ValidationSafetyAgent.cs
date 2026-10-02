@@ -213,7 +213,14 @@ namespace Government_Service_Navigator.AgenticAi.Agents.ValidationSafety
                                 flag.Contains("slip", StringComparison.OrdinalIgnoreCase) ||
                                 flag.Contains("deposit", StringComparison.OrdinalIgnoreCase) ||
                                 flag.Contains("payment", StringComparison.OrdinalIgnoreCase) ||
-                                flag.Contains("generic image", StringComparison.OrdinalIgnoreCase)
+                                flag.Contains("generic image", StringComparison.OrdinalIgnoreCase) ||
+                                // Internal payload schema/stage discrepancies
+                                flag.Contains("MaxStages", StringComparison.OrdinalIgnoreCase) ||
+                                flag.Contains("stage value", StringComparison.OrdinalIgnoreCase) ||
+                                flag.Contains("stage number", StringComparison.OrdinalIgnoreCase) ||
+                                flag.Contains("AttachedDocumentNames", StringComparison.OrdinalIgnoreCase) ||
+                                flag.Contains("ambiguous", StringComparison.OrdinalIgnoreCase) ||
+                                (flag.Contains("duplicate", StringComparison.OrdinalIgnoreCase) && flag.Contains("entries", StringComparison.OrdinalIgnoreCase))
                             );
 
                             if (distinctFlags.Any())
@@ -324,13 +331,16 @@ Your role is to formulate a clear, professional executive briefing and risk anal
 Do NOT use software developer jargon or mention tool names like validate_schema. Write in dignified, plain institutional English.
 Focus on:
 1. Identifying the specific Service and whether prerequisites for THIS active Stage are satisfied.
-2. Auditing attached proofs vs mandatory requirements for this active stage.
-3. Formulating a direct, actionable officer recommendation (e.g. 'Recommended Action: APPROVE Stage 1' or 'Recommended Action: REQUEST REVISION of Birth Certificate').
+2. Auditing attached proofs strictly against 'RequiredDocumentsForStage' for THIS active stage.
+3. Formulating a direct, actionable officer recommendation (e.g. 'Recommended Action: APPROVE Stage 2' or 'Recommended Action: REQUEST REVISION of [Document Name]' or 'Recommended Action: OFFICER VISUAL AUDIT REQUIRED').
 
 Institutional Guidelines & Guardrails:
+- Government services require a wide variety of statutory proofs (e.g. Title Deeds, Cadastral Survey Plans, Company Registration Form 1, Tax Clearance, Medical Fitness Certificates, Salary/Income Slips, Police Clearance Reports, Grama Niladhari Assessments, Utility Bills, Identity Proofs, etc.). Never assume that an NIC or Birth Certificate is required unless it is explicitly listed in 'RequiredDocumentsForStage'.
+- STAGE SCOPING: In the 'Stage Documents' bullet, ONLY audit and report on documents requested in 'RequiredDocumentsForStage'. Do NOT state or invent that unrequested documents (such as an NIC) are attached for this stage.
+- SEMANTIC RELEVANCE CHECK: If an attached document filename (e.g. containing 'diagram', 'transformer', 'packaging', 'snack', 'label_design', 'screenshot', 'code', 'temp', or random test names) clearly does not match the nature of the required statutory document, you MUST flag it! In 'officerBriefing', state that the uploaded file appears unrelated to the required statutory proof. Set 'riskLevel' to 'Medium' or 'High', set 'isSemanticallyConsistent' to false, add the discrepancy to 'inconsistencies', and recommend that the Verifying Officer conduct a visual inspection or request document revision.
 - The 'Department' field is internal administrative routing metadata, NOT a citizen form input. Never flag an empty or missing Department as a citizen inconsistency.
-- Do NOT flag optional, standard deposit slips, bank payment receipts, or extra uploads as anomalies or reasons for revision if all mandatory requirements for this stage are met.
-- If all mandatory proofs (e.g. NIC) are attached and authentic and eligibility criteria pass, riskLevel MUST be 'Low' and isSemanticallyConsistent MUST be true.
+- Do NOT flag optional, standard deposit slips, bank payment receipts, or extra uploads as anomalies if all mandatory requirements for this stage are met.
+- If all mandatory proofs for this stage are attached, semantically consistent, and eligibility criteria pass, riskLevel MUST be 'Low' and isSemanticallyConsistent MUST be true.
 
 Respond strictly with a JSON object matching this schema:
 {

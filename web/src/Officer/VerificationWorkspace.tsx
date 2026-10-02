@@ -17,7 +17,7 @@ import {
   Toggle,
   Modal
 } from "@carbon/react";
-import { Checkmark, Close, Document, ChevronLeft, ArrowRight, Warning, Money, TrashCan, Launch, Security, Task, CheckmarkFilled, WarningAltFilled } from "@carbon/icons-react";
+import { Checkmark, Close, Document, ChevronLeft, ArrowRight, Warning, Money, TrashCan, Security, Task, CheckmarkFilled, WarningAltFilled } from "@carbon/icons-react";
 import AgentDraftPanel from "./AgentDraftPanel";
 import DocumentPreview from "./DocumentPreview";
 import { getAgentDraft, generateAgentDraft, type AgentDraftView } from "./agentDraftApi";
@@ -137,9 +137,15 @@ export default function VerificationWorkspace() {
     if (uploaded.length > 0) {
       // The officer ONLY reviews:
       // 1. Current stage documents (category === 'stage')
-      // 2. Statutory payment slip for this application (category === 'payment')
-      // Exclude any other-stage documents from this stage's gallery
-      const relevant = uploaded.filter(d => d.category === 'stage' || d.category === 'payment');
+      // 2. Active statutory payment slip for this current stage (category === 'payment')
+      const stageDocs = uploaded.filter(d => d.category === 'stage');
+      const paymentDocs = uploaded.filter(d => d.category === 'payment');
+
+      // Pick at most ONE active payment slip (matching detail.payment.slipUrl, or newest upload)
+      const activeSlip = paymentDocs.find(d => detail?.payment?.slipUrl && detail.payment.slipUrl.includes(d.id))
+        ?? (paymentDocs.length > 0 ? paymentDocs[paymentDocs.length - 1] : null);
+
+      const relevant = activeSlip ? [...stageDocs, activeSlip] : stageDocs;
       const order: Record<string, number> = { stage: 0, payment: 1 };
       const sorted = [...relevant].sort((a, b) => (order[a.category] ?? 99) - (order[b.category] ?? 99));
 
@@ -894,68 +900,54 @@ export default function VerificationWorkspace() {
                   </div>
                 )}
 
-                {/* Docked Quick Action Bar: Always accessible at bottom across tabs */}
-                <div style={{
-                  padding: '0.875rem 1rem',
-                  backgroundColor: '#f4f4f4',
-                  border: '1px solid #e0e0e0',
-                  borderRadius: '4px',
-                  display: 'flex',
-                  alignItems: 'center',
-                  justifyContent: 'space-between',
-                  gap: '0.75rem',
-                  flexWrap: 'wrap',
-                  marginBottom: '1.5rem'
-                }}>
-                  <div style={{ fontSize: '0.8125rem', color: '#525252' }}>
-                    <strong>Action:</strong> {decision ? `Selected: ${decision}` : 'Review above and record determination'}
+                {/* Docked Quick Action Bar: Only shown on Copilot and Application tabs (hidden on Official Determination to prevent duplicate buttons) */}
+                {workspaceTab !== 'decision' && (
+                  <div style={{
+                    padding: '0.875rem 1rem',
+                    backgroundColor: '#f4f4f4',
+                    border: '1px solid #e0e0e0',
+                    borderRadius: '4px',
+                    display: 'flex',
+                    alignItems: 'center',
+                    justifyContent: 'space-between',
+                    gap: '0.75rem',
+                    flexWrap: 'wrap',
+                    marginBottom: '1.5rem'
+                  }}>
+                    <div style={{ fontSize: '0.8125rem', color: '#525252' }}>
+                      <strong>Action:</strong> {decision ? `Selected: ${decision}` : 'Review above and record determination'}
+                    </div>
+                    <div style={{ display: 'flex', gap: '0.5rem', flexWrap: 'wrap' }}>
+                      <Button
+                        kind={decision === "Approved" ? "primary" : "tertiary"}
+                        size="sm"
+                        renderIcon={Checkmark}
+                        onClick={() => { handleDecision("Approved"); setWorkspaceTab("decision"); }}
+                        disabled={isSubmitting || (detail?.payment != null && !detail.payment.isVerified)}
+                      >
+                        Approve
+                      </Button>
+                      <Button
+                        kind={decision === "Revision Requested" ? "primary" : "tertiary"}
+                        size="sm"
+                        renderIcon={Warning}
+                        onClick={() => { handleDecision("Revision Requested"); setWorkspaceTab("decision"); }}
+                        disabled={isSubmitting}
+                      >
+                        Request Revision
+                      </Button>
+                      <Button
+                        kind={decision === "Rejected" ? "danger" : "danger--tertiary"}
+                        size="sm"
+                        renderIcon={Close}
+                        onClick={() => { handleDecision("Rejected"); setWorkspaceTab("decision"); }}
+                        disabled={isSubmitting}
+                      >
+                        Reject
+                      </Button>
+                    </div>
                   </div>
-                  <div style={{ display: 'flex', gap: '0.5rem', flexWrap: 'wrap' }}>
-                    <Button
-                      kind={decision === "Approved" ? "primary" : "tertiary"}
-                      size="sm"
-                      renderIcon={Checkmark}
-                      onClick={() => { handleDecision("Approved"); setWorkspaceTab("decision"); }}
-                      disabled={isSubmitting || (detail?.payment != null && !detail.payment.isVerified)}
-                    >
-                      Approve
-                    </Button>
-                    <Button
-                      kind={decision === "Revision Requested" ? "primary" : "tertiary"}
-                      size="sm"
-                      renderIcon={Warning}
-                      onClick={() => { handleDecision("Revision Requested"); setWorkspaceTab("decision"); }}
-                      disabled={isSubmitting}
-                    >
-                      Request Revision
-                    </Button>
-                    <Button
-                      kind={decision === "Rejected" ? "danger" : "danger--tertiary"}
-                      size="sm"
-                      renderIcon={Close}
-                      onClick={() => { handleDecision("Rejected"); setWorkspaceTab("decision"); }}
-                      disabled={isSubmitting}
-                    >
-                      Reject
-                    </Button>
-                  </div>
-                </div>
-
-                   <div style={{ marginTop: '2rem', paddingTop: '1.25rem', borderTop: '1px solid #e0e0e0' }}>
-                     <p style={{ fontSize: '0.8rem', color: '#525252', marginBottom: '0.75rem' }}>
-                       Application does not need review? (e.g. duplicate, invalid, or test submission):
-                     </p>
-                     <Button
-                       kind="danger--tertiary"
-                       size="sm"
-                       renderIcon={TrashCan}
-                       onClick={() => setDeleteModalOpen(true)}
-                       disabled={isSubmitting || isDeleting}
-                       style={{ width: '100%' }}
-                     >
-                       Delete Application (Audit Logged)
-                     </Button>
-                   </div>
+                )}
               </Column>
             </Grid>
 

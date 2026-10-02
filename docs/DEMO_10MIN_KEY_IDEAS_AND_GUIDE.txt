@@ -1,0 +1,191 @@
+================================================================================
+SRI LANKA GOVERNMENT SERVICE NAVIGATOR
+10-MINUTE VIDEO DEMONSTRATION BLUEPRINT & KEY IDEAS CHECKLIST
+================================================================================
+Target Duration: Exactly 9:30 - 9:55 (Do NOT exceed 10:00:00)
+Evaluation Goal: Prove system completeness, real autonomous agent intelligence,
+                 seamless cross-platform integration, and Human-in-the-Loop governance.
+
+--------------------------------------------------------------------------------
+1. THE 4 CORE FUNCTIONS OF MOBILE (Citizen Platform)
+--------------------------------------------------------------------------------
+[Function M1] Intelligent Intake & Procedure Navigation (Agent 1)
+   * Key Idea: Citizens don't know technical government terms; they write in
+     plain natural language.
+   * Visual Proof: Citizen types: "I need to travel abroad soon but my passport
+     is expired". Agent 1 converts it into an official service procedure with
+     required documents, step-by-step roadmap, and department routing.
+
+[Function M2] Statutory Eligibility & Evidentiary Document Audit (Agent 2)
+   * Key Idea: Real-time legal auditing before applying, preventing wasted queues.
+   * Visual Proof: Groq LLM + Neon PGVector citation of Sri Lanka Gazettes.
+     Show edge-case handling: uploading an unlabelled image ("images.jpg") triggers
+     "Action Required: Incomplete Proofs", then uploading valid scans yields
+     "Statutory Criteria Verified (100%)" with real legal reasoning.
+
+[Function M3] Digital Application Submission & Multi-Channel Payments
+   * Key Idea: Frictionless submission with strict boundary guardrails (Agent 4).
+   * Visual Proof: Form auto-filled with applicant profile, payment via online
+     checkout or bank slip upload, producing official tracking reference (SL-APP-XXXX).
+
+[Function M4] Appointment Reservation & Digital Collection Pass (Agent 3)
+   * Key Idea: Automated counter scheduling replacing long physical queues.
+   * Visual Proof: Citizen selects available counter slot; Agent 3 confirms booking;
+     generates an in-person QR Collection Pass.
+
+--------------------------------------------------------------------------------
+2. THE 4 CORE FUNCTIONS OF WEB (Officer & Admin Portal)
+--------------------------------------------------------------------------------
+[Function W1] Department & Counter Slot Configuration (Admin Management)
+   * Key Idea: Bureaucracy control center — departments define services, collection
+     slots, counter capacity, and public holidays.
+   * Visual Proof: Admin panel showing live counter time-slots and holiday toggles
+     that Agent 3 strictly respects.
+
+[Function W2] Human-in-the-Loop Verification Workspace (Officer Queue)
+   * Key Idea: Ethical AI — AI never makes final decisions; human officers sign off.
+   * Visual Proof: Officer opens pending review queue, views applicant answers,
+     uploaded citizen documents, and AI audit recommendations.
+
+[Function W3] Autonomous Legal Dossier & Safety Audit (Agent 4 Copilot)
+   * Key Idea: High-speed verification assistance with automated risk scoring.
+   * Visual Proof: "Statutory Verification & Compliance Copilot" tab with
+     safety check badges ("Safety Checks Passed", "Low Risk", "Cognitive Guardrails").
+
+[Function W4] Statutory Fee Line-Item Drafting & Finance Reconciliation
+   * Key Idea: Automated dispatch and financial accountability.
+   * Visual Proof: Agent 3 pre-drafted fee calculation breakdown + Finance Officer
+     bank deposit verification.
+
+--------------------------------------------------------------------------------
+3. THE 4 AUTONOMOUS AGENTS (How to Prove They Are Real in Under 60s Each)
+--------------------------------------------------------------------------------
+Agent 1: Citizen Intake & Service Planner
+   * Role: Semantic parser & service discovery.
+   * Proof on Screen: Vector cosine similarity matching against database service catalog.
+
+Agent 2: Statutory Eligibility & Compliance Auditor
+   * Role: Legal compliance officer using Groq LLM & Neon PGVector.
+   * Proof on Screen: Live citation of Sri Lanka Gazette clauses and semantic file audit.
+
+Agent 3: Department Appointment & Dispatch Coordinator
+   * Role: Deterministic scheduler & fee compiler.
+   * Proof on Screen: Generates confirmation codes (SL-APT-XXXX), calculates fee
+     breakdowns, logs deterministic tool execution traces.
+
+Agent 4: Statutory Verification & Safety Assurance Officer
+   * Role: Security firewall & compliance auditor.
+   * Proof on Screen: Synchronous boundary check; injection prevention; age gate;
+     duplicate check; compiles official verification case dossier.
+
+--------------------------------------------------------------------------------
+4. EXACT 10-MINUTE RECORDING TIMELINE (SECOND-BY-SECOND)
+--------------------------------------------------------------------------------
+
+00:00 - 01:15 | PART 1: Hook, Problem Statement & High-Level Architecture
+--------------------------------------------------------------------------
+* Screen: Slide Deck (3 slides max) + Architecture Diagram
+* Key Points:
+  1. Sri Lanka government services suffer from queue congestion and fragmented info.
+  2. Our Solution: Unified Cross-Platform e-Government System.
+  3. Architecture: Flutter Mobile (Citizen) + React Carbon (Officer/Admin) +
+     ASP.NET Core (.NET 9) + PostgreSQL (Neon PGVector) + Groq LLM.
+  4. Core Innovation: 4-tier autonomous agent pipeline with Human-in-the-Loop review.
+
+01:15 - 03:00 | PART 2: Citizen Discovery & Planning (Agent 1)
+--------------------------------------------------------------
+* Screen: Flutter Mobile App
+* Action:
+  1. Open "Describe Your Need".
+  2. Paste query: "I am 25 years old and I need to replace my damaged National Identity Card."
+  3. Tap "Find Matching Services".
+  4. Show generated roadmap: Service Name, required documents, step-by-step guidance.
+* Spoken Highlight: "Agent 1 performs semantic vector matching with keyword gating,
+  converting plain citizen language into actionable statutory procedures."
+
+03:00 - 04:45 | PART 3: Statutory Pre-Screening & Document Audit (Agent 2)
+--------------------------------------------------------------------------
+* Screen: Flutter Mobile App (Statutory Eligibility Auditor)
+* Action:
+  1. Select service: "National Identity Card (NIC) Issuance & Replacement".
+  2. Set profile: 25 years old, Sri Lankan citizen.
+  3. Attach generic file ("images.jpg") -> Click "Run Statutory Eligibility Audit".
+     Show: "Action Required: Incomplete Proofs" (Orange).
+  4. Attach legitimate file ("nic_birth_cert.pdf") -> Re-run audit.
+     Show: "Statutory Criteria Verified (100% Match)" (Green).
+  5. Scroll to "AI Statutory Reasoning" showing live Groq LLM legal determination.
+* Spoken Highlight: "Agent 2 uses real-time RAG against official gazettes to audit
+  evidentiary files, preventing rejected applications before submission."
+
+04:45 - 06:15 | PART 4: Application Submission & Agent 4 Safety Guardrails
+--------------------------------------------------------------------------
+* Screen: Split View (Mobile on Left, Backend Terminal/Web on Right)
+* Action:
+  1. On Mobile: Complete fast form submission with pre-filled inputs.
+  2. Tap "Submit Application".
+  3. Instantly show Backend Console or Network tab confirming Agent 4 passed:
+     - Schema Validation: PASSED
+     - Anti-Adversarial Injection Check: PASSED
+     - Age & Duplicate Protection: PASSED
+  4. Application receives reference code: "SL-APP-XXXX".
+* Spoken Highlight: "Agent 4 acts as an in-process deterministic firewall. Unsafe,
+  duplicate, or non-compliant forms are intercepted before reaching officer queues."
+
+06:15 - 08:30 | PART 5: Officer Workspace, Agent 3 & Human-in-the-Loop Sign-Off
+-------------------------------------------------------------------------------
+* Screen: React Officer Web Portal
+* Action:
+  1. Open "Pending Reviews" — the newly submitted application appears instantly.
+  2. Enter "Verification Workspace":
+     - View applicant data & submitted files.
+     - Open "Statutory Verification Copilot" tab (Agent 4 Dossier, Risk Level: Low).
+     - Open "Phase 2: Application Dossier & Fee Drafting" (Agent 3 Tool Traces).
+  3. Click "Approve Application" (Human-in-the-Loop decision).
+  4. Switch to Admin "Manage Collection Slots" for 15 seconds to show how counters
+     and holiday blackouts are managed.
+* Spoken Highlight: "Officers retain statutory authority. AI agents compile evidence,
+  verify compliance, and draft fee ledgers, enabling officers to make informed
+  decisions in seconds rather than hours."
+
+08:30 - 09:30 | PART 6: Appointment Booking & Collection Pass (Agent 3 Final)
+-----------------------------------------------------------------------------
+* Screen: Flutter Mobile App (Bookings Screen)
+* Action:
+  1. Open citizen's "Completed Services & Bookings".
+  2. Status updated to "Approved - Ready for Collection".
+  3. Tap "Reserve Department Appointment".
+  4. Agent 3 presents available counter slots. Tap a slot and confirm.
+  5. Tap "View Collection Pass" — show official QR Pass with booking code (SL-APT-XXXX).
+* Spoken Highlight: "Agent 3 coordinates directly between department counter schedules
+  and citizens, eliminating in-person queuing on collection day."
+
+09:30 - 10:00 | PART 7: Conclusion & Impact
+-------------------------------------------
+* Screen: Summary Slide / Full System Dashboard
+* Spoken Highlight:
+  "The Government Service Navigator demonstrates how modern agentic AI can modernize
+  public governance:
+  - Agent 1: Streamlined Citizen Discovery
+  - Agent 2: Verifiable Pre-Submission Compliance
+  - Agent 3: Automated Counter Scheduling & Dispatch
+  - Agent 4: Deterministic Boundary Protection
+  With Human-in-the-Loop governance, we ensure transparency, zero hallucinations,
+  and radical efficiency. Thank you."
+
+--------------------------------------------------------------------------------
+5. PRE-RECORDING CHECKLIST (DO THIS BEFORE RECORDING TO SAVE 20 MINUTES)
+--------------------------------------------------------------------------------
+[ ] Test Citizen Account: Pre-registered with NIC (e.g. 200112345678).
+[ ] Pre-Uploaded Files on Phone/Emulator:
+    - One bad file: "images.jpg" (for Agent 2 failure demo)
+    - One good file: "nic_birth_cert.pdf" (for Agent 2 success demo)
+[ ] Officer Account logged into Web browser on `http://localhost:5173`.
+[ ] Backend running smoothly on `http://localhost:5119` with Neon PGVector active.
+[ ] Clipboard Snippets Ready: Keep citizen natural language query on clipboard so
+    you paste instantly instead of typing live.
+[ ] Browser Zoom: Set Web browser zoom to 110% or 125% for crisp text legibility.
+[ ] Audio: Use USB mic with noise cancellation filter; speak with confident, steady pace.
+
+================================================================================
+END OF BLUEPRINT
+================================================================================

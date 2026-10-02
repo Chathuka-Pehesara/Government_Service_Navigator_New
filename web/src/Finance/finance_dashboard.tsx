@@ -458,7 +458,10 @@ export default function FinanceDashboard() {
   function openDetails(paymentId: string) {
     const payment = payments.find((p) => String(p.id) === paymentId) || null;
     setSelectedPayment(payment);
-    setNotes(payment?.verificationNotes || "");
+    const initialNotes = payment?.verificationNotes || "";
+    setNotes(initialNotes);
+    notesRef.current = initialNotes;
+    setNotesError(null);
     setIsEditingStatus(false);
     setEditStatusValue(payment?.status || "Verified");
     setBanner(null);
@@ -467,7 +470,10 @@ export default function FinanceDashboard() {
   function openEditStatus(paymentId: string) {
     const payment = payments.find((p) => String(p.id) === paymentId) || null;
     setSelectedPayment(payment);
-    setNotes(payment?.verificationNotes || "");
+    const initialNotes = payment?.verificationNotes || "";
+    setNotes(initialNotes);
+    notesRef.current = initialNotes;
+    setNotesError(null);
     setIsEditingStatus(true);
     setEditStatusValue(payment?.status || "Verified");
     setBanner(null);
@@ -476,14 +482,16 @@ export default function FinanceDashboard() {
   function closeDetails() {
     setSelectedPayment(null);
     setNotes("");
+    notesRef.current = "";
+    setNotesError(null);
     setIsEditingStatus(false);
   }
 
   // Same rules as the backend's VerifyManualPaymentDto / UpdatePaymentStatusDto: a rejection needs a reason
   function checkNotes(rejecting: boolean): boolean {
     const error = rejecting
-      ? v.text("Reason for rejection", { min: 5, max: 1000 })(notes)
-      : v.text("Notes", { max: 1000, required: false })(notes);
+      ? v.text("Reason for rejection", { min: 5, max: 1000 })(notesRef.current)
+      : v.text("Notes", { max: 1000, required: false })(notesRef.current);
     setNotesError(error);
     return !error;
   }
@@ -1796,9 +1804,10 @@ export default function FinanceDashboard() {
                   id="edit-status-select"
                   labelText="Select New Status"
                   value={editStatusValue}
-                  onChange={(e) =>
-                    setEditStatusValue(e.target.value as PaymentStatus)
-                  }
+                  onChange={(e) => {
+                    setEditStatusValue(e.target.value as PaymentStatus);
+                    setNotesError(null);
+                  }}
                   style={{ marginBottom: "1rem" }}
                 >
                   <SelectItem
@@ -1822,6 +1831,7 @@ export default function FinanceDashboard() {
                   onChange={(e) => {
                     setNotes(e.target.value);
                     notesRef.current = e.target.value;
+                    if (notesError) setNotesError(null);
                   }}
                   rows={3}
                   style={{ marginBottom: "1rem" }}
@@ -1836,7 +1846,10 @@ export default function FinanceDashboard() {
                   </Button>
                   <Button
                     kind="ghost"
-                    onClick={() => setIsEditingStatus(false)}
+                    onClick={() => {
+                      setNotesError(null);
+                      setIsEditingStatus(false);
+                    }}
                   >
                     Cancel
                   </Button>
@@ -1844,26 +1857,27 @@ export default function FinanceDashboard() {
               </div>
             )}
 
-            <TextArea
-              id="verification-notes"
-              labelText="Verification Notes / Audit Reason"
-              placeholder="Add verification notes (e.g., matched with bank statement dated 2026-09-26)..."
-              value={notes}
-              onChange={(e) => {
-                setNotes(e.target.value);
-                notesRef.current = e.target.value;
-              }}
-              disabled={selectedPayment.status !== "Pending"}
-              rows={3}
-              maxCount={1000}
-              enableCounter
-              helperText="Required when rejecting: the citizen is told this reason."
-              invalid={!!notesError}
-              invalidText={notesError ?? undefined}
-            />
-
             {!isEditingStatus && (
               <>
+                <TextArea
+                  id="verification-notes"
+                  labelText="Verification Notes / Audit Reason"
+                  placeholder="Add verification notes (e.g., matched with bank statement dated 2026-09-26)..."
+                  value={notes}
+                  onChange={(e) => {
+                    setNotes(e.target.value);
+                    notesRef.current = e.target.value;
+                    if (notesError) setNotesError(null);
+                  }}
+                  disabled={selectedPayment.status !== "Pending"}
+                  rows={3}
+                  maxCount={1000}
+                  enableCounter
+                  helperText="Required when rejecting: the citizen is told this reason."
+                  invalid={!!notesError}
+                  invalidText={notesError ?? undefined}
+                />
+
                 {selectedPayment.status === "Pending" ? (
                   <div
                     style={{
@@ -1890,7 +1904,10 @@ export default function FinanceDashboard() {
                     <Button
                       kind="secondary"
                       renderIcon={Edit}
-                      onClick={() => setIsEditingStatus(true)}
+                      onClick={() => {
+                        setNotesError(null);
+                        setIsEditingStatus(true);
+                      }}
                     >
                       Edit Status
                     </Button>
@@ -1928,7 +1945,10 @@ export default function FinanceDashboard() {
                         size="sm"
                         kind="secondary"
                         renderIcon={Edit}
-                        onClick={() => setIsEditingStatus(true)}
+                        onClick={() => {
+                          setNotesError(null);
+                          setIsEditingStatus(true);
+                        }}
                       >
                         Edit Status
                       </Button>

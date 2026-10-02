@@ -945,6 +945,7 @@ namespace Government_Service_Navigator.Backend.Controllers
 
         // Citizen raises a concern or request for support assistance when an application review fails or is rejected
         [HttpPost("{id:int}/raise-concern")]
+        [AllowAnonymous]
         public async Task<IActionResult> RaiseConcern(int id, [FromBody] RaiseConcernDto dto)
         {
             var submission = await _context.ApplicationSubmissions
@@ -977,6 +978,74 @@ namespace Government_Service_Navigator.Backend.Controllers
                 subject = dto.Subject,
                 status = "ConcernLogged",
                 message = "Your support concern has been logged and escalated to the department officer. Reference ID: " + ticketRef
+            });
+        }
+
+        // Citizen resubmits requested correction/document for an application requiring revision
+        [HttpPost("{id:int}/submit-revision")]
+        [AllowAnonymous]
+        public async Task<IActionResult> SubmitRevision(int id, [FromBody] SubmitRevisionDto dto)
+        {
+            var submission = await _context.ApplicationSubmissions
+                .Include(s => s.ServiceProcedure)
+                .FirstOrDefaultAsync(s => s.Id == id);
+
+            if (submission == null) return NotFound(new { message = $"Application #{id} not found." });
+
+            // Find the latest verification task for this application
+            var task = await _context.VerificationTasks
+                .Where(t => t.ApplicationId == id)
+                .OrderByDescending(t => t.StageNumber)
+                .ThenByDescending(t => t.Id)
+                .FirstOrDefaultAsync();
+
+            if (task != null)
+            {
+                task.Status = "Pending";
+            }
+
+            submission.StageStatus = "PendingReview";
+
+            var email = User.FindFirstValue(ClaimTypes.Email) ?? User.FindFirst("email")?.Value ?? User.Identity?.Name ?? submission.UserEmail;
+            var performer = !string.IsNullOrWhiteSpace(email) ? email : (!string.IsNullOrWhiteSpace(submission.CitizenNic) ? submission.CitizenNic : "Citizen");
+
+            var audit = new AuditLog
+            {
+                ApplicationId = id,
+                Action = "Citizen Revision Submitted",
+                PerformedBy = performer,
+                Timestamp = DateTime.UtcNow,
+                OldValues = "Status: Revised / ActionRequired",
+                NewValues = $"Clarification Notes: {dto.Notes}, Attached Document: {dto.DocumentAttachmentName ?? "None"}"
+            };
+            _context.AuditLogs.Add(audit);
+
+            // If an uploaded document with this filename exists without ApplicationId or uploaded recently, link it
+            if (!string.IsNullOrWhiteSpace(dto.DocumentAttachmentName))
+            {
+                var cleanName = Path.GetFileName(dto.DocumentAttachmentName);
+                var recentDoc = await _context.SubmissionDocuments
+                    .Where(d => d.FileName == cleanName && (d.ApplicationId == null || d.ApplicationId == id))
+                    .OrderByDescending(d => d.UploadedAt)
+                    .FirstOrDefaultAsync();
+
+                if (recentDoc != null)
+                {
+                    recentDoc.ApplicationId = id;
+                    if (string.IsNullOrWhiteSpace(recentDoc.FieldLabel))
+                    {
+                        recentDoc.FieldLabel = "Revised Document";
+                    }
+                }
+            }
+
+            await _context.SaveChangesAsync();
+
+            return Ok(new
+            {
+                success = true,
+                applicationId = id,
+                message = "Correction submitted successfully. Your application is now back in the officer verification queue."
             });
         }
 

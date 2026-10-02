@@ -1,6 +1,7 @@
 import '@carbon/styles/css/styles.css';
 import { readApiError, v } from '../utils/validation';
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
+import { useNavigate } from 'react-router-dom';
 import { keepPreviousData, useQuery, useQueryClient } from '@tanstack/react-query';
 import { API_BASE_URL, apiFetch, toQuery, type Paged } from '../utils/api';
 import { queryKeys } from '../utils/queryClient';
@@ -49,7 +50,8 @@ import {
   User,
   Logout,
   Notification,
-  Security
+  Security,
+  Launch
 } from '@carbon/icons-react';
 
 // Table Data for Verified Records
@@ -129,14 +131,41 @@ function toRow(t: TaskData): VerifiedRecordRow {
 
 export default function VerifiedRecords() {
   const queryClient = useQueryClient();
+  const navigate = useNavigate();
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   const [editingRecord, setEditingRecord] = useState<any>(null);
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   const [viewingRecord, setViewingRecord] = useState<any>(null);
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  const [viewingDetail, setViewingDetail] = useState<any>(null);
+  const [loadingDetail, setLoadingDetail] = useState(false);
   const [editStatus, setEditStatus] = useState('Approved');
   const [editComments, setEditComments] = useState('');
   const [editError, setEditError] = useState<string | null>(null);
   const [isSaving, setIsSaving] = useState(false);
+
+  useEffect(() => {
+    if (!viewingRecord?.id) {
+      setViewingDetail(null);
+      return;
+    }
+    let isMounted = true;
+    setLoadingDetail(true);
+    const token = localStorage.getItem('officerToken');
+    fetch(`${API_BASE_URL}/api/Verification/tasks/${viewingRecord.id}`, {
+      headers: { ...(token ? { Authorization: `Bearer ${token}` } : {}) }
+    })
+      .then(res => res.ok ? res.json() : null)
+      .then(data => {
+        if (isMounted) setViewingDetail(data);
+      })
+      .catch(err => console.error('Failed to load task details', err))
+      .finally(() => {
+        if (isMounted) setLoadingDetail(false);
+      });
+
+    return () => { isMounted = false; };
+  }, [viewingRecord?.id]);
   const [page, setPage] = useState(1);
   const [pageSize, setPageSize] = useState(25);
   const [searchText, setSearchText] = useState('');
@@ -517,19 +546,19 @@ export default function VerifiedRecords() {
             modalHeading={`Application Details: ${viewingRecord?.cells?.find((c: DataCell) => c.info.header === 'appId')?.value}`}
           >
             {viewingRecord && (
-              <div style={{ padding: '1rem 0', fontSize: '1rem', color: '#161616' }}>
-                <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '1rem', marginBottom: '1.5rem' }}>
+              <div style={{ padding: '1rem 0', fontSize: '1rem', color: '#161616', display: 'flex', flexDirection: 'column', gap: '1.25rem' }}>
+                <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(200px, 1fr))', gap: '1rem' }}>
                   <div>
                     <span style={{ fontSize: '0.75rem', color: '#525252', textTransform: 'uppercase', letterSpacing: '0.32px' }}>Citizen Name</span>
-                    <p style={{ marginTop: '0.25rem', fontWeight: 600 }}>{viewingRecord.cells?.find((c: DataCell) => c.info.header === 'citizen')?.value}</p>
+                    <p style={{ marginTop: '0.25rem', fontWeight: 600 }}>{viewingDetail?.task?.citizenName || viewingRecord.cells?.find((c: DataCell) => c.info.header === 'citizen')?.value}</p>
+                  </div>
+                  <div>
+                    <span style={{ fontSize: '0.75rem', color: '#525252', textTransform: 'uppercase', letterSpacing: '0.32px' }}>Citizen NIC</span>
+                    <p style={{ marginTop: '0.25rem', fontWeight: 600 }}>{viewingDetail?.task?.citizenNic || '—'}</p>
                   </div>
                   <div>
                     <span style={{ fontSize: '0.75rem', color: '#525252', textTransform: 'uppercase', letterSpacing: '0.32px' }}>Service Type</span>
                     <p style={{ marginTop: '0.25rem', fontWeight: 600 }}>{viewingRecord.cells?.find((c: DataCell) => c.info.header === 'service')?.value}</p>
-                  </div>
-                  <div>
-                    <span style={{ fontSize: '0.75rem', color: '#525252', textTransform: 'uppercase', letterSpacing: '0.32px' }}>Date Verified</span>
-                    <p style={{ marginTop: '0.25rem', fontWeight: 600 }}>{viewingRecord.cells?.find((c: DataCell) => c.info.header === 'dateVerified')?.value}</p>
                   </div>
                   <div>
                     <span style={{ fontSize: '0.75rem', color: '#525252', textTransform: 'uppercase', letterSpacing: '0.32px' }}>Decision Status</span>
@@ -546,11 +575,91 @@ export default function VerifiedRecords() {
                     </div>
                   </div>
                 </div>
+
+                {/* Officer Comments */}
                 <div style={{ borderTop: '1px solid #e0e0e0', paddingTop: '1rem' }}>
-                  <span style={{ fontSize: '0.75rem', color: '#525252', textTransform: 'uppercase', letterSpacing: '0.32px' }}>Officer Comments</span>
-                  <p style={{ marginTop: '0.5rem', fontStyle: viewingRecord.comments ? 'normal' : 'italic', color: viewingRecord.comments ? '#161616' : '#8d8d8d' }}>
+                  <span style={{ fontSize: '0.75rem', color: '#525252', textTransform: 'uppercase', letterSpacing: '0.32px' }}>Officer Determination Comments</span>
+                  <p style={{ marginTop: '0.5rem', fontStyle: viewingRecord.comments ? 'normal' : 'italic', color: viewingRecord.comments ? '#161616' : '#8d8d8d', backgroundColor: '#f4f4f4', padding: '0.75rem', borderRadius: '4px' }}>
                     {viewingRecord.comments || 'No additional comments provided during verification.'}
                   </p>
+                </div>
+
+                {/* Submitted Documents & Evidentiary Attachments */}
+                <div style={{ borderTop: '1px solid #e0e0e0', paddingTop: '1rem' }}>
+                  {(() => {
+                    const currentDocs = (viewingDetail?.documents ?? []).filter((d: any) => d.category === 'stage' || d.category === 'payment');
+                    return (
+                      <>
+                        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '0.75rem' }}>
+                          <span style={{ fontSize: '0.75rem', color: '#525252', textTransform: 'uppercase', letterSpacing: '0.32px', fontWeight: 700 }}>
+                            Stage Evidentiary & Payment Documents
+                          </span>
+                          <Tag type="cool-gray" size="sm">{currentDocs.length} Attached</Tag>
+                        </div>
+                        {loadingDetail ? (
+                          <p style={{ fontSize: '0.875rem', color: '#525252' }}>Loading attachments...</p>
+                        ) : currentDocs.length > 0 ? (
+                          <div style={{ display: 'flex', flexDirection: 'column', gap: '0.5rem' }}>
+                            {currentDocs.map((doc: any) => (
+                              <div key={doc.id} style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '0.625rem 0.875rem', border: '1px solid #e0e0e0', borderRadius: '4px', backgroundColor: '#fafafa' }}>
+                                <div style={{ display: 'flex', alignItems: 'center', gap: '0.75rem' }}>
+                                  <Document size={18} style={{ color: '#0f62fe' }} />
+                                  <div>
+                                    <div style={{ fontWeight: 600, fontSize: '0.875rem' }}>{doc.fileName}</div>
+                                    <div style={{ fontSize: '0.75rem', color: '#525252' }}>
+                                      Label: <strong>{doc.fieldLabel || 'General Upload'}</strong> {doc.category ? `• ${doc.category === 'payment' ? 'Payment Slip' : 'Stage Document'}` : ''}
+                                    </div>
+                                  </div>
+                                </div>
+                                <Button
+                                  size="sm"
+                                  kind="ghost"
+                                  renderIcon={Download}
+                                  onClick={() => window.open(`${API_BASE_URL}/api/Verification/documents/${doc.id}/content`, '_blank')}
+                                >
+                                  View
+                                </Button>
+                              </div>
+                            ))}
+                          </div>
+                        ) : (
+                          <p style={{ fontSize: '0.875rem', color: '#8d8d8d', fontStyle: 'italic' }}>No document attachments recorded for this stage.</p>
+                        )}
+                      </>
+                    );
+                  })()}
+                </div>
+
+                {/* Submitted Form Answers */}
+                {viewingDetail?.answers && Object.keys(viewingDetail.answers).length > 0 && (
+                  <div style={{ borderTop: '1px solid #e0e0e0', paddingTop: '1rem' }}>
+                    <span style={{ fontSize: '0.75rem', color: '#525252', textTransform: 'uppercase', letterSpacing: '0.32px', fontWeight: 700, display: 'block', marginBottom: '0.75rem' }}>
+                      Citizen Form Responses
+                    </span>
+                    <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(220px, 1fr))', gap: '0.75rem' }}>
+                      {Object.entries(viewingDetail.answers).map(([key, val]) => (
+                        <div key={key} style={{ padding: '0.5rem', backgroundColor: '#f4f4f4', borderRadius: '4px' }}>
+                          <div style={{ fontSize: '0.7rem', color: '#525252', textTransform: 'uppercase' }}>{key}</div>
+                          <div style={{ fontSize: '0.875rem', fontWeight: 600 }}>{String(val || '—')}</div>
+                        </div>
+                      ))}
+                    </div>
+                  </div>
+                )}
+
+                {/* Modal Footer Actions */}
+                <div style={{ borderTop: '1px solid #e0e0e0', paddingTop: '1rem', display: 'flex', justifyContent: 'flex-end', gap: '0.75rem' }}>
+                  <Button
+                    kind="primary"
+                    size="md"
+                    renderIcon={Launch}
+                    onClick={() => {
+                      setViewingRecord(null);
+                      navigate(`/officer/workspace/${viewingRecord.id}`);
+                    }}
+                  >
+                    Open in Full Verification Workspace
+                  </Button>
                 </div>
               </div>
             )}
