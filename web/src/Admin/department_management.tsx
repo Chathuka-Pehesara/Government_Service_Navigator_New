@@ -1,5 +1,5 @@
 import "@carbon/styles/css/styles.css";
-import { useState, useEffect, useCallback } from "react";
+import { useState, useEffect } from "react";
 import { Navigate } from "react-router-dom";
 import CurrentUserBadge from "../components/CurrentUserBadge";
 import { getAdminOverviewHref, getStoredUser, isSystemAdmin } from "../utils/currentUser";
@@ -55,7 +55,8 @@ import {
   Document,
 } from "@carbon/icons-react";
 
-import RegisterDepartmentModal, { CATEGORIES } from "./Department_Management/RegisterDepartmentModal";
+import RegisterDepartmentModal from "./Department_Management/RegisterDepartmentModal";
+import { CATEGORIES } from "./Department_Management/categories";
 import EditDepartmentModal from "./Department_Management/EditDepartmentModal";
 import type { Department } from "./Department_Management/types";
 import { API_BASE_URL } from "../utils/api";
@@ -72,7 +73,28 @@ const headers = [
   { key: "actions", header: "Actions" },
 ];
 
+async function requestDepartments(): Promise<Department[]> {
+  const res = await fetch(`${API_BASE_URL}/api/departments`);
+  if (!res.ok) throw new Error("Failed to load departments.");
+  return res.json();
+}
+
+const errorMessage = (err: unknown, fallback: string) =>
+  (err instanceof Error && err.message) || fallback;
+
 export default function DepartmentManagement() {
+  const storedUser = getStoredUser();
+  const sysAdmin = isSystemAdmin(storedUser);
+
+  // Department Management is restricted to System Administrators only.
+  if (storedUser && !sysAdmin) {
+    return <Navigate to={getAdminOverviewHref(storedUser)} replace />;
+  }
+
+  return <DepartmentManagementContent />;
+}
+
+function DepartmentManagementContent() {
   const [departments, setDepartments] = useState<Department[]>([]);
   const [isLoading, setIsLoading] = useState<boolean>(true);
   const [notification, setNotification] = useState<{ type: "success" | "error"; message: string } | null>(null);
@@ -90,32 +112,31 @@ export default function DepartmentManagement() {
   const [isDeleteSubmitting, setIsDeleteSubmitting] = useState<boolean>(false);
 
   const storedUser = getStoredUser();
-  const sysAdmin = isSystemAdmin(storedUser);
 
-  // Department Management is restricted to System Administrators only.
-  if (storedUser && !sysAdmin) {
-    return <Navigate to={getAdminOverviewHref(storedUser)} replace />;
-  }
+  const handleLoadError = (err: unknown) => {
+    console.error(err);
+    setNotification({ type: "error", message: errorMessage(err, "Failed to load departments") });
+  };
 
   // Fetch all departments
-  const fetchDepartments = useCallback(async () => {
+  const fetchDepartments = async () => {
     try {
       setIsLoading(true);
-      const res = await fetch(`${API_BASE_URL}/api/departments`);
-      if (!res.ok) throw new Error("Failed to load departments.");
-      const data = await res.json();
-      setDepartments(data);
-    } catch (err: any) {
-      console.error(err);
-      setNotification({ type: "error", message: err.message || "Failed to load departments" });
+      setDepartments(await requestDepartments());
+    } catch (err) {
+      handleLoadError(err);
     } finally {
       setIsLoading(false);
     }
-  }, []);
+  };
 
+  // Initial load (isLoading already starts as true)
   useEffect(() => {
-    fetchDepartments();
-  }, [fetchDepartments]);
+    requestDepartments()
+      .then(setDepartments)
+      .catch(handleLoadError)
+      .finally(() => setIsLoading(false));
+  }, []);
 
   // Toggle Status
   const handleToggleStatus = async (dept: Department) => {
@@ -142,8 +163,8 @@ export default function DepartmentManagement() {
         message: `Department '${dept.name}' is now ${newStatus}.`,
       });
       fetchDepartments();
-    } catch (err: any) {
-      setNotification({ type: "error", message: err.message || "Failed to change status" });
+    } catch (err) {
+      setNotification({ type: "error", message: errorMessage(err, "Failed to change status") });
     }
   };
 
@@ -162,8 +183,8 @@ export default function DepartmentManagement() {
       setNotification({ type: "success", message: `Department '${deletingDept.name}' deleted successfully.` });
       setDeletingDept(null);
       fetchDepartments();
-    } catch (err: any) {
-      setNotification({ type: "error", message: err.message || "Failed to delete department." });
+    } catch (err) {
+      setNotification({ type: "error", message: errorMessage(err, "Failed to delete department.") });
     } finally {
       setIsDeleteSubmitting(false);
     }
@@ -207,10 +228,13 @@ export default function DepartmentManagement() {
     return matchesSearch && matchesCategory && matchesStatus;
   });
 
-  // Reset page when filters change
-  useEffect(() => {
+  // Reset page when filters change (adjusted during render, not in an effect)
+  const filterKey = `${searchTerm}|${categoryFilter}|${statusFilter}`;
+  const [prevFilterKey, setPrevFilterKey] = useState(filterKey);
+  if (prevFilterKey !== filterKey) {
+    setPrevFilterKey(filterKey);
     setPage(1);
-  }, [searchTerm, categoryFilter, statusFilter]);
+  }
 
   // KPI Metrics
   const totalCount = departments.length;
@@ -493,7 +517,7 @@ export default function DepartmentManagement() {
                           labelText="Search registry"
                           placeholder="Search by name, ID (DEP-XXX), phone, or email..."
                           value={searchTerm}
-                          onChange={(e: any) => setSearchTerm(e.target.value)}
+                          onChange={(e) => setSearchTerm(e.target.value)}
                           onClear={() => setSearchTerm("")}
                         />
                       </div>

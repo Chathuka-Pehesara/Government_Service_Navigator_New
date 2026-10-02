@@ -183,11 +183,10 @@ export default function VerificationWorkspace() {
     return [...attached, ...missing];
   }, [detail, agentDraft]);
 
-  useEffect(() => {
-    if (currentDocIndex >= documents.length && documents.length > 0) {
-      setCurrentDocIndex(documents.length - 1);
-    }
-  }, [documents.length, currentDocIndex]);
+  // Clamp the index when the document list shrinks (adjusted during render, not in an effect)
+  if (currentDocIndex >= documents.length && documents.length > 0) {
+    setCurrentDocIndex(documents.length - 1);
+  }
 
   const applyAgentDraft = (view: AgentDraftView) => {
     setAgentDraft(view);

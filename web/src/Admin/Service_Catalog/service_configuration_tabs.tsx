@@ -94,6 +94,14 @@ interface DocumentRequirement {
   isMandatory: boolean;
 }
 
+interface TemplateFieldDto {
+  label?: string;
+  type?: string;
+  options?: unknown;
+  required?: boolean;
+  isRequired?: boolean;
+}
+
 interface FeeSchedule {
   id: string;
   feeType: string;
@@ -112,12 +120,9 @@ const AVAILABLE_DEPARTMENTS = [
 ];
 
 export default function ServiceConfigurationTabs() {
-  const [isSideNavExpanded, setIsSideNavExpanded] = useState(false);
   const [currentUser] = useState(getStoredUser);
   const [overviewHref] = useState(() => getAdminOverviewHref(currentUser));
-  const deptAdminUser = isDeptAdmin(currentUser);        // Department Admin
   const isSysAdmin = canManageServices(currentUser);
-  const scopedCategory = deptAdminUser && currentUser?.department ? getCategoryForDepartment(currentUser.department) : null;
 
   if (!isSysAdmin) {
     return (
@@ -162,6 +167,17 @@ export default function ServiceConfigurationTabs() {
       />
     );
   }
+
+  return <ServiceConfigurationTabsContent />;
+}
+
+function ServiceConfigurationTabsContent() {
+  const [isSideNavExpanded, setIsSideNavExpanded] = useState(false);
+  const [currentUser] = useState(getStoredUser);
+  const [overviewHref] = useState(() => getAdminOverviewHref(currentUser));
+  const deptAdminUser = isDeptAdmin(currentUser);        // Department Admin
+  const scopedCategory = deptAdminUser && currentUser?.department ? getCategoryForDepartment(currentUser.department) : null;
+
   const [services, setServices] = useState<ServiceOption[]>([]);
   const [selectedServiceId, setSelectedServiceId] = useState<string>("");
   const [selectedServiceName, setSelectedServiceName] = useState<string>("");
@@ -211,7 +227,7 @@ export default function ServiceConfigurationTabs() {
     stageOrder: number;
     stageDescription?: string;
     serviceProcedureId?: number;
-    fields?: Array<any>;
+    fields?: TemplateFieldDto[];
     status?: string;
   }>>([]);
   const [departments, setDepartments] = useState<Department[]>([]);
@@ -228,20 +244,6 @@ export default function ServiceConfigurationTabs() {
       }
     } catch (e) {
       console.error("Error fetching all templates:", e);
-    }
-  };
-
-  const fetchDepartments = async () => {
-    try {
-      const res = await fetch(`${API_BASE_URL}/api/departments`);
-      if (res.ok) {
-        const data = await res.json();
-        if (Array.isArray(data)) {
-          setDepartments(data);
-        }
-      }
-    } catch (e) {
-      console.error("Error fetching departments:", e);
     }
   };
 
@@ -293,7 +295,7 @@ export default function ServiceConfigurationTabs() {
     }> = {};
 
     knowledgeChunks.forEach((chunk, idx) => {
-      let title = "Official Statutory Policy";
+      let title: string;
       let type = "Official Circular / Gazette";
       let clauseText = chunk.content;
 
@@ -447,7 +449,7 @@ export default function ServiceConfigurationTabs() {
           department: tplData.department,
           stageOrder: 1,
           stageDescription: null,
-          fields: (tplData.fields || []).map((f: any) => ({
+          fields: (tplData.fields || []).map((f: TemplateFieldDto) => ({
             label: f.label,
             type: f.type,
             options: f.options,
@@ -462,11 +464,11 @@ export default function ServiceConfigurationTabs() {
       });
       if (selectedServiceId) await fetchTemplatesForService(selectedServiceId);
       await fetchAllTemplates();
-    } catch (err: any) {
+    } catch (err) {
       setNotification({
         type: "error",
         title: "Unlink Failed",
-        subtitle: err.message || "Unable to unlink template"
+        subtitle: (err instanceof Error && err.message) || "Unable to unlink template"
       });
     }
   };
@@ -622,8 +624,22 @@ export default function ServiceConfigurationTabs() {
         console.error("Error fetching services:", error);
         setIsLoading(false);
       });
-    fetchDepartments();
-    fetchAllTemplates();
+    fetch(`${API_BASE_URL}/api/departments`)
+      .then(async (res) => {
+        if (!res.ok) return;
+        const data = await res.json();
+        if (Array.isArray(data)) {
+          setDepartments(data);
+        }
+      })
+      .catch((e) => console.error("Error fetching departments:", e));
+    fetch(`${API_BASE_URL}/api/templates/all`)
+      .then(async (res) => {
+        if (!res.ok) return;
+        const data = await res.json();
+        setAllAvailableTemplates(data || []);
+      })
+      .catch((e) => console.error("Error fetching all templates:", e));
   }, [deptAdminUser, scopedCategory]);
 
 
@@ -667,7 +683,7 @@ export default function ServiceConfigurationTabs() {
         if (Array.isArray(data.workflowDepartments)) {
           srvDepts = data.workflowDepartments;
         } else if (typeof data.workflowDepartments === "string") {
-          try { srvDepts = JSON.parse(data.workflowDepartments); } catch {}
+          try { srvDepts = JSON.parse(data.workflowDepartments); } catch { /* malformed JSON - keep defaults */ }
         }
         if (!srvDepts || srvDepts.length === 0) {
           srvDepts = ["Civil Department"];
@@ -946,16 +962,13 @@ export default function ServiceConfigurationTabs() {
     return services.find((s) => s.id.toString() === selectedServiceId) || null;
   }, [services, selectedServiceId]);
 
-  useEffect(() => {
-    if (filteredProcedureOptions.length > 0) {
-      const isCurrentInFiltered = filteredProcedureOptions.some(
-        (s) => s.id.toString() === selectedServiceId
-      );
-      if (!isCurrentInFiltered) {
-        setSelectedServiceId(filteredProcedureOptions[0].id.toString());
-      }
-    }
-  }, [filteredProcedureOptions, selectedServiceId]);
+  // Keep the selection inside the filtered list (adjusted during render, not in an effect)
+  if (
+    filteredProcedureOptions.length > 0 &&
+    !filteredProcedureOptions.some((s) => s.id.toString() === selectedServiceId)
+  ) {
+    setSelectedServiceId(filteredProcedureOptions[0].id.toString());
+  }
 
   const filteredDocs = documents.filter(
     (d) =>

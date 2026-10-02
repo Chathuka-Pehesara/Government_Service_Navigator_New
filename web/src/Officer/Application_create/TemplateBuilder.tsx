@@ -107,21 +107,43 @@ export interface SavedTemplate {
   createdAt?: string;
 }
 
+// Read once on mount: ?id, ?cloneFromId & ?clone, ?serviceId, ?department, ?stage
+function readUrlParams() {
+  const queryParams = new URLSearchParams(window.location.search);
+  const id = queryParams.get("id");
+  const cloneFromId = queryParams.get("cloneFromId");
+  const isCloneLoad = !!(cloneFromId || (id && queryParams.get("clone") === "true"));
+  return {
+    id,
+    cloneFromId,
+    isCloneLoad,
+    serviceId: queryParams.get("serviceId"),
+    department: queryParams.get("department"),
+    stage: queryParams.get("stage"),
+  };
+}
+
 export default function TemplateBuilder() {
-  const [templateId, setTemplateId] = useState<string | null>(null);
+  const [urlParams] = useState(readUrlParams);
+  // A cloned load keeps templateId null so saving POSTs a new independent copy
+  const [templateId, setTemplateId] = useState<string | null>(() =>
+    urlParams.isCloneLoad ? null : urlParams.id,
+  );
   const [formName, setFormName] = useState("");
   const [subTitle, setSubTitle] = useState("");
   const [lawText, setLawText] = useState("");
   const [templateStatus, setTemplateStatus] = useState<string>("Active");
   
   // Multi-department workflow configuration
-  const [department, setDepartment] = useState<string>("Civil Department");
+  const [department, setDepartment] = useState<string>(
+    () => urlParams.department || getStoredUser()?.department || "Civil Department",
+  );
   
   // Dynamic Departments from Department Management
   const [departments, setDepartments] = useState<Department[]>([]);
   
   // Cloning / Stage customization state (preserves original base template)
-  const [isClonedTemplate, setIsClonedTemplate] = useState<boolean>(false);
+  const [isClonedTemplate, setIsClonedTemplate] = useState<boolean>(urlParams.isCloneLoad);
   const [clonedSourceTitle, setClonedSourceTitle] = useState<string>("");
 
   // Saved Templates Catalog View State
@@ -165,7 +187,7 @@ export default function TemplateBuilder() {
   const [currentUser] = useState(getStoredUser);
   const scopedCategory = currentUser?.department ? getCategoryForDepartment(currentUser.department) : null;
   const [services, setServices] = useState<ServiceOption[]>([]);
-  const [linkedServiceId, setLinkedServiceId] = useState<string>("");
+  const [linkedServiceId, setLinkedServiceId] = useState<string>(urlParams.serviceId || "");
   const [linkedServiceDetail, setLinkedServiceDetail] = useState<ServiceDetail | null>(null);
   const [isLoadingServiceDetail, setIsLoadingServiceDetail] = useState(false);
 
@@ -185,13 +207,6 @@ export default function TemplateBuilder() {
       })
       .catch((error) => console.error("Error fetching departments:", error));
   }, []);
-
-  useEffect(() => {
-    const urlDept = new URLSearchParams(window.location.search).get("department");
-    if (!urlDept && currentUser?.department) {
-      setDepartment(currentUser.department);
-    }
-  }, [currentUser]);
 
   useEffect(() => {
     fetch(`${API_BASE_URL}/api/services`)
@@ -278,27 +293,18 @@ export default function TemplateBuilder() {
     return null;
   };
 
+  // URL-derived state (department, linked service, templateId, clone flag) is set by the
+  // useState initializers above; this effect only loads the template contents.
   useEffect(() => {
-    const queryParams = new URLSearchParams(window.location.search);
-    const id = queryParams.get("id");
-    const cloneFromId = queryParams.get("cloneFromId");
-    const isClone = queryParams.get("clone") === "true";
-    const serviceId = queryParams.get("serviceId");
-    const dept = queryParams.get("department");
-
-    const stage = queryParams.get("stage");
-
-    if (serviceId) setLinkedServiceId(serviceId);
-    if (dept) setDepartment(dept);
+    const { id, cloneFromId, isCloneLoad, stage } = urlParams;
+    const dept = urlParams.department;
 
     // When adopting/customizing an existing base template for ANY workflow stage (including Stage 1):
-    // Always clone to create an independent copy (set templateId to null) so saving creates a separate copy
+    // Always clone to create an independent copy (templateId stays null) so saving creates a separate copy
     // and NEVER modifies or overwrites the original base template in the Template Builder!
-    if (cloneFromId || (id && isClone)) {
+    if (isCloneLoad) {
       const sourceId = cloneFromId || id!;
       const loadClone = async () => {
-        setIsClonedTemplate(true);
-        setTemplateId(null); // CRITICAL: null guarantees POST create (new independent stage copy)
         const data = await fetchTemplateData(sourceId);
         if (data) {
           setTemplateId(null); // Re-assert null so update isn't triggered
@@ -310,17 +316,20 @@ export default function TemplateBuilder() {
       loadClone();
     } else if (id) {
       const load = async () => {
-        setIsClonedTemplate(false);
-        setTemplateId(id);
         await fetchTemplateData(id);
       };
       load();
     }
-  }, []);
+  }, [urlParams]);
 
   // Fetch all created templates from backend
-  const fetchAllTemplates = async () => {
+  const fetchAllTemplates = () => {
     setIsLoadingTemplates(true);
+    return loadAllTemplates();
+  };
+
+  // Loads templates without flipping the spinner on (it starts as true for the initial load)
+  const loadAllTemplates = async () => {
     try {
       const res = await fetch(`${API_BASE_URL}/api/templates/all`);
       if (res.ok) {
@@ -337,7 +346,7 @@ export default function TemplateBuilder() {
   };
 
   useEffect(() => {
-    fetchAllTemplates();
+    loadAllTemplates();
   }, []);
 
   const handleCreateNewTemplate = () => {
@@ -437,11 +446,11 @@ export default function TemplateBuilder() {
         type: "success",
         message: `Template status updated to "${displayStatus}".`,
       });
-    } catch (err: any) {
+    } catch (err) {
       console.error("Error updating template status:", err);
       setListNotification({
         type: "error",
-        message: err.message || "Could not update template status.",
+        message: (err instanceof Error && err.message) || "Could not update template status.",
       });
     }
   };

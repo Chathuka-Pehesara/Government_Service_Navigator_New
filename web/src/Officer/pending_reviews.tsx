@@ -89,7 +89,7 @@ interface TableRowItem {
   rawCreatedDate?: string;
 }
 
-export function formatTimePending(dateStr: string): { display: string; detail: string; tagType: "cool-gray" | "warm-gray" | "red" } {
+function formatTimePending(dateStr: string): { display: string; detail: string; tagType: "cool-gray" | "warm-gray" | "red" } {
   if (!dateStr) return { display: "N/A", detail: "", tagType: "cool-gray" };
   const created = new Date(dateStr);
   const now = Date.now();
@@ -124,6 +124,8 @@ export function formatTimePending(dateStr: string): { display: string; detail: s
 
 export default function PendingReviews() {
   const [rows, setRows] = useState<TableRowItem[]>([]);
+  // Reference time for the SLA count, refreshed whenever the queue is (re)loaded
+  const [loadedAt, setLoadedAt] = useState(() => Date.now());
   const [deleteModalOpen, setDeleteModalOpen] = useState(false);
   const [targetTask, setTargetTask] = useState<TableRowItem | null>(null);
   const [deleteReason, setDeleteReason] = useState("Not required for review");
@@ -212,6 +214,7 @@ export default function PendingReviews() {
           };
         });
         setRows(mappedRows);
+        setLoadedAt(Date.now());
       }
     } catch (e) {
       console.error("Error fetching tasks", e);
@@ -337,7 +340,7 @@ export default function PendingReviews() {
               ).length;
               const slaOverdue = rows.filter(r => {
                 if (!r.rawCreatedDate) return false;
-                const diffHours = (Date.now() - new Date(r.rawCreatedDate).getTime()) / 3600000;
+                const diffHours = (loadedAt - new Date(r.rawCreatedDate).getTime()) / 3600000;
                 return diffHours >= 24;
               }).length;
 

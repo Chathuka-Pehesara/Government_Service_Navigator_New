@@ -13,25 +13,13 @@ import { Renew } from "@carbon/icons-react";
 import { hasErrors, parseApiError } from "../../utils/validation";
 import { logoFileError, validateDepartment, type DepartmentField } from "./departmentValidation";
 import { API_BASE_URL } from "../../utils/api";
-
-export const CATEGORIES = [
-  "General",
-  "Immigration",
-  "Transport",
-  "Police",
-  "Civil",
-  "Public Administration",
-  "Revenue & Finance",
-  "Healthcare",
-  "Education",
-  "Environment & Wildlife",
-  "Legal & Judiciary",
-];
+import { CATEGORIES } from "./categories";
+import type { Department } from "./types";
 
 interface RegisterDepartmentModalProps {
   open: boolean;
   onClose: () => void;
-  onSuccess: (createdDept: any) => void;
+  onSuccess: (createdDept: Department) => void;
 }
 
 export default function RegisterDepartmentModal({
@@ -56,7 +44,24 @@ export default function RegisterDepartmentModal({
 
   const fileInputRef = useRef<HTMLInputElement>(null);
 
-  // Fetch next auto-generated code when modal opens
+  // Reset the form each time the modal opens (adjusted during render, not in an effect)
+  const [wasOpen, setWasOpen] = useState(open);
+  if (open !== wasOpen) {
+    setWasOpen(open);
+    if (open) {
+      setName("");
+      setCategory("General");
+      setLogoUrl("");
+      setContactNumber("");
+      setEmail("");
+      setWebsite("");
+      setAddress("");
+      setDescription("");
+      setStatus("Inactive");
+      setFormError(null);
+    }
+  }
+
   const fetchNextCode = async () => {
     try {
       const res = await fetch(`${API_BASE_URL}/api/departments/next-code`);
@@ -69,20 +74,13 @@ export default function RegisterDepartmentModal({
     }
   };
 
+  // Fetch next auto-generated code when modal opens
   useEffect(() => {
-    if (open) {
-      setName("");
-      setCategory("General");
-      setLogoUrl("");
-      setContactNumber("");
-      setEmail("");
-      setWebsite("");
-      setAddress("");
-      setDescription("");
-      setStatus("Inactive");
-      setFormError(null);
-      fetchNextCode();
-    }
+    if (!open) return;
+    const load = async () => {
+      await fetchNextCode();
+    };
+    load();
   }, [open]);
 
   // Handle logo file upload
@@ -148,8 +146,8 @@ export default function RegisterDepartmentModal({
       const data = JSON.parse(text);
 
       onSuccess(data);
-    } catch (err: any) {
-      setFormError(err.message || "Failed to register department.");
+    } catch (err) {
+      setFormError((err instanceof Error && err.message) || "Failed to register department.");
     } finally {
       setIsSubmitting(false);
     }

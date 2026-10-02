@@ -132,7 +132,7 @@ export function generateAgentDraft(taskId: string | number): Promise<AgentDraftV
 }
 
 /** Agent 4 Action 1: Compiles full Verification Case Dossier & Routing Tier */
-export function compileCaseDossier(payload: any): Promise<VerificationCaseDossier> {
+export function compileCaseDossier(payload: unknown): Promise<VerificationCaseDossier> {
   return apiFetch<VerificationCaseDossier>("/api/ValidationAgent/dossier", {
     method: "POST",
     headers: { "Content-Type": "application/json" },

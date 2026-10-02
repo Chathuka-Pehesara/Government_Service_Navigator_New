@@ -46,6 +46,10 @@ export default function SystemSettings() {
   const [overviewHref] = useState(() => getAdminOverviewHref(currentUser));
   const [isSaving, setIsSaving] = useState(false);
 
+  // Example Setting States
+  const [maintenanceMode, setMaintenanceMode] = useState(false);
+  const [enforce2FA, setEnforce2FA] = useState(true);
+
   if (!isSysAdmin) {
     return (
       <HeaderContainer
@@ -89,10 +93,6 @@ export default function SystemSettings() {
       />
     );
   }
-
-  // Example Setting States
-  const [maintenanceMode, setMaintenanceMode] = useState(false);
-  const [enforce2FA, setEnforce2FA] = useState(true);
 
   const handleLogout = async () => {
     const token = localStorage.getItem("officerToken");

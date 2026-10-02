@@ -115,13 +115,28 @@ interface RecentActivityItem {
 
 export default function DepartmentAdminDashboard() {
   const { deptSlug } = useParams<{ deptSlug: string }>();
+  const departmentName = (deptSlug && getDepartmentLabel(deptSlug)) || null;
+
+  // Unknown department slug - send back to the generic dashboard
+  if (!deptSlug || !departmentName) {
+    return <Navigate to="/admin/dashboard" replace />;
+  }
+
+  return <DepartmentAdminDashboardContent deptSlug={deptSlug} departmentName={departmentName} />;
+}
+
+function DepartmentAdminDashboardContent({
+  deptSlug,
+  departmentName,
+}: {
+  deptSlug: string;
+  departmentName: string;
+}) {
   const [searchParams, setSearchParams] = useSearchParams();
   const navigate = useNavigate();
   const [officer] = useState(getStoredOfficer);
 
   const currentView = searchParams.get("view") || "overview";
-
-  const departmentName = (deptSlug && getDepartmentLabel(deptSlug)) || null;
 
   // State
   const [officers, setOfficers] = useState<OfficerSummary[]>([]);
@@ -133,11 +148,6 @@ export default function DepartmentAdminDashboard() {
   const [verificationFilter, setVerificationFilter] = useState<"All" | "Approved" | "Rejected">("All");
   const [financialFilter, setFinancialFilter] = useState<"All" | "Success" | "Failed" | "Pending">("All");
   const [activityFilter, setActivityFilter] = useState<"All" | "verification" | "finance">("All");
-
-  // Unknown department slug - send back to the generic dashboard
-  if (!departmentName) {
-    return <Navigate to="/admin/dashboard" replace />;
-  }
 
   const officerName = officer.fullName || "Department Admin";
 
@@ -281,7 +291,7 @@ export default function DepartmentAdminDashboard() {
         const processedList: VerificationRow[] = [];
 
         {
-          verifiedTasks.forEach((t: any) => {
+          verifiedTasks.forEach((t) => {
             const audit = auditLogs.find((a) => a.applicationId === t.applicationId);
             const decisionMaker = resolveOfficerName(audit?.performedBy, "Verifying Officer");
 

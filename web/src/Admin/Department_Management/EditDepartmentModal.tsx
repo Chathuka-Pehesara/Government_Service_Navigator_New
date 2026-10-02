@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useRef } from "react";
+import React, { useState, useRef } from "react";
 import {
   Modal,
   TextInput,
@@ -12,7 +12,7 @@ import {
 } from "@carbon/react";
 import { hasErrors, parseApiError } from "../../utils/validation";
 import { logoFileError, validateDepartment, type DepartmentField } from "./departmentValidation";
-import { CATEGORIES } from "./RegisterDepartmentModal";
+import { CATEGORIES } from "./categories";
 import type { Department } from "./types";
 import { API_BASE_URL } from "../../utils/api";
 
@@ -20,7 +20,7 @@ interface EditDepartmentModalProps {
   open: boolean;
   department: Department | null;
   onClose: () => void;
-  onSuccess: (updatedDept: any) => void;
+  onSuccess: (updatedDept: Department) => void;
 }
 
 export default function EditDepartmentModal({
@@ -45,7 +45,12 @@ export default function EditDepartmentModal({
 
   const fileInputRef = useRef<HTMLInputElement>(null);
 
-  useEffect(() => {
+  // Load the department into the form when the modal opens or the department changes
+  // (adjusted during render, not in an effect)
+  const syncTarget = open ? department : null;
+  const [syncedDepartment, setSyncedDepartment] = useState<Department | null>(null);
+  if (syncTarget !== syncedDepartment) {
+    setSyncedDepartment(syncTarget);
     if (department && open) {
       setName(department.name || "");
       setCategory(department.category || "General");
@@ -58,7 +63,7 @@ export default function EditDepartmentModal({
       setStatus(department.status || "Active");
       setFormError(null);
     }
-  }, [department, open]);
+  }
 
   // Handle logo file upload
   const handleLogoFileChange = (e: React.ChangeEvent<HTMLInputElement>) => {
@@ -131,8 +136,8 @@ export default function EditDepartmentModal({
       const data = JSON.parse(text);
 
       onSuccess(data);
-    } catch (err: any) {
-      setFormError(err.message || "Failed to update department.");
+    } catch (err) {
+      setFormError((err instanceof Error && err.message) || "Failed to update department.");
     } finally {
       setIsSubmitting(false);
     }

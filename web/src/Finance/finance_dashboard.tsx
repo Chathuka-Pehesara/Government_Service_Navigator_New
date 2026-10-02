@@ -117,20 +117,23 @@ function DepositSlipPreview({
   slipUrl: string;
   fileName?: string;
 }) {
-  const [blobUrl, setBlobUrl] = useState<string | null>(null);
-  const [loading, setLoading] = useState(false);
-  const [error, setError] = useState(false);
+  // Result of the last authenticated fetch, keyed by the slip URL it was loaded for
+  const [fetched, setFetched] = useState<{
+    src: string;
+    blobUrl: string | null;
+    error: boolean;
+  } | null>(null);
+
+  const isDataUrl = slipUrl.startsWith("data:");
+  const current = fetched?.src === slipUrl ? fetched : null;
+  const blobUrl = isDataUrl ? slipUrl : current?.blobUrl ?? null;
+  const error = !isDataUrl && !!current?.error;
+  const loading = !!slipUrl && !isDataUrl && !current;
 
   useEffect(() => {
-    if (!slipUrl) return;
-    if (slipUrl.startsWith("data:")) {
-      setBlobUrl(slipUrl);
-      return;
-    }
+    if (!slipUrl || slipUrl.startsWith("data:")) return;
 
     let active = true;
-    setLoading(true);
-    setError(false);
 
     const token = localStorage.getItem("officerToken");
     const fullUrl = slipUrl.startsWith("http")
@@ -146,16 +149,13 @@ function DepositSlipPreview({
       })
       .then((blob) => {
         if (active) {
-          const url = URL.createObjectURL(blob);
-          setBlobUrl(url);
-          setLoading(false);
+          setFetched({ src: slipUrl, blobUrl: URL.createObjectURL(blob), error: false });
         }
       })
       .catch((err) => {
         console.warn("Could not load slip preview blob:", err);
         if (active) {
-          setError(true);
-          setLoading(false);
+          setFetched({ src: slipUrl, blobUrl: null, error: true });
         }
       });
 
@@ -253,8 +253,8 @@ export default function FinanceDashboard() {
   const [selectedPayment, setSelectedPayment] = useState<Payment | null>(null);
   const [notes, setNotes] = useState("");
   const [notesError, setNotesError] = useState<string | null>(null);
+  // Mirrors `notes`; every setNotes call site updates it alongside the state
   const notesRef = useRef("");
-  notesRef.current = notes;
   const [banner, setBanner] = useState<{
     kind: "success" | "error" | "info";
     message: string;

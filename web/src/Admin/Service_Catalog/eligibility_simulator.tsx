@@ -56,12 +56,9 @@ interface EvaluationResult {
 }
 
 export default function EligibilitySimulator() {
-  const [isSideNavExpanded, setIsSideNavExpanded] = useState(false);
   const [currentUser] = useState(getStoredUser);
   const [overviewHref] = useState(() => getAdminOverviewHref(currentUser));
-  const deptAdminUser = isDeptAdmin(currentUser);
   const isSysAdmin = canManageServices(currentUser);
-  const scopedCategory = deptAdminUser && currentUser?.department ? getCategoryForDepartment(currentUser.department) : null;
 
   useEffect(() => {
     if (!isSysAdmin) {
@@ -81,6 +78,17 @@ export default function EligibilitySimulator() {
       </div>
     );
   }
+
+  return <EligibilitySimulatorContent />;
+}
+
+function EligibilitySimulatorContent() {
+  const [isSideNavExpanded, setIsSideNavExpanded] = useState(false);
+  const [currentUser] = useState(getStoredUser);
+  const [overviewHref] = useState(() => getAdminOverviewHref(currentUser));
+  const deptAdminUser = isDeptAdmin(currentUser);
+  const scopedCategory = deptAdminUser && currentUser?.department ? getCategoryForDepartment(currentUser.department) : null;
+
   const [services, setServices] = useState<Service[]>([]);
   const [selectedServiceId, setSelectedServiceId] = useState<string>("");
   const [serviceSearchQuery, setServiceSearchQuery] = useState<string>("");
@@ -235,16 +243,13 @@ export default function EligibilitySimulator() {
     return services.find((s) => s.id.toString() === selectedServiceId) || null;
   }, [services, selectedServiceId]);
 
-  useEffect(() => {
-    if (filteredProcedureOptions.length > 0) {
-      const isCurrentInFiltered = filteredProcedureOptions.some(
-        (s) => s.id.toString() === selectedServiceId
-      );
-      if (!isCurrentInFiltered) {
-        setSelectedServiceId(filteredProcedureOptions[0].id.toString());
-      }
-    }
-  }, [filteredProcedureOptions, selectedServiceId]);
+  // Keep the selection inside the filtered list (adjusted during render, not in an effect)
+  if (
+    filteredProcedureOptions.length > 0 &&
+    !filteredProcedureOptions.some((s) => s.id.toString() === selectedServiceId)
+  ) {
+    setSelectedServiceId(filteredProcedureOptions[0].id.toString());
+  }
 
   return (
     <>

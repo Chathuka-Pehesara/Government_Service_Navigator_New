@@ -216,28 +216,30 @@ class _BookingOptionsScreenState extends ConsumerState<BookingOptionsScreen> {
               ),
               const SizedBox(height: 12),
 
-              RadioListTile<String>(
-                title: const Text('Get it with post service'),
-                subtitle: const Text('Delivered directly to your registered address.'),
-                value: 'post',
+              RadioGroup<String>(
                 groupValue: _selectedOption,
-                activeColor: AppColors.primary,
                 onChanged: (value) {
                   setState(() => _selectedOption = value);
-                  _handlePostService();
+                  if (value == 'post') _handlePostService();
                 },
-              ),
-              const SizedBox(height: 8),
+                child: const Column(
+                  children: [
+                    RadioListTile<String>(
+                      title: Text('Get it with post service'),
+                      subtitle: Text('Delivered directly to your registered address.'),
+                      value: 'post',
+                      activeColor: AppColors.primary,
+                    ),
+                    SizedBox(height: 8),
 
-              RadioListTile<String>(
-                title: const Text('Reserve Department Appointment'),
-                subtitle: const Text('Collect in person at the department office on a free slot.'),
-                value: 'book',
-                groupValue: _selectedOption,
-                activeColor: AppColors.primary,
-                onChanged: (value) {
-                  setState(() => _selectedOption = value);
-                },
+                    RadioListTile<String>(
+                      title: Text('Reserve Department Appointment'),
+                      subtitle: Text('Collect in person at the department office on a free slot.'),
+                      value: 'book',
+                      activeColor: AppColors.primary,
+                    ),
+                  ],
+                ),
               ),
             ],
 

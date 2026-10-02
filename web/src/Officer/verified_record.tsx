@@ -81,6 +81,20 @@ interface TaskData {
   [key: string]: unknown;
 }
 
+interface TaskDocument {
+  id: number | string;
+  fileName?: string;
+  fieldLabel?: string;
+  category?: string;
+}
+
+const statusTagType = (status: unknown): "green" | "red" | "warm-gray" | "blue" => {
+  if (status === 'Approved') return 'green';
+  if (status === 'Suspended') return 'warm-gray';
+  if (status === 'Rejected') return 'red';
+  return 'blue';
+};
+
 interface DataCell {
   info: { header: string };
   value: string;
@@ -136,36 +150,36 @@ export default function VerifiedRecords() {
   const [editingRecord, setEditingRecord] = useState<any>(null);
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   const [viewingRecord, setViewingRecord] = useState<any>(null);
+  // Detail fetched for a specific record id; anything else counts as still loading
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  const [viewingDetail, setViewingDetail] = useState<any>(null);
-  const [loadingDetail, setLoadingDetail] = useState(false);
+  const [fetchedDetail, setFetchedDetail] = useState<{ id: unknown; data: any } | null>(null);
+  const viewingId = viewingRecord?.id;
+  const currentDetail = viewingId && fetchedDetail?.id === viewingId ? fetchedDetail : null;
+  const viewingDetail = currentDetail?.data ?? null;
+  const loadingDetail = !!viewingId && !currentDetail;
   const [editStatus, setEditStatus] = useState('Approved');
   const [editComments, setEditComments] = useState('');
   const [editError, setEditError] = useState<string | null>(null);
   const [isSaving, setIsSaving] = useState(false);
 
   useEffect(() => {
-    if (!viewingRecord?.id) {
-      setViewingDetail(null);
-      return;
-    }
+    if (!viewingId) return;
     let isMounted = true;
-    setLoadingDetail(true);
     const token = localStorage.getItem('officerToken');
-    fetch(`${API_BASE_URL}/api/Verification/tasks/${viewingRecord.id}`, {
+    fetch(`${API_BASE_URL}/api/Verification/tasks/${viewingId}`, {
       headers: { ...(token ? { Authorization: `Bearer ${token}` } : {}) }
     })
       .then(res => res.ok ? res.json() : null)
-      .then(data => {
-        if (isMounted) setViewingDetail(data);
+      .catch(err => {
+        console.error('Failed to load task details', err);
+        return null;
       })
-      .catch(err => console.error('Failed to load task details', err))
-      .finally(() => {
-        if (isMounted) setLoadingDetail(false);
+      .then(data => {
+        if (isMounted) setFetchedDetail({ id: viewingId, data });
       });
 
     return () => { isMounted = false; };
-  }, [viewingRecord?.id]);
+  }, [viewingId]);
   const [page, setPage] = useState(1);
   const [pageSize, setPageSize] = useState(25);
   const [searchText, setSearchText] = useState('');
@@ -436,15 +450,10 @@ export default function VerifiedRecords() {
                             // Format Status with Carbon Tags[cite: 6]
                             if (cell.info.header === 'status') {
                               const s = cell.value;
-                              let tagType: "green" | "red" | "warm-gray" | "blue" = "green";
-                              if (s === 'Approved') tagType = 'green';
-                              else if (s === 'Suspended') tagType = 'warm-gray';
-                              else if (s === 'Rejected') tagType = 'red';
-                              else tagType = 'blue';
 
                               return (
                                 <TableCell key={cell.id}>
-                                  <Tag type={tagType}>
+                                  <Tag type={statusTagType(s)}>
                                     {s}
                                   </Tag>
                                 </TableCell>
@@ -565,12 +574,7 @@ export default function VerifiedRecords() {
                     <div style={{ marginTop: '0.25rem' }}>
                       {(() => {
                         const s = viewingRecord.cells?.find((c: DataCell) => c.info.header === 'status')?.value;
-                        let tagType: "green" | "red" | "warm-gray" | "blue" = "green";
-                        if (s === 'Approved') tagType = 'green';
-                        else if (s === 'Suspended') tagType = 'warm-gray';
-                        else if (s === 'Rejected') tagType = 'red';
-                        else tagType = 'blue';
-                        return <Tag type={tagType}>{s}</Tag>;
+                        return <Tag type={statusTagType(s)}>{s}</Tag>;
                       })()}
                     </div>
                   </div>
@@ -587,7 +591,7 @@ export default function VerifiedRecords() {
                 {/* Submitted Documents & Evidentiary Attachments */}
                 <div style={{ borderTop: '1px solid #e0e0e0', paddingTop: '1rem' }}>
                   {(() => {
-                    const currentDocs = (viewingDetail?.documents ?? []).filter((d: any) => d.category === 'stage' || d.category === 'payment');
+                    const currentDocs = (viewingDetail?.documents ?? []).filter((d: TaskDocument) => d.category === 'stage' || d.category === 'payment');
                     return (
                       <>
                         <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '0.75rem' }}>
@@ -600,7 +604,7 @@ export default function VerifiedRecords() {
                           <p style={{ fontSize: '0.875rem', color: '#525252' }}>Loading attachments...</p>
                         ) : currentDocs.length > 0 ? (
                           <div style={{ display: 'flex', flexDirection: 'column', gap: '0.5rem' }}>
-                            {currentDocs.map((doc: any) => (
+                            {currentDocs.map((doc: TaskDocument) => (
                               <div key={doc.id} style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '0.625rem 0.875rem', border: '1px solid #e0e0e0', borderRadius: '4px', backgroundColor: '#fafafa' }}>
                                 <div style={{ display: 'flex', alignItems: 'center', gap: '0.75rem' }}>
                                   <Document size={18} style={{ color: '#0f62fe' }} />

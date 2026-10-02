@@ -170,7 +170,7 @@ export default function ManageCollectionSlots() {
   const [dailySchedule, setDailySchedule] = useState<DaySchedule[]>([]);
   const [scheduleDays, setScheduleDays] = useState<number>(14);
   const [scheduleFilter, setScheduleFilter] = useState<"all" | "working" | "holidays">("all");
-  const [loadingSchedule, setLoadingSchedule] = useState<boolean>(false);
+  const [loadingSchedule, setLoadingSchedule] = useState<boolean>(true);
 
   // Weekly templates & bookings
   const [slots, setSlots] = useState<CollectionSlot[]>([]);
@@ -202,12 +202,6 @@ export default function ManageCollectionSlots() {
   const [holidayDepartment, setHolidayDepartment] = useState<string>(
     currentUser?.department || DEPARTMENTS[0].label
   );
-
-  useEffect(() => {
-    fetchDailySchedule();
-    fetchSlots();
-    fetchBookings();
-  }, [selectedDeptFilter, scheduleDays]);
 
   const getHeaders = () => {
     const token = localStorage.getItem("officerToken");
@@ -326,8 +320,14 @@ export default function ManageCollectionSlots() {
     return list;
   };
 
-  const fetchDailySchedule = async () => {
+  const fetchDailySchedule = () => {
     setLoadingSchedule(true);
+    return loadDailySchedule();
+  };
+
+  // Loads the schedule without flipping the spinner on; the effect below relies on the
+  // render-time reset so it does not set state synchronously
+  const loadDailySchedule = async () => {
     try {
       const deptTarget = isDepartmentAdmin && currentUser?.department ? currentUser.department : selectedDeptFilter;
       const deptQuery = deptTarget !== "All"
@@ -352,7 +352,7 @@ export default function ManageCollectionSlots() {
         }
         return prev;
       });
-    } catch (err: any) {
+    } catch (err) {
       console.error("Failed to load daily schedule", err);
       const deptTarget = isDepartmentAdmin && currentUser?.department ? currentUser.department : selectedDeptFilter;
       if (slots.length > 0) {
@@ -381,7 +381,7 @@ export default function ManageCollectionSlots() {
           return prev;
         });
       }
-    } catch (err: any) {
+    } catch (err) {
       console.error("Failed to load slots", err);
     }
   };
@@ -399,10 +399,25 @@ export default function ManageCollectionSlots() {
         const data = await res.json();
         setBookings(data);
       }
-    } catch (err: any) {
+    } catch (err) {
       console.error("Failed to load collection bookings", err);
     }
   };
+
+  // Show the schedule spinner whenever the filters change (adjusted during render, not in an effect)
+  const scheduleKey = `${selectedDeptFilter}|${scheduleDays}`;
+  const [prevScheduleKey, setPrevScheduleKey] = useState(scheduleKey);
+  if (prevScheduleKey !== scheduleKey) {
+    setPrevScheduleKey(scheduleKey);
+    setLoadingSchedule(true);
+  }
+
+  useEffect(() => {
+    const loadAll = async () => {
+      await Promise.all([loadDailySchedule(), fetchSlots(), fetchBookings()]);
+    };
+    loadAll();
+  }, [selectedDeptFilter, scheduleDays]);
 
   const handleOpenSlotModal = (slot?: CollectionSlot, presetDate?: string) => {
     setNotification(null);
@@ -502,8 +517,8 @@ export default function ManageCollectionSlots() {
       setIsModalOpen(false);
       fetchSlots();
       fetchDailySchedule();
-    } catch (err: any) {
-      setNotification({ kind: "error", message: err.message });
+    } catch (err) {
+      setNotification({ kind: "error", message: err instanceof Error ? err.message : String(err) });
     }
   };
 
@@ -518,8 +533,8 @@ export default function ManageCollectionSlots() {
       setNotification({ kind: "success", message: "Slot deleted successfully." });
       fetchSlots();
       fetchDailySchedule();
-    } catch (err: any) {
-      setNotification({ kind: "error", message: err.message });
+    } catch (err) {
+      setNotification({ kind: "error", message: err instanceof Error ? err.message : String(err) });
     }
   };
 
@@ -559,8 +574,8 @@ export default function ManageCollectionSlots() {
       setNotification({ kind: "success", message: `Date ${holidayDate} declared as a holiday for ${holidayDepartment}.` });
       setIsHolidayModalOpen(false);
       fetchDailySchedule();
-    } catch (err: any) {
-      setNotification({ kind: "error", message: err.message });
+    } catch (err) {
+      setNotification({ kind: "error", message: err instanceof Error ? err.message : String(err) });
     }
   };
 
@@ -574,8 +589,8 @@ export default function ManageCollectionSlots() {
       if (!res.ok) throw new Error(await parseSafeError(res, "Failed to remove holiday."));
       setNotification({ kind: "success", message: `Holiday on ${dateStr} removed. Regular counter slots resumed.` });
       fetchDailySchedule();
-    } catch (err: any) {
-      setNotification({ kind: "error", message: err.message });
+    } catch (err) {
+      setNotification({ kind: "error", message: err instanceof Error ? err.message : String(err) });
     }
   };
 

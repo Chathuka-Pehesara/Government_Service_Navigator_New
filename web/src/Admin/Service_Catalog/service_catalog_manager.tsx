@@ -120,7 +120,7 @@ export default function ServiceCatalogManager() {
             } else if (typeof item.workflowDepartments === "string") {
               try {
                 depts = JSON.parse(item.workflowDepartments);
-              } catch (_) {}
+              } catch { /* malformed JSON - keep defaults */ }
             }
             const stages = item.totalStages && item.totalStages > 0 ? item.totalStages : 1;
             return {
@@ -182,7 +182,7 @@ export default function ServiceCatalogManager() {
     } else if (typeof service.workflowDepartments === "string") {
       try {
         parsedDepts = JSON.parse(service.workflowDepartments);
-      } catch (_) {}
+      } catch { /* malformed JSON - keep defaults */ }
     }
     const stages = service.totalStages && service.totalStages > 0 ? service.totalStages : 1;
     if (parsedDepts.length === 0) {
@@ -291,9 +291,13 @@ export default function ServiceCatalogManager() {
   const [page, setPage] = useState<number>(1);
   const [pageSize, setPageSize] = useState<number>(10);
 
-  useEffect(() => {
+  // Reset to the first page whenever the filters change (adjusted during render, not in an effect)
+  const filterKey = `${searchQuery}|${selectedCategory}`;
+  const [prevFilterKey, setPrevFilterKey] = useState(filterKey);
+  if (prevFilterKey !== filterKey) {
+    setPrevFilterKey(filterKey);
     setPage(1);
-  }, [searchQuery, selectedCategory]);
+  }
 
   const pagedServices = filteredServices.slice((page - 1) * pageSize, page * pageSize);
 
