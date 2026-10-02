@@ -422,6 +422,55 @@ export default function ServiceConfigurationTabs() {
     window.location.href = targetUrl;
   };
 
+
+  const handleUnlinkStageTemplate = async (templateId: string, stageNum: number) => {
+    if (!window.confirm(`Are you sure you want to unlink this template from Stage ${stageNum}? The original template in the Template Builder will NOT be deleted.`)) {
+      return;
+    }
+    try {
+      const res = await fetch(`${API_BASE_URL}/api/templates/${templateId}`);
+      if (!res.ok) throw new Error("Could not find template");
+      const tplData = await res.json();
+      const token = localStorage.getItem("officerToken");
+      await fetch(`${API_BASE_URL}/api/templates/update/${templateId}`, {
+        method: "PUT",
+        headers: {
+          "Content-Type": "application/json",
+          ...(token ? { Authorization: `Bearer ${token}` } : {})
+        },
+        body: JSON.stringify({
+          formName: tplData.formName,
+          subTitle: tplData.subTitle,
+          lawText: tplData.lawText,
+          status: tplData.status || "Active",
+          serviceProcedureId: null,
+          department: tplData.department,
+          stageOrder: 1,
+          stageDescription: null,
+          fields: (tplData.fields || []).map((f: any) => ({
+            label: f.label,
+            type: f.type,
+            options: f.options,
+            required: f.required ?? f.isRequired ?? false
+          }))
+        })
+      });
+      setNotification({
+        type: "success",
+        title: "Template Unlinked",
+        subtitle: `Template has been unlinked from Stage ${stageNum}.`
+      });
+      if (selectedServiceId) await fetchTemplatesForService(selectedServiceId);
+      await fetchAllTemplates();
+    } catch (err: any) {
+      setNotification({
+        type: "error",
+        title: "Unlink Failed",
+        subtitle: err.message || "Unable to unlink template"
+      });
+    }
+  };
+
   const fetchKnowledge = async (svcId: string) => {
     if (!svcId) return;
     try {
@@ -2082,15 +2131,25 @@ export default function ServiceConfigurationTabs() {
 
                           <div style={{ display: "flex", alignItems: "center", gap: "0.75rem" }}>
                             {templateForStage ? (
-                              <Button
-                                kind="tertiary"
-                                size="sm"
-                                onClick={() => handleNavigateToBuilder(
-                                  `/admin/services/builder?id=${templateForStage.id}&serviceId=${selectedServiceId}&stage=${stageNum}&department=${encodeURIComponent(stageDept)}`
-                                )}
-                              >
-                                Edit Stage Form in Builder
-                              </Button>
+                              <>
+                                <Button
+                                  kind="tertiary"
+                                  size="sm"
+                                  onClick={() => handleNavigateToBuilder(
+                                    `/admin/services/builder?id=${templateForStage.id}&serviceId=${selectedServiceId}&stage=${stageNum}&department=${encodeURIComponent(stageDept)}`
+                                  )}
+                                >
+                                  Edit Stage Form in Builder
+                                </Button>
+                                <Button
+                                  kind="ghost"
+                                  size="sm"
+                                  style={{ color: "#da1e28" }}
+                                  onClick={() => handleUnlinkStageTemplate(templateForStage.id, stageNum)}
+                                >
+                                  Unlink Form
+                                </Button>
+                              </>
                             ) : (
                               <Button
                                 kind="primary"
@@ -2106,6 +2165,7 @@ export default function ServiceConfigurationTabs() {
                         </div>
 
                         {/* Adopt Pre-Built Template Option */}
+                        {/* Adopt Pre-Built Template Option */}
                         {matchingPrebuilts.length > 0 && (
                           <div style={{ marginTop: "1.25rem", padding: "1rem", backgroundColor: "#edf5ff", border: "1px solid #a6c8ff", borderRadius: "4px" }}>
                             <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: "0.5rem", flexWrap: "wrap", gap: "0.5rem" }}>
@@ -2116,7 +2176,7 @@ export default function ServiceConfigurationTabs() {
                                 <Tag type="blue" size="sm">{matchingPrebuilts.length} Available in Builder</Tag>
                               </div>
                               <span style={{ fontSize: "0.75rem", color: "#525252" }}>
-                                Customizing will save as an independent Stage {stageNum} copy. The original template in Template Builder will NOT be modified.
+                                Customizing will save as an independent Stage {stageNum} copy. The original base template in Template Builder will NOT be modified.
                               </span>
                             </div>
                             <div style={{ display: "flex", gap: "0.75rem", alignItems: "center", flexWrap: "wrap" }}>

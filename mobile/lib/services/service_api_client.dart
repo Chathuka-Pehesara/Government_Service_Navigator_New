@@ -100,6 +100,7 @@ class ServiceApiClient {
   /// Submits the citizen's answers (keyed by field label). Returns the created application reference.
   static Future<Map<String, dynamic>> submitApplication({
     required int serviceId,
+    int? applicationId,
     required String? templateId,
     required Map<String, String> answers,
     Map<String, String> documents = const {},
@@ -110,6 +111,7 @@ class ServiceApiClient {
       headers: _authHeaders(token),
       body: jsonEncode({
         'serviceProcedureId': serviceId,
+        if (applicationId != null && applicationId > 0) 'applicationId': applicationId,
         'templateId': templateId,
         'answers': answers,
         'documents': documents,
