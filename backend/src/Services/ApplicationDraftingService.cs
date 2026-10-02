@@ -80,11 +80,18 @@ public class ApplicationDraftingService : IApplicationDraftingService
             .ToDictionary(kv => kv.Key, kv => kv.Value.Trim());
 
         // Documents = uploaded files, labelled with the requirement / file field they were uploaded for
-        var providedDocuments = await _context.SubmissionDocuments
+        var dbDocs = await _context.SubmissionDocuments
             .Where(d => d.ApplicationId == submission.Id)
             .OrderBy(d => d.UploadedAt)
-            .Select(d => d.FieldLabel + ": " + d.FileName)
+            .Select(d => new { d.FieldLabel, d.FileName })
             .ToListAsync(cancellationToken);
+
+        var providedDocuments = dbDocs
+            .Select(d => $"{(!string.IsNullOrWhiteSpace(d.FieldLabel) ? d.FieldLabel : "Document")}: {d.FileName}")
+            .Concat(dbDocs.Select(d => d.FileName))
+            .Concat(dbDocs.Where(d => !string.IsNullOrWhiteSpace(d.FieldLabel)).Select(d => d.FieldLabel!))
+            .Distinct()
+            .ToList();
 
         // Applications submitted before uploads existed: answers to the template's "file" fields
         if (providedDocuments.Count == 0 && submission.TemplateId.HasValue)
@@ -143,6 +150,15 @@ public class ApplicationDraftingService : IApplicationDraftingService
             Eligibility: eligibility,
             ProvidedDocuments: providedDocuments,
             Stage: currentStage), cancellationToken);
+
+        var existingPayment = await _context.Payments
+            .Where(p => p.ApplicationId == submission.Id)
+            .OrderByDescending(p => p.Id)
+            .FirstOrDefaultAsync(cancellationToken);
+        decimal effectiveFee = (action.Fee != null && action.Fee.TotalAmount > 0)
+            ? action.Fee.TotalAmount
+            : (existingPayment?.Amount ?? 0m);
+
         var draftForValidation = action.Draft ?? new DraftApplication
         {
             ApplicationId = submission.Id,
@@ -152,13 +168,15 @@ public class ApplicationDraftingService : IApplicationDraftingService
             CitizenName = fullName ?? FindAnswer(citizenAnswers, "full name", "name") ?? submission.CitizenNic,
             CitizenAge = profile.Age,
             CitizenIncome = profile.AnnualIncome,
-            CalculatedFee = action.Fee?.TotalAmount ?? 0m,
+            CalculatedFee = effectiveFee,
             FormFields = citizenAnswers,
             AttachedDocumentNames = providedDocuments,
             Stage = currentStage,
             MaxStages = submission.MaxStages > 0 ? submission.MaxStages : 1,
             DepartmentName = submission.CurrentDepartment ?? service.Category ?? "Government Service"
         };
+        draftForValidation.CalculatedFee = effectiveFee;
+        draftForValidation.AttachedDocumentNames = providedDocuments;
 
         var validation = await _safetyAgent.ValidateAndEnqueueAsync(draftForValidation, eligibility.RequiredDocuments, cancellationToken);
 

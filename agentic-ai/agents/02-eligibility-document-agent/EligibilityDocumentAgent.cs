@@ -223,6 +223,11 @@ public class EligibilityDocumentAgent : IEligibilityDocumentAgent
                 }
             }
 
+            // DETERMINISTIC GUARDRAIL:
+            // If any document flagged as missing by LLM is actually provided in profile.ProvidedDocuments, remove it from missingDocs
+            var providedDocs = profile.ProvidedDocuments ?? new List<string>();
+            missingDocs.RemoveAll(md => providedDocs.Any(prov => DocumentMatches(md, prov)));
+
             // DETERMINISTIC GUARDRAILS:
             // 1. If any mandatory documents or criteria are missing, or rule tool failed, citizen cannot be eligible
             if (missingDocs.Count > 0 || missingCriteria.Count > 0 || !ruleResult.IsEligible)

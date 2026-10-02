@@ -66,10 +66,18 @@ public class ActionToolAgent : IActionToolAgent
             }
             if (reasons.Count == 0) reasons.Add("Eligibility has not been confirmed by Agent 2.");
 
+            // Compute statutory fee schedule so the officer sees the statutory requirement
+            FeeCalculationResult? pendingFee = null;
+            try
+            {
+                pendingFee = await _feeTool.CalculateAsync(request.ServiceProcedureId, request.ExpressProcessing, stage: request.Stage, cancellationToken: cancellationToken);
+            }
+            catch { }
+
             return new ActionDraftResponse(
                 IsReadyForValidation: false,
                 Draft: null,
-                Fee: null,
+                Fee: pendingFee,
                 Appointment: null,
                 UnfilledRequiredFields: new List<string>(),
                 Blockers: reasons,

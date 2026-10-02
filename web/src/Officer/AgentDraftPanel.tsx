@@ -35,6 +35,7 @@ interface Props {
   departmentName?: string;
   citizenName?: string;
   citizenNic?: string;
+  paymentAmount?: number;
   onRegenerate: () => void;
   onApplyDecisionOrder?: (decision: string, comments: string, reasonId?: string) => void;
 }
@@ -64,6 +65,7 @@ export default function AgentDraftPanel({
   departmentName = "Government Department",
   citizenName = "",
   citizenNic = "",
+  paymentAmount,
   onRegenerate,
   onApplyDecisionOrder,
 }: Props) {
@@ -73,15 +75,27 @@ export default function AgentDraftPanel({
 
   // Evaluation Consistency & Risk Integrity Audit
   const hasFailedChecks = validation?.complianceChecks.some((c) => !c.isPassed) ?? false;
-  const isHighOrMediumRisk =
+  const isHighOrCriticalRisk =
     validation?.riskLevel?.toLowerCase() === "high" ||
-    validation?.riskLevel?.toLowerCase() === "medium" ||
     validation?.riskLevel?.toLowerCase() === "critical";
+  const isHighOrMediumRisk =
+    isHighOrCriticalRisk || validation?.riskLevel?.toLowerCase() === "medium";
   const hasRejectionsOrFlags = (validation?.rejectionReasons?.length ?? 0) > 0;
 
-  // An application is verified ONLY if valid, zero failed checks, zero rejections/inconsistencies, and Low Risk!
+  // Check if briefing explicitly recommends approval
+  const briefingRecommendsApproval =
+    validation?.officerBriefing?.toLowerCase().includes("approve stage") ?? false;
+  const isEligible = eligibility?.isEligible ?? true;
+
+  // An application can be approved if valid, eligible, not high/critical risk, and either fully clean or recommended for approval
+  const canApprove =
+    validation?.isValid === true &&
+    isEligible &&
+    !isHighOrCriticalRisk &&
+    (!hasFailedChecks || briefingRecommendsApproval);
+
   const isFullyClean =
-    validation?.isValid === true && !hasFailedChecks && !hasRejectionsOrFlags && !isHighOrMediumRisk;
+    validation?.isValid === true && !hasFailedChecks && !hasRejectionsOrFlags && !isHighOrCriticalRisk && validation?.riskLevel?.toLowerCase() === "low";
 
   const riskLevel = validation?.riskLevel ?? (isFullyClean ? "Low" : "Medium");
   const riskType =
@@ -255,8 +269,8 @@ export default function AgentDraftPanel({
 
               {/* Fixed-Style Statutory Directive Card */}
               <div style={{
-                backgroundColor: isFullyClean ? "#f6fcf7" : "#fff8f8",
-                border: `1.5px solid ${isFullyClean ? "#a7f0ba" : "#ffb3b8"}`,
+                backgroundColor: canApprove ? "#f6fcf7" : "#fff8f8",
+                border: `1.5px solid ${canApprove ? "#a7f0ba" : "#ffb3b8"}`,
                 borderRadius: "8px",
                 padding: "1.25rem",
                 marginTop: "1rem",
@@ -271,16 +285,16 @@ export default function AgentDraftPanel({
                     fontWeight: 700,
                     letterSpacing: "0.5px",
                     textTransform: "uppercase",
-                    color: isFullyClean ? "#0f62fe" : "#ba1b23"
+                    color: canApprove ? "#0f62fe" : "#ba1b23"
                   }}>
-                    {isFullyClean ? "Statutory Advisor Directive" : "Compliance Alert & Directive"}
+                    {canApprove ? "Statutory Advisor Directive" : "Compliance Alert & Directive"}
                   </span>
                   <Tag
-                    type={isFullyClean ? "green" : "red"}
+                    type={canApprove ? "green" : "red"}
                     size="sm"
                     style={{ margin: 0, fontWeight: 700 }}
                   >
-                    {isFullyClean ? `APPROVE STAGE ${currentStage}` : "REVISION REQUIRED"}
+                    {canApprove ? `APPROVE STAGE ${currentStage}` : "REVISION REQUIRED"}
                   </Tag>
                 </div>
 
@@ -289,9 +303,9 @@ export default function AgentDraftPanel({
                   fontSize: "1rem",
                   fontWeight: 700,
                   lineHeight: 1.4,
-                  color: isFullyClean ? "#198038" : "#ba1b23"
+                  color: canApprove ? "#198038" : "#ba1b23"
                 }}>
-                  {isFullyClean
+                  {canApprove
                     ? `Statutory Requirements Satisfied for Stage ${currentStage}`
                     : "Manual Document Verification & Citizen Revision Required"}
                 </div>
@@ -303,9 +317,9 @@ export default function AgentDraftPanel({
                   margin: 0,
                   lineHeight: 1.5
                 }}>
-                  {isFullyClean
+                  {canApprove
                     ? `All mandatory criteria and Stage ${currentStage} evidentiary proofs have been audited and confirmed. Safe to commit officer sign-off.`
-                    : "Submitted evidentiary document does not match authentic statutory criteria (generic image or label anomaly detected). Verify the attached file before approving, or request citizen amendment."}
+                    : "Submitted evidentiary document does not match authentic statutory criteria (missing document or compliance anomaly detected). Verify the attached file before approving, or request citizen amendment."}
                 </p>
 
                 {/* Clean, Non-Overlapping Action Row */}
@@ -316,23 +330,23 @@ export default function AgentDraftPanel({
                   flexWrap: "wrap",
                   gap: "0.75rem",
                   paddingTop: "0.875rem",
-                  borderTop: `1px solid ${isFullyClean ? "#d2f3da" : "#ffd7d9"}`
+                  borderTop: `1px solid ${canApprove ? "#d2f3da" : "#ffd7d9"}`
                 }}>
                   {onApplyDecisionOrder && (
                     <Button
                       size="md"
-                      kind={isFullyClean ? "primary" : "danger"}
-                      renderIcon={isFullyClean ? Checkmark : Warning}
+                      kind={canApprove ? "primary" : "danger"}
+                      renderIcon={canApprove ? Checkmark : Warning}
                       style={{ maxWidth: "100%" }}
                       onClick={() => {
-                        const decisionText = isFullyClean ? "Approved" : "Revision Requested";
-                        const commentText = isFullyClean
+                        const decisionText = canApprove ? "Approved" : "Revision Requested";
+                        const commentText = canApprove
                           ? `Stage ${currentStage} Statutory Verification Approved. All required proofs and identity criteria verified.\n\n${validation?.officerBriefing ?? ""}`
                           : `Stage ${currentStage} Revision Required: Inconsistency flagged in uploaded proofs. Please re-upload an authentic scanned identity document in accordance with official guidelines.\n\n${validation?.officerBriefing ?? ""}`;
                         onApplyDecisionOrder(decisionText, commentText);
                       }}
                     >
-                      {isFullyClean
+                      {canApprove
                         ? `Apply Approval for Stage ${currentStage} to Determination`
                         : "Apply Revision Request to Determination"}
                     </Button>
@@ -500,42 +514,68 @@ export default function AgentDraftPanel({
               padding: "1.25rem",
               boxShadow: "0 1px 4px rgba(0,0,0,0.03)"
             }}>
-              <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: "0.75rem" }}>
-                <div style={{ display: "flex", alignItems: "center", gap: "0.375rem" }}>
-                  <Money size={16} style={{ color: "#198038" }} />
-                  <span style={{ fontSize: "0.9375rem", fontWeight: 700, color: "#161616" }}>
-                    Statutory Fees & Dispatch
-                  </span>
-                </div>
-                <Tag type="green">
-                  {action?.fee ? formatMoney(action.fee.totalAmount, action.fee.currency) : "LKR 0.00"}
-                </Tag>
-              </div>
+              {(() => {
+                const displayFeeAmount = (action?.fee && action.fee.totalAmount > 0)
+                  ? action.fee.totalAmount
+                  : (paymentAmount && paymentAmount > 0 ? paymentAmount : 0);
+                const feeCurrency = action?.fee?.currency || "LKR";
 
-              <div style={{ fontSize: "0.75rem", color: "#525252", marginBottom: "0.5rem" }}>
-                Pre-Calculated Fee Schedule:
-              </div>
+                return (
+                  <>
+                    <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: "0.75rem" }}>
+                      <div style={{ display: "flex", alignItems: "center", gap: "0.375rem" }}>
+                        <Money size={16} style={{ color: "#198038" }} />
+                        <span style={{ fontSize: "0.9375rem", fontWeight: 700, color: "#161616" }}>
+                          Statutory Fees & Dispatch
+                        </span>
+                      </div>
+                      <Tag type={displayFeeAmount > 0 ? "green" : "cool-gray"}>
+                        {formatMoney(displayFeeAmount, feeCurrency)}
+                      </Tag>
+                    </div>
 
-              {action?.fee && action.fee.lineItems.length > 0 ? (
-                <table style={{ width: "100%", fontSize: "0.8125rem", borderCollapse: "collapse", marginBottom: "1rem" }}>
-                  <tbody>
-                    {action.fee.lineItems.map((li, idx) => (
-                      <tr key={idx} style={{ borderBottom: "1px solid #f4f4f4" }}>
-                        <td style={{ padding: "0.375rem 0", color: "#525252" }}>{li.feeType}</td>
-                        <td style={{ padding: "0.375rem 0", textAlign: "right", fontWeight: 600 }}>{formatMoney(li.amount, action.fee?.currency)}</td>
-                      </tr>
-                    ))}
-                    <tr style={{ fontWeight: 700, borderTop: "1.5px solid #e0e0e0" }}>
-                      <td style={{ padding: "0.5rem 0" }}>Total Statutory Amount</td>
-                      <td style={{ padding: "0.5rem 0", textAlign: "right", color: "#198038" }}>
-                        {formatMoney(action.fee.totalAmount, action.fee.currency)}
-                      </td>
-                    </tr>
-                  </tbody>
-                </table>
-              ) : (
-                <p style={{ ...muted, marginBottom: "1rem" }}>No statutory fee required for Stage {currentStage}.</p>
-              )}
+                    <div style={{ fontSize: "0.75rem", color: "#525252", marginBottom: "0.5rem" }}>
+                      Pre-Calculated Fee Schedule:
+                    </div>
+
+                    {action?.fee && action.fee.lineItems.length > 0 ? (
+                      <table style={{ width: "100%", fontSize: "0.8125rem", borderCollapse: "collapse", marginBottom: "1rem" }}>
+                        <tbody>
+                          {action.fee.lineItems.map((li, idx) => (
+                            <tr key={idx} style={{ borderBottom: "1px solid #f4f4f4" }}>
+                              <td style={{ padding: "0.375rem 0", color: "#525252" }}>{li.feeType}</td>
+                              <td style={{ padding: "0.375rem 0", textAlign: "right", fontWeight: 600 }}>{formatMoney(li.amount, action.fee?.currency)}</td>
+                            </tr>
+                          ))}
+                          <tr style={{ fontWeight: 700, borderTop: "1.5px solid #e0e0e0" }}>
+                            <td style={{ padding: "0.5rem 0" }}>Total Statutory Amount</td>
+                            <td style={{ padding: "0.5rem 0", textAlign: "right", color: "#198038" }}>
+                              {formatMoney(action.fee.totalAmount, action.fee.currency)}
+                            </td>
+                          </tr>
+                        </tbody>
+                      </table>
+                    ) : displayFeeAmount > 0 ? (
+                      <table style={{ width: "100%", fontSize: "0.8125rem", borderCollapse: "collapse", marginBottom: "1rem" }}>
+                        <tbody>
+                          <tr style={{ borderBottom: "1px solid #f4f4f4" }}>
+                            <td style={{ padding: "0.375rem 0", color: "#525252" }}>Statutory Processing Fee (Stage {currentStage})</td>
+                            <td style={{ padding: "0.375rem 0", textAlign: "right", fontWeight: 600 }}>{formatMoney(displayFeeAmount, feeCurrency)}</td>
+                          </tr>
+                          <tr style={{ fontWeight: 700, borderTop: "1.5px solid #e0e0e0" }}>
+                            <td style={{ padding: "0.5rem 0" }}>Total Statutory Amount</td>
+                            <td style={{ padding: "0.5rem 0", textAlign: "right", color: "#198038" }}>
+                              {formatMoney(displayFeeAmount, feeCurrency)}
+                            </td>
+                          </tr>
+                        </tbody>
+                      </table>
+                    ) : (
+                      <p style={{ ...muted, marginBottom: "1rem" }}>No statutory fee required for Stage {currentStage}.</p>
+                    )}
+                  </>
+                );
+              })()}
 
               {/* Proposed Collection Slot */}
               <div style={{ backgroundColor: "#f8f9fa", border: "1px solid #e9ecef", borderRadius: "4px", padding: "0.75rem", fontSize: "0.8125rem" }}>

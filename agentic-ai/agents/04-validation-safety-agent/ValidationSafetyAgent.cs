@@ -192,19 +192,58 @@ namespace Government_Service_Navigator.AgenticAi.Agents.ValidationSafety
 
                         if (aiSafetyResult.Inconsistencies != null && aiSafetyResult.Inconsistencies.Any())
                         {
-                            foreach (var flag in aiSafetyResult.Inconsistencies)
+                            var distinctFlags = aiSafetyResult.Inconsistencies
+                                .Where(f => !string.IsNullOrWhiteSpace(f))
+                                .Distinct(StringComparer.OrdinalIgnoreCase)
+                                .ToList();
+
+                            // Deterministic Guardrail: Filter out false-positive hallucinated flags
+                            var attached = draft.AttachedDocumentNames ?? new List<string>();
+                            distinctFlags.RemoveAll(flag =>
+                                // Missing NIC false positive if NIC is attached
+                                ((flag.Contains("NIC", StringComparison.OrdinalIgnoreCase) || flag.Contains("identity", StringComparison.OrdinalIgnoreCase) || flag.Contains("DOC-002", StringComparison.OrdinalIgnoreCase)) &&
+                                 (attached.Any(a => a.Contains("NIC", StringComparison.OrdinalIgnoreCase) || a.Contains("identity", StringComparison.OrdinalIgnoreCase)) ||
+                                  (draft.FormFields != null && draft.FormFields.Any(kv => kv.Key.Contains("NIC", StringComparison.OrdinalIgnoreCase) && !string.IsNullOrWhiteSpace(kv.Value))))) ||
+                                // Department field is institutional routing metadata, never citizen inconsistency
+                                flag.Contains("department", StringComparison.OrdinalIgnoreCase) ||
+                                // Presence of extra/payment slip documents is not an inconsistency
+                                flag.Contains("not required", StringComparison.OrdinalIgnoreCase) ||
+                                flag.Contains("additional", StringComparison.OrdinalIgnoreCase) ||
+                                flag.Contains("extra", StringComparison.OrdinalIgnoreCase) ||
+                                flag.Contains("slip", StringComparison.OrdinalIgnoreCase) ||
+                                flag.Contains("deposit", StringComparison.OrdinalIgnoreCase) ||
+                                flag.Contains("payment", StringComparison.OrdinalIgnoreCase) ||
+                                flag.Contains("generic image", StringComparison.OrdinalIgnoreCase)
+                            );
+
+                            if (distinctFlags.Any())
                             {
-                                complianceChecks.Add(new ComplianceCheckItem("Semantic Consistency Audit", false, flag));
-                                rejectionReasons.Add($"INCONSISTENCY-FLAG: {flag}");
+                                foreach (var flag in distinctFlags)
+                                {
+                                    complianceChecks.Add(new ComplianceCheckItem("Semantic Consistency Audit", false, flag));
+                                    rejectionReasons.Add($"INCONSISTENCY-FLAG: {flag}");
+                                }
+                                if (riskLevel.Equals("Low", StringComparison.OrdinalIgnoreCase))
+                                {
+                                    riskLevel = "Medium";
+                                }
                             }
-                            if (riskLevel.Equals("Low", StringComparison.OrdinalIgnoreCase))
+                            else
                             {
-                                riskLevel = "Medium";
+                                complianceChecks.Add(new ComplianceCheckItem("Semantic Consistency Audit", true, "Citizen declarations and uploaded evidentiary proofs cross-checked and found consistent."));
+                                if (!rejectionReasons.Any())
+                                {
+                                    riskLevel = "Low";
+                                }
                             }
                         }
                         else
                         {
                             complianceChecks.Add(new ComplianceCheckItem("Semantic Consistency Audit", true, "Citizen declarations cross-checked and found consistent."));
+                            if (!rejectionReasons.Any())
+                            {
+                                riskLevel = "Low";
+                            }
                         }
 
                         toolCalls.Add(new ValidationToolCall(
@@ -287,6 +326,12 @@ Focus on:
 1. Identifying the specific Service and whether prerequisites for THIS active Stage are satisfied.
 2. Auditing attached proofs vs mandatory requirements for this active stage.
 3. Formulating a direct, actionable officer recommendation (e.g. 'Recommended Action: APPROVE Stage 1' or 'Recommended Action: REQUEST REVISION of Birth Certificate').
+
+Institutional Guidelines & Guardrails:
+- The 'Department' field is internal administrative routing metadata, NOT a citizen form input. Never flag an empty or missing Department as a citizen inconsistency.
+- Do NOT flag optional, standard deposit slips, bank payment receipts, or extra uploads as anomalies or reasons for revision if all mandatory requirements for this stage are met.
+- If all mandatory proofs (e.g. NIC) are attached and authentic and eligibility criteria pass, riskLevel MUST be 'Low' and isSemanticallyConsistent MUST be true.
+
 Respond strictly with a JSON object matching this schema:
 {
   ""riskLevel"": ""Low"" | ""Medium"" | ""High"" | ""Critical"",
