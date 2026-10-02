@@ -1,9 +1,10 @@
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import jsPDF from "jspdf";
-import { ContentSwitcher, Switch, Button, TableContainer, Table, TableHead, TableRow, TableHeader, TableBody, TableCell } from "@carbon/react";
+import { ContentSwitcher, Switch, Button, InlineNotification, TableContainer, Table, TableHead, TableRow, TableHeader, TableBody, TableCell } from "@carbon/react";
 import { DocumentPdf } from "@carbon/icons-react";
 import FinanceShell from "./finance_shell";
-import { loadPayments } from "./financeData";
+import { mapBackendPayment, type Payment } from "./financeData";
+import { getDepartmentPayments } from "./paymentsApi";
 import { buildLedger, type LedgerPeriod } from "./ledger";
 import { formatCurrency } from "./format";
 
@@ -15,12 +16,19 @@ const PERIODS: { key: LedgerPeriod; label: string; description: string }[] = [
 ];
 
 export default function FinanceLedger() {
-  const [payments] = useState(loadPayments);
+  const [payments, setPayments] = useState<Payment[]>([]);
+  const [loadError, setLoadError] = useState<string | null>(null);
   const [period, setPeriod] = useState<LedgerPeriod>("monthly");
 
   const entries = useMemo(() => buildLedger(payments, period), [payments, period]);
   const grandTotal = useMemo(() => entries.reduce((acc, e) => acc + e.total, 0), [entries]);
   const activePeriodMeta = PERIODS.find((p) => p.key === period)!;
+
+  useEffect(() => {
+    getDepartmentPayments()
+      .then((rows) => setPayments(rows.map(mapBackendPayment)))
+      .catch((err: unknown) => setLoadError(err instanceof Error ? err.message : "Could not load payments."));
+  }, []);
 
   function exportPdf() {
     const doc = new jsPDF();
@@ -111,6 +119,10 @@ export default function FinanceLedger() {
           Export PDF
         </Button>
       </div>
+
+      {loadError && (
+        <InlineNotification kind="error" title="Ledger unavailable" subtitle={loadError} lowContrast hideCloseButton />
+      )}
 
       <div style={{ marginBottom: '1.5rem', maxWidth: '520px' }}>
         <ContentSwitcher

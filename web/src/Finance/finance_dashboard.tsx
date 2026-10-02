@@ -41,6 +41,7 @@ import {
 import FinanceShell from "./finance_shell";
 import {
   PAYMENT_METHOD_LABELS,
+  mapBackendPayment,
   type Payment,
   type PaymentMethod,
   type PaymentStatus,
@@ -265,69 +266,7 @@ export default function FinanceDashboard() {
     getDepartmentPayments()
       .then((backendPayments) => {
         if (backendPayments && backendPayments.length > 0) {
-          const mapped: Payment[] = backendPayments.map((b) => {
-            const isDirect =
-              b.paymentCategory === "DirectMobile" ||
-              (b.isDirectPayment === true &&
-                (!b.serviceName ||
-                  b.serviceName === "Department Statutory Fee"));
-            const category: "DirectMobile" | "ApplicationStage" = isDirect
-              ? "DirectMobile"
-              : "ApplicationStage";
-
-            return {
-              id: b.id,
-              applicationId:
-                category === "ApplicationStage"
-                  ? b.referenceNumber?.startsWith("APP-")
-                    ? b.referenceNumber
-                    : `APP-${b.applicationId}`
-                  : b.referenceNumber || `PAY-${b.id}`,
-              userId: b.userEmail || "citizen@gov.lk",
-              citizenNic: b.citizenNic || "",
-              citizenName: b.citizenName || "",
-              serviceName:
-                b.serviceName ||
-                (category === "ApplicationStage"
-                  ? "Government Service"
-                  : "Department Statutory Fee"),
-              stageNumber: b.stageNumber || 1,
-              maxStages: b.maxStages,
-              stageStatus: b.stageStatus,
-              paymentCategory: category,
-              isDirectPayment: isDirect,
-              department: b.department || "",
-              method:
-                b.method === "Online" || b.method === "OnlinePay"
-                  ? "OnlinePay"
-                  : b.method === "Bank Deposit"
-                    ? "BankDeposit"
-                    : "OnlineBankTransfer",
-              amount: b.amount,
-              status:
-                b.status === "Paid"
-                  ? "Verified"
-                  : b.status === "Failed"
-                    ? "Rejected"
-                    : "Pending",
-              submittedAt: b.submittedAt || b.createdDate,
-              slipFileName:
-                b.slipFileName ||
-                (b.manualSlipUrl
-                  ? b.manualSlipUrl.startsWith("data:")
-                    ? `deposit_slip_${b.referenceNumber || b.id}.${b.manualSlipUrl.includes("pdf") ? "pdf" : "png"}`
-                    : b.manualSlipUrl.split("/").pop() ||
-                      "bank_deposit_slip.pdf"
-                  : "bank_deposit_slip.pdf"),
-              slipUploadedAt:
-                b.slipUploadedAt || b.submittedAt || b.createdDate,
-              manualSlipUrl: b.manualSlipUrl || undefined,
-              referenceNumber: b.referenceNumberOrId || b.referenceNumber,
-              transactionId: b.referenceNumberOrId || b.referenceNumber,
-              paidAt: b.paidDate || undefined,
-              verifiedAt: b.paidDate || undefined,
-            };
-          });
+          const mapped = backendPayments.map(mapBackendPayment);
 
           setPayments(mapped);
 

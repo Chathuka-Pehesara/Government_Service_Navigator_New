@@ -1,3 +1,5 @@
+import type { BackendPayment } from "./paymentsApi";
+
 export type PaymentMethod = "OnlineBankTransfer" | "BankDeposit" | "OnlinePay";
 export type PaymentStatus = "Pending" | "Verified" | "Rejected";
 
@@ -47,140 +49,67 @@ export const PAYMENT_METHOD_LABELS: Record<PaymentMethod, string> = {
   OnlinePay: "Online Pay",
 };
 
-const STORAGE_KEY = "financePayments";
+// Shapes a backend payment row into the view model the finance pages use
+export function mapBackendPayment(b: BackendPayment): Payment {
+  const isDirect =
+    b.paymentCategory === "DirectMobile" ||
+    (b.isDirectPayment === true &&
+      (!b.serviceName ||
+        b.serviceName === "Department Statutory Fee"));
+  const category: "DirectMobile" | "ApplicationStage" = isDirect
+    ? "DirectMobile"
+    : "ApplicationStage";
 
-const BANKS = ["Bank of Ceylon", "People's Bank", "Commercial Bank", "Hatton National Bank", "Sampath Bank"];
-const GATEWAYS = ["PayHere", "LankaQR / Genie", "VISA/Mastercard Gateway"];
-
-function seededRandom(seed: number) {
-  let value = seed;
-  return () => {
-    value = (value * 9301 + 49297) % 233280;
-    return value / 233280;
+  return {
+    id: b.id,
+    applicationId:
+      category === "ApplicationStage"
+        ? b.referenceNumber?.startsWith("APP-")
+          ? b.referenceNumber
+          : `APP-${b.applicationId}`
+        : b.referenceNumber || `PAY-${b.id}`,
+    userId: b.userEmail || "",
+    citizenNic: b.citizenNic || "",
+    citizenName: b.citizenName || "",
+    serviceName:
+      b.serviceName ||
+      (category === "ApplicationStage"
+        ? "Government Service"
+        : "Department Statutory Fee"),
+    stageNumber: b.stageNumber || 1,
+    maxStages: b.maxStages,
+    stageStatus: b.stageStatus,
+    paymentCategory: category,
+    isDirectPayment: isDirect,
+    department: b.department || "",
+    method:
+      b.method === "Online" || b.method === "OnlinePay"
+        ? "OnlinePay"
+        : b.method === "Bank Deposit"
+          ? "BankDeposit"
+          : "OnlineBankTransfer",
+    amount: b.amount,
+    status:
+      b.status === "Paid"
+        ? "Verified"
+        : b.status === "Failed"
+          ? "Rejected"
+          : "Pending",
+    submittedAt: b.submittedAt || b.createdDate,
+    slipFileName:
+      b.slipFileName ||
+      (b.manualSlipUrl
+        ? b.manualSlipUrl.startsWith("data:")
+          ? `deposit_slip_${b.referenceNumber || b.id}.${b.manualSlipUrl.includes("pdf") ? "pdf" : "png"}`
+          : b.manualSlipUrl.split("/").pop() ||
+            "bank_deposit_slip.pdf"
+        : "bank_deposit_slip.pdf"),
+    slipUploadedAt:
+      b.slipUploadedAt || b.submittedAt || b.createdDate,
+    manualSlipUrl: b.manualSlipUrl || undefined,
+    referenceNumber: b.referenceNumberOrId || b.referenceNumber,
+    transactionId: b.referenceNumberOrId || b.referenceNumber,
+    paidAt: b.paidDate || undefined,
+    verifiedAt: b.paidDate || undefined,
   };
-}
-
-function pad(n: number, len = 4) {
-  return n.toString().padStart(len, "0");
-}
-
-function buildSeedPayments(): Payment[] {
-  const rand = seededRandom(42);
-  const now = new Date();
-  const payments: Payment[] = [];
-  let id = 1;
-
-  // Spread submissions across the last ~14 months so daily/weekly/monthly/yearly
-  // ledger views all have real data to show, not just the current bucket.
-  for (let daysAgo = 420; daysAgo >= 0; daysAgo -= Math.floor(2 + rand() * 4)) {
-    const submitted = new Date(now);
-    submitted.setDate(submitted.getDate() - daysAgo);
-    submitted.setHours(8 + Math.floor(rand() * 9), Math.floor(rand() * 60), 0, 0);
-
-    const methodRoll = rand();
-    const method: PaymentMethod =
-      methodRoll < 0.4 ? "OnlineBankTransfer" : methodRoll < 0.7 ? "BankDeposit" : "OnlinePay";
-
-    const statusRoll = rand();
-    const status: PaymentStatus = statusRoll < 0.72 ? "Verified" : statusRoll < 0.88 ? "Pending" : "Rejected";
-
-    const amount = [1500, 2500, 3500, 5000, 7500, 10000][Math.floor(rand() * 6)];
-    const applicationId = `APP-${submitted.getFullYear()}-${pad(1000 + id * 7)}`;
-    const userId = `USR-${pad(4000 + id * 3)}`;
-
-    const isDirect = id % 3 === 0;
-    const payment: Payment = {
-      id,
-      applicationId: isDirect ? `PAY-${submitted.getFullYear()}${pad(1000 + id * 7, 6)}` : applicationId,
-      userId,
-      citizenNic: `200${pad(id * 13, 9)}`,
-      citizenName: `Citizen ${id}`,
-      serviceName: isDirect ? "Department Statutory Fee" : "Public Service Procedure",
-      stageNumber: isDirect ? 1 : (id % 3) + 1,
-      paymentCategory: isDirect ? "DirectMobile" : "ApplicationStage",
-      isDirectPayment: isDirect,
-      method,
-      amount,
-      status,
-      submittedAt: submitted.toISOString(),
-    };
-
-    if (method === "OnlineBankTransfer" || method === "BankDeposit") {
-      const paymentDate = new Date(submitted);
-      payment.bankName = BANKS[Math.floor(rand() * BANKS.length)];
-      payment.branchName = ["Colombo Main", "Kandy City", "Galle Fort", "Kurunegala", "Negombo"][
-        Math.floor(rand() * 5)
-      ];
-      payment.accountNumber = `${100000000 + Math.floor(rand() * 899999999)}`;
-      payment.referenceNumber = `${method === "BankDeposit" ? "DEP" : "TRF"}-${submitted.getFullYear()}${pad(
-        id,
-        5
-      )}`;
-      payment.paymentDate = paymentDate.toISOString();
-      payment.slipFileName = `slip_${payment.referenceNumber}.jpg`;
-      payment.slipUploadedAt = submitted.toISOString();
-    } else {
-      payment.gatewayName = GATEWAYS[Math.floor(rand() * GATEWAYS.length)];
-      payment.transactionId = `TXN${submitted.getFullYear()}${pad(id, 6)}`;
-      payment.payerName = `Citizen ${pad(id, 3)}`;
-      payment.paidAt = submitted.toISOString();
-    }
-
-    if (status !== "Pending") {
-      const verified = new Date(submitted);
-      verified.setDate(verified.getDate() + 1 + Math.floor(rand() * 2));
-      if (verified > now) verified.setTime(now.getTime());
-      payment.verifiedAt = verified.toISOString();
-      payment.verifiedByOfficerName = ["S. Perera", "N. Jayasuriya", "R. Fernando"][Math.floor(rand() * 3)];
-      payment.verificationNotes =
-        status === "Rejected" ? "Slip amount does not match the invoiced fee." : "Confirmed against bank statement.";
-    }
-
-    payments.push(payment);
-    id += 1;
-  }
-
-  return payments.reverse();
-}
-
-export function loadPayments(): Payment[] {
-  try {
-    const stored = localStorage.getItem(STORAGE_KEY);
-    if (stored) return JSON.parse(stored);
-  } catch {
-    // fall through to reseed
-  }
-  const seeded = buildSeedPayments();
-  persistPayments(seeded);
-  return seeded;
-}
-
-export function persistPayments(payments: Payment[]) {
-  try {
-    localStorage.setItem(STORAGE_KEY, JSON.stringify(payments));
-  } catch {
-    // localStorage unavailable (private mode, etc.) - state just won't persist
-  }
-}
-
-export function verifyPayment(
-  id: number,
-  decision: Extract<PaymentStatus, "Verified" | "Rejected">,
-  notes: string,
-  officerName: string
-): Payment[] {
-  const payments = loadPayments();
-  const updated = payments.map((p) =>
-    p.id === id
-      ? {
-          ...p,
-          status: decision,
-          verifiedAt: new Date().toISOString(),
-          verifiedByOfficerName: officerName,
-          verificationNotes: notes,
-        }
-      : p
-  );
-  persistPayments(updated);
-  return updated;
 }

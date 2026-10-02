@@ -1,5 +1,5 @@
 import "@carbon/styles/css/styles.css";
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import CurrentUserBadge from "../components/CurrentUserBadge";
 import {
   Header,
@@ -22,7 +22,6 @@ import {
   TableHeader,
   TableBody,
   TableCell,
-  Tag,
   Search,
   Pagination,
 } from "@carbon/react";
@@ -39,7 +38,7 @@ import {
   Rule,
   Categories,
 } from "@carbon/icons-react";
-import { API_BASE_URL } from "../utils/api";
+import { API_BASE_URL, apiFetch } from "../utils/api";
 
 // Table Data
 const headers = [
@@ -47,35 +46,24 @@ const headers = [
   { key: "action", header: "Action" },
   { key: "target", header: "Target ID" },
   { key: "time", header: "Timestamp" },
-  { key: "status", header: "Status" },
 ];
 
-const rows = [
-  {
-    id: "1",
-    officer: "Sarah Fernando",
-    action: "Approved Application",
-    target: "APP-8992",
-    time: "2 mins ago",
-    status: "Success",
-  },
-  {
-    id: "2",
-    officer: "Nuwan Perera",
-    action: "Rejected Document",
-    target: "DOC-1029",
-    time: "15 mins ago",
-    status: "Flagged",
-  },
-  {
-    id: "3",
-    officer: "System Auto-Sync",
-    action: "Database Backup",
-    target: "SYS-DB-01",
-    time: "1 hour ago",
-    status: "Success",
-  },
-];
+interface AuditLogEntry {
+  id: number;
+  applicationId: number;
+  action: string;
+  performedBy: string;
+  timestamp: string;
+}
+
+interface RecentAuditLogs {
+  totalCount: number;
+  items: AuditLogEntry[];
+}
+
+interface OfficerListItem {
+  status: string;
+}
 
 function getStoredAdminName(): string {
   const storedUser = localStorage.getItem("officerUser");
@@ -94,6 +82,42 @@ export default function AdminDashboard() {
   const [adminName] = useState(getStoredAdminName);
   const [page, setPage] = useState<number>(1);
   const [pageSize, setPageSize] = useState<number>(10);
+  const [activity, setActivity] = useState<RecentAuditLogs>({ totalCount: 0, items: [] });
+  const [officers, setOfficers] = useState<OfficerListItem[] | null>(null);
+  const [departmentCount, setDepartmentCount] = useState<number | null>(null);
+
+  useEffect(() => {
+    apiFetch<OfficerListItem[]>("/api/admin/officers").then(setOfficers).catch(() => setOfficers(null));
+    apiFetch<unknown[]>("/api/departments")
+      .then((list) => setDepartmentCount(list.length))
+      .catch(() => setDepartmentCount(null));
+  }, []);
+
+  useEffect(() => {
+    apiFetch<RecentAuditLogs>(`/api/audit-logs/recent?page=${page}&pageSize=${pageSize}`)
+      .then(setActivity)
+      .catch(() => setActivity({ totalCount: 0, items: [] }));
+  }, [page, pageSize]);
+
+  const rows = activity.items.map((log) => ({
+    id: String(log.id),
+    officer: log.performedBy,
+    action: log.action,
+    target: log.applicationId ? `APP-${log.applicationId}` : "-",
+    time: new Date(log.timestamp).toLocaleString(),
+  }));
+
+  const activeOfficerCount = officers?.filter(
+    (o) => !["suspended", "inactive"].includes(o.status?.toLowerCase())
+  ).length;
+
+  // null means the count could not be loaded
+  const stats = [
+    { label: "Total Officers", value: officers?.length ?? null, icon: <UserMultiple size={20} /> },
+    { label: "Active Officers", value: activeOfficerCount ?? null, icon: <Security size={20} /> },
+    { label: "Departments", value: departmentCount, icon: <Document size={20} /> },
+    { label: "Audit Events", value: activity.totalCount, icon: <Activity size={20} /> },
+  ];
 
   const handleLogout = async () => {
     const token = localStorage.getItem("officerToken");
@@ -240,142 +264,33 @@ export default function AdminDashboard() {
             <Grid
               style={{ paddingLeft: 0, paddingRight: 0, marginBottom: "2rem" }}
             >
-              <Column sm={4} md={4} lg={4}>
-                <Tile>
-                  <div
-                    style={{
-                      display: "flex",
-                      justifyContent: "space-between",
-                      marginBottom: "1rem",
-                    }}
-                  >
-                    <p style={{ color: "#525252", fontSize: "0.875rem" }}>
-                      Total Applications
-                    </p>
-                    <Document size={20} />
-                  </div>
-                  <h3
-                    style={{
-                      fontSize: "2.5rem",
-                      fontWeight: 300,
-                      margin: "0.5rem 0",
-                    }}
-                  >
-                    12,845
-                  </h3>
-                  <p
-                    style={{
-                      color: "#24a148",
-                      fontSize: "0.875rem",
-                      marginTop: "1rem",
-                    }}
-                  >
-                    +14% vs last week
-                  </p>
-                </Tile>
-              </Column>
-              <Column sm={4} md={4} lg={4}>
-                <Tile>
-                  <div
-                    style={{
-                      display: "flex",
-                      justifyContent: "space-between",
-                      marginBottom: "1rem",
-                    }}
-                  >
-                    <p style={{ color: "#525252", fontSize: "0.875rem" }}>
-                      Active Officers
-                    </p>
-                    <UserMultiple size={20} />
-                  </div>
-                  <h3
-                    style={{
-                      fontSize: "2.5rem",
-                      fontWeight: 300,
-                      margin: "0.5rem 0",
-                    }}
-                  >
-                    342
-                  </h3>
-                  <p
-                    style={{
-                      color: "#24a148",
-                      fontSize: "0.875rem",
-                      marginTop: "1rem",
-                    }}
-                  >
-                    +2% vs last week
-                  </p>
-                </Tile>
-              </Column>
-              <Column sm={4} md={4} lg={4}>
-                <Tile style={{ borderTop: "4px solid #da1e28" }}>
-                  <div
-                    style={{
-                      display: "flex",
-                      justifyContent: "space-between",
-                      marginBottom: "1rem",
-                    }}
-                  >
-                    <p style={{ color: "#525252", fontSize: "0.875rem" }}>
-                      Pending Reviews
-                    </p>
-                    <Activity size={20} color="#da1e28" />
-                  </div>
-                  <h3
-                    style={{
-                      fontSize: "2.5rem",
-                      fontWeight: 300,
-                      margin: "0.5rem 0",
-                    }}
-                  >
-                    1,204
-                  </h3>
-                  <p
-                    style={{
-                      color: "#da1e28",
-                      fontSize: "0.875rem",
-                      marginTop: "1rem",
-                    }}
-                  >
-                    -5% vs last week
-                  </p>
-                </Tile>
-              </Column>
-              <Column sm={4} md={4} lg={4}>
-                <Tile>
-                  <div
-                    style={{
-                      display: "flex",
-                      justifyContent: "space-between",
-                      marginBottom: "1rem",
-                    }}
-                  >
-                    <p style={{ color: "#525252", fontSize: "0.875rem" }}>
-                      System Health
-                    </p>
-                    <Security size={20} />
-                  </div>
-                  <h3
-                    style={{
-                      fontSize: "2.5rem",
-                      fontWeight: 300,
-                      margin: "0.5rem 0",
-                    }}
-                  >
-                    99.9%
-                  </h3>
-                  <p
-                    style={{
-                      color: "#24a148",
-                      fontSize: "0.875rem",
-                      marginTop: "1rem",
-                    }}
-                  >
-                    Stable vs last week
-                  </p>
-                </Tile>
-              </Column>
+              {stats.map((stat) => (
+                <Column sm={4} md={4} lg={4} key={stat.label}>
+                  <Tile>
+                    <div
+                      style={{
+                        display: "flex",
+                        justifyContent: "space-between",
+                        marginBottom: "1rem",
+                      }}
+                    >
+                      <p style={{ color: "#525252", fontSize: "0.875rem" }}>
+                        {stat.label}
+                      </p>
+                      {stat.icon}
+                    </div>
+                    <h3
+                      style={{
+                        fontSize: "2.5rem",
+                        fontWeight: 300,
+                        margin: "0.5rem 0",
+                      }}
+                    >
+                      {stat.value === null ? "-" : stat.value.toLocaleString()}
+                    </h3>
+                  </Tile>
+                </Column>
+              ))}
             </Grid>
 
             {/* Data Table */}
@@ -405,26 +320,11 @@ export default function AdminDashboard() {
                       </TableRow>
                     </TableHead>
                     <TableBody>
-                      {rows.slice((page - 1) * pageSize, page * pageSize).map((row) => (
+                      {rows.map((row) => (
                         <TableRow {...getRowProps({ row })} key={row.id}>
-                          {row.cells.map((cell) => {
-                            if (cell.info.header === "status") {
-                              return (
-                                <TableCell key={cell.id}>
-                                  <Tag
-                                    type={
-                                      cell.value === "Flagged" ? "red" : "green"
-                                    }
-                                  >
-                                    {cell.value}
-                                  </Tag>
-                                </TableCell>
-                              );
-                            }
-                            return (
-                              <TableCell key={cell.id}>{cell.value}</TableCell>
-                            );
-                          })}
+                          {row.cells.map((cell) => (
+                            <TableCell key={cell.id}>{cell.value}</TableCell>
+                          ))}
                         </TableRow>
                       ))}
                     </TableBody>
@@ -436,7 +336,7 @@ export default function AdminDashboard() {
                     page={page}
                     pageSize={pageSize}
                     pageSizes={[10, 20, 50]}
-                    totalItems={rows.length}
+                    totalItems={activity.totalCount}
                     onChange={({ page, pageSize }) => {
                       if (page) setPage(page);
                       if (pageSize) setPageSize(pageSize);

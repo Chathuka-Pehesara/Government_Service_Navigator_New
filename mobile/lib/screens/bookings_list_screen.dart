@@ -26,28 +26,6 @@ class _BookingsListScreenState extends ConsumerState<BookingsListScreen> {
   final Map<String, Map<String, dynamic>> _bookingsByAppCode = {};
   bool _isLoadingBookings = false;
 
-  // Static completed services fallback so demo is always rich and testable
-  final List<Map<String, String>> _fallbackCompletedServices = [
-    {
-      'id': 'APP-9088',
-      'serviceName': 'Passport Issuance and Renewal',
-      'dateCompleted': '2026-09-28',
-      'department': 'Department of Immigration & Emigration'
-    },
-    {
-      'id': 'APP-4011',
-      'serviceName': 'Driving License Renewal',
-      'dateCompleted': '2026-09-27',
-      'department': 'Department of Motor Traffic'
-    },
-    {
-      'id': 'APP-9102',
-      'serviceName': 'National Identity Card (NIC) Issue',
-      'dateCompleted': '2026-09-25',
-      'department': 'Department of Registration of Persons'
-    },
-  ];
-
   @override
   void initState() {
     super.initState();
@@ -306,14 +284,12 @@ class _BookingsListScreenState extends ConsumerState<BookingsListScreen> {
 
     // Filter completed or approved applications
     final List<Map<String, String>> displayedServices = [];
-    final Set<String> seenIds = {};
 
     for (final app in liveApps) {
       final status = app.status.toLowerCase();
       final isCompleted = status == 'approved' || status == 'completed' || app.currentStage >= app.maxStages;
       if (isCompleted) {
         final id = 'APP-${app.applicationId}';
-        seenIds.add(id);
         final dateStr = '${app.submittedDate.year}-${app.submittedDate.month.toString().padLeft(2, '0')}-${app.submittedDate.day.toString().padLeft(2, '0')}';
         displayedServices.add({
           'id': id,
@@ -321,13 +297,6 @@ class _BookingsListScreenState extends ConsumerState<BookingsListScreen> {
           'dateCompleted': dateStr,
           'department': app.department ?? app.currentDepartment ?? 'General Services',
         });
-      }
-    }
-
-    // Include fallback/demo services so user always has items to test
-    for (final fallback in _fallbackCompletedServices) {
-      if (!seenIds.contains(fallback['id'])) {
-        displayedServices.add(fallback);
       }
     }
 
@@ -707,6 +676,27 @@ class _BookingsListScreenState extends ConsumerState<BookingsListScreen> {
                 ),
               );
             }),
+
+            if (displayedServices.isEmpty && !appsAsync.isLoading)
+              const Padding(
+                padding: EdgeInsets.symmetric(vertical: 48),
+                child: Column(
+                  children: [
+                    Icon(Icons.inbox_rounded, size: 48, color: AppColors.secondaryLabel),
+                    SizedBox(height: 12),
+                    Text(
+                      'No completed applications yet',
+                      style: TextStyle(fontWeight: FontWeight.bold, fontSize: 15),
+                    ),
+                    SizedBox(height: 4),
+                    Text(
+                      'Applications appear here once they are approved and ready for collection.',
+                      textAlign: TextAlign.center,
+                      style: TextStyle(color: AppColors.secondaryLabel, fontSize: 12),
+                    ),
+                  ],
+                ),
+              ),
           ],
         ),
       ),

@@ -43,6 +43,7 @@ import {
 } from "@carbon/icons-react";
 import { getDepartmentLabel } from "../constants/departments";
 import { API_BASE_URL, toQuery } from "../utils/api";
+import { getDepartmentPayments } from "../Finance/paymentsApi";
 
 // The dashboard shows recent oversight activity; full history lives in Verified Records and Audit Logs
 const RECENT_VERIFICATIONS = 100;
@@ -222,9 +223,7 @@ function DepartmentAdminDashboardContent({
           if (!rawVal || rawVal === "System") {
             const fallback = deptOfficers.find((o) => o.role === fallbackRole);
             if (fallback) return `${fallback.name} (${fallback.email})`;
-            return fallbackRole === "Verifying Officer"
-              ? "test (test@gmail.com)"
-              : "dinidu (dinidu@gmail.com)";
+            return fallbackRole;
           }
 
           const trimmed = rawVal.trim();
@@ -315,85 +314,24 @@ function DepartmentAdminDashboardContent({
           });
         }
 
-        // Mock fallback records if empty so the dashboard has rich sample data
-        if (processedList.length === 0) {
-          const defaultVerifyingOfficer = resolveOfficerName(null, "Verifying Officer");
-          processedList.push(
-            {
-              id: 9088,
-              applicationId: 9088,
-              referenceNumber: "APP-9088",
-              citizenNic: "200125401129",
-              citizenName: "Sunil Perera",
-              serviceName: "Passport Issuance & Renewal (Stage 1)",
-              currentStage: 1,
-              status: "Approved",
-              actionedBy: defaultVerifyingOfficer,
-              date: new Date(Date.now() - 3600000 * 24).toLocaleDateString(),
-              comments: "Original birth certificate and biometric photos verified.",
-            },
-            {
-              id: 8850,
-              applicationId: 8850,
-              referenceNumber: "APP-8850",
-              citizenNic: "199411204481",
-              citizenName: "K. M. Fernando",
-              serviceName: "Passport Issuance & Renewal (Stage 1)",
-              currentStage: 1,
-              status: "Rejected",
-              actionedBy: defaultVerifyingOfficer,
-              date: new Date(Date.now() - 3600000 * 48).toLocaleDateString(),
-              comments: "Blurry National Identity Card copy and signature mismatch.",
-            }
-          );
-        }
-
         if (isMounted) setVerifications(processedList);
 
         // 3. Transactions List (Handled by Finance Officer)
-        const defaultFinanceOfficer = resolveOfficerName(null, "Finance Officer");
-        const txnList: PaymentTransactionRow[] = [
-          {
-            id: "TXN-88401",
-            applicationId: "APP-9088",
-            amount: 5000,
-            method: "Online Pay (Stripe)",
-            status: "Success",
-            handledBy: defaultFinanceOfficer,
-            date: new Date(Date.now() - 3600000 * 20).toLocaleDateString(),
-            notes: "Standard Passport Issuance Fee verified",
-          },
-          {
-            id: "TXN-88402",
-            applicationId: "APP-9102",
-            amount: 10000,
-            method: "Manual Bank Slip (BOC)",
-            status: "Success",
-            handledBy: defaultFinanceOfficer,
-            date: new Date(Date.now() - 3600000 * 30).toLocaleDateString(),
-            notes: "Bank Deposit Slip reference BOC-9021 confirmed",
-          },
-          {
-            id: "TXN-88395",
-            applicationId: "APP-8850",
-            amount: 5000,
-            method: "Manual Bank Slip (People's Bank)",
-            status: "Failed",
-            handledBy: defaultFinanceOfficer,
-            date: new Date(Date.now() - 3600000 * 45).toLocaleDateString(),
-            notes: "Deposit slip unreadable; payment amount did not match statutory schedule",
-          },
-          {
-            id: "TXN-88410",
-            applicationId: "APP-9140",
-            amount: 5000,
-            method: "Online Bank Transfer",
-            status: "Pending",
-            handledBy: defaultFinanceOfficer,
-            date: new Date(Date.now() - 3600000 * 2).toLocaleDateString(),
-            notes: "Slip uploaded, awaiting final clearance by Finance Officer",
-          },
-        ];
+        const payments = await getDepartmentPayments().catch(() => []);
+        const txnList: PaymentTransactionRow[] = payments.map((p) => {
+          const status: PaymentTransactionRow["status"] =
+            p.status === "Paid" ? "Success" : p.status === "Failed" ? "Failed" : "Pending";
+          return {
+            id: p.referenceNumberOrId || `PAY-${p.id}`,
+            applicationId: p.referenceNumber || `APP-${p.applicationId}`,
+            amount: p.amount,
+            method: p.method,
+            status,
+            handledBy: status === "Pending" ? "Awaiting review" : "Finance Officer",
+            date: new Date(p.paidDate || p.submittedAt || p.createdDate).toLocaleDateString(),
+            notes: p.serviceName || "",
+          };
+        });
 
         if (isMounted) setTransactions(txnList);
       } catch (err) {
