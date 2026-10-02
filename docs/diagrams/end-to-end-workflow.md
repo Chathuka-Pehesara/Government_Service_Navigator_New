@@ -221,11 +221,13 @@ An officer's decision normally reaches the citizen's open screen in about a seco
 
 | Where | What happens | Citizen sees |
 |---|---|---|
-| Agent 1 finds no matching policy | `recommendedService: "Service Not Found"` | The five supported services and a pointer to the department helpdesk |
+| Agent 1 finds no matching policy | `recommendedService: "Service Not Found"` | With the LLM: a pointer to the service catalog or the Divisional Secretariat. Without it: the five services that have knowledge documents and a pointer to the department helpdesk |
 | Required field missing | `400 { missingFields }` | Field errors on the form |
-| Agent 4 rejects (injection, age, duplicate, missing docs) | `400 { errors, summary }`, nothing saved | Rejection reasons |
+| Agent 4 rejects (injection, age, missing docs, or an LLM consistency flag) | `400 { errors, summary }`, nothing saved | Rejection reasons |
+| Same service already in progress | Submit succeeds; Agent 4's duplicate check fails and the officer sees it | Normal confirmation |
 | Fee not covered on `finalize` | `402` with the outstanding amount | Payment screen again |
 | Finance rejects the slip | Payment `Failed`; officer approval stays locked | Payment status email |
 | Installment passes its due date unpaid | Hourly job cancels the plan, tasks and application | In-app notification + email |
-| Officer rejects / requests revision | Task `Rejected` / `Revised` + `OfficerReview` comment | Status change pushed to the open app (no email). The app can raise a concern (`raise-concern`), which is only audit-logged |
+| Officer rejects | Task `Rejected` + `OfficerReview` comment | Status change pushed to the open app (no email). The app can raise a concern (`raise-concern`), which is only audit-logged |
+| Officer requests revision | Task `Revised`, submission `ActionRequired` + `OfficerReview` comment | "Officer Revisions Requested" banner (no email). The citizen uploads a corrected file and sends a note with `submit-revision`, which puts the task back to `Pending` |
 | Requested collection time is full, on a Sunday or outside counter hours | Agent 3 books nothing | Suggested open slots for that day or the next working day |

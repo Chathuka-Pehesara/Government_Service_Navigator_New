@@ -20,7 +20,7 @@ The JWT middleware is registered globally, but that only makes `Authorization: B
 
 | Tier | Meaning | Where |
 |---|---|---|
-| **None** | Callable with no token at all | `AuthController` (except `logout`), `AdminController`, `DepartmentsController`, `ServicesController`, `TemplateController`, `IntakeAgentController`, `EligibilityAgentController`, `ActionAgentController`, `ValidationAgentController`, `RagSetupController`, `GET /api/verification/seed`, the `GET` actions of `CollectionSlotsController` |
+| **None** | Callable with no token at all | `AuthController` (except `logout`), `AdminController`, `DepartmentsController`, `ServicesController`, `TemplateController`, `IntakeAgentController`, `EligibilityAgentController`, `ActionAgentController`, `ValidationAgentController`, `RagSetupController`, `GET /api/verification/seed`, the `GET` actions of `CollectionSlotsController`, `POST /api/applications/{id}/raise-concern`, `POST /api/applications/{id}/submit-revision` |
 | **Any token** | `[Authorize]` - any valid, non-revoked token (citizen, officer or admin) | `ApplicationsController`, `NotificationsController`, `AuditLogsController`, `AnalyticsController`, `AnomalyDetectionController`, the citizen side of `RefundsController`, most of `PaymentsController` and `InstallmentPlansController`, `GET /api/verification/my-applications` |
 | **Role** | `[Authorize(Roles = "...")]` - checked against the token's `ClaimTypes.Role` claim | Every other `VerificationController` action, finance actions in `PaymentsController` and `RefundsController`, staff actions in `InstallmentPlansController`, writes in `CollectionSlotsController` |
 
@@ -194,7 +194,9 @@ Only one of `user`/`officer`/`admin` is populated. **These actions return `200 O
   "eligibilityRules": [], "documentRequirements": [], "feeSchedules": [] }
 ```
 - `serviceId` is **server-generated** on create (highest `GSN-SRV-NNN` + 1, retired rows included); whatever you send is overwritten.
-- `category` must be one of the categories in `web/src/constants/departments.ts` (`Immigration`, `Transport`, `Police`, `Civil`, `Public Administration`) for department scoping and routing to work. The backend doesn't validate it; `ApplicationsController` maps it to a department name, with `Commerce` also mapping to `Divisional Secretariat`.
+- `category` is one of the thematic categories in `SERVICE_CATEGORIES` (`web/src/constants/departments.ts`): `Personal & Family`, `Transport & Travel`, `Legal & Security`, `Business & Trade`, `Public & Community Services`, `General`. The backend doesn't validate it. `ApplicationsController` maps it to a department: `Personal & Family` → Registration of Persons, `Transport & Travel` → Motor Traffic, `Legal & Security` → Police, the other three → Divisional Secretariat. The old categories (`Immigration`, `Transport`, `Police`, `Civil`, `Public Administration`, `Commerce`) are still mapped for older rows.
+- On startup, `Program.cs` rewrites old categories in place: `Identity` and `Transport` → `Transport & Travel`, `Police` → `Legal & Security`, `Commerce` → `Business & Trade`, `Civil` → `Personal & Family`. `Immigration` and `Public Administration` are left alone.
+- **Known gap:** department-admin scoping on the web still uses the old categories (`DEPARTMENTS[].category`, for example `Police Department` → `Police`). Once a service has been migrated to a thematic category, a department admin's catalog, eligibility and template screens no longer match it.
 - `workflowDepartments` is stored as a **JSON-encoded string**, not an array, on the entity.
 
 ### `EligibilityRule`
@@ -263,7 +265,7 @@ Built from the active template for that stage: each `file`/`document`/`documentU
 
 ## Applications (citizen) - `ApplicationsController`, `api/applications`
 
-**Auth: Any token** on every action, but each action also requires a `nicNumber` claim (so only citizen tokens work) and returns `403` without one.
+**Auth: Any token** on every action, but each action also requires a `nicNumber` claim (so only citizen tokens work) and returns `403` without one. The exceptions are `raise-concern` and `submit-revision`, which are `[AllowAnonymous]` and check neither the token nor ownership.
 
 | Method | Path | Body → Response |
 |---|---|---|
@@ -276,12 +278,21 @@ Built from the active template for that stage: each `file`/`document`/`documentU
 | POST | `/api/applications/save-draft` | `{ applicationId, stageNumber, templateId, answers, documents, paymentReference, paymentMethod }` → `{ message, stage }` |
 | GET | `/api/applications/{id}/draft?stage=1` | → `{ hasDraft: true, stage, data }` or `{ hasDraft: false, stage }` |
 | POST | `/api/applications/{id}/raise-concern` | `{ subject, message, contactPhone }` → `{ ticketReference, applicationId, department, serviceName, subject, status: "ConcernLogged", message }` |
+| POST | `/api/applications/{id}/submit-revision` | `{ notes, documentAttachmentName }` → `{ success, applicationId, message }` or `404` |
 
 `form` returns the active template for the requested stage, falling back to the lowest stage.
 
 **Drafts.** `save-draft` stores the unfinished form of an existing application (the caller's own NIC only) inside `FormDataJson` under the key `"[Draft Stage N]"`. It sets `StageStatus` to `Draft` when that stage has no verification task yet. `draft` reads it back.
 
-**Concerns.** `raise-concern` doesn't check that the application belongs to the caller. It only writes an `AuditLog` row (`Citizen Support Concern Raised`) with a `CONCERN-{id}-XXXXXX` ticket reference; nothing notifies the department. `department.email` is the email of the earliest-created active `Department Admin` in that department.
+**Concerns.** `raise-concern` needs no token and doesn't check that the application belongs to the caller. It only writes an `AuditLog` row (`Citizen Support Concern Raised`) with a `CONCERN-{id}-XXXXXX` ticket reference; nothing notifies the department. `department.email` is the email of the earliest-created active `Department Admin` in that department.
+
+**Revisions.** `submit-revision` is how the citizen answers a "Revised" decision. `notes` is required (5-2000 characters, plain text) and `documentAttachmentName` is optional (up to 255 characters). It:
+
+- sets the application's latest verification task back to `Pending` and the submission's `StageStatus` to `PendingReview`, so it reappears in the officer queue
+- writes a `Citizen Revision Submitted` audit row with the notes and file name
+- if `documentAttachmentName` is given, links the newest upload with that file name that is unattached or already on this application, labelling it `Revised Document` when it has no label
+
+Like `raise-concern`, it needs no token and doesn't check ownership, so anyone who knows an application id can put it back in the queue. The mobile app calls it and, if it gets a `404` (an API that predates the endpoint), falls back to `raise-concern` with the notes and file name. That fallback only logs a concern; it doesn't put the application back in the queue.
 
 ### Document upload
 PDF, JPEG or PNG only, max 10 MB. The type is detected **from the file's bytes**, not the client's `Content-Type`. The upload is stored in `SubmissionDocuments` (as `bytea`) unattached; its `id` goes into `documents` on submit, which attaches it. Documents that belong to another NIC, or are already attached, fail the submit with `400`.
@@ -290,6 +301,7 @@ PDF, JPEG or PNG only, max 10 MB. The type is detected **from the file's bytes**
 ```json
 {
   "serviceProcedureId": 0,
+  "applicationId": "int | null",
   "templateId": "guid | null",
   "answers": { "Full name": "..." },
   "documents": { "Birth certificate": "<upload id>" }
@@ -304,11 +316,18 @@ What `submit` does, in order:
    - schema and required documents
    - a prompt-injection keyword filter
    - age 16-125, derived from the NIC (falling back to an `age` answer, then to 25)
-   - a duplicate check (same NIC + service with an application not `Completed`/`Rejected`)
+   - a duplicate check (see below)
    - a non-negative fee
+   - when the Groq LLM is on, its consistency flags (see [Agent 4](#agentic-ai-endpoints))
 
-   On failure it returns `400 { message: "Application safety validation failed.", errors: [...], summary }`, and **nothing is saved**. The duplicate check also consults a static in-memory registry that's filled on every successful submit and never cleared. Within one API process, a citizen can't apply for the same service twice, even after the first application completes; a restart clears it.
-4. Saves the `ApplicationSubmission` and attaches documents.
+   On failure it returns `400 { message: "Application safety validation failed.", errors: [...], summary }`, and **nothing is saved**.
+
+   **Duplicates are flagged, not blocked.** `ValidationSafetyConfig.BlockDuplicateSubmissions` is `false`, so a duplicate shows up in the compliance checks for the officer but doesn't fail the submit. An application counts as a duplicate when the same NIC has another application for the same service that is not `Completed`, `Rejected`, `Deleted`, `Draft` or `AwaitingFeePayment`. A `PendingReview` application only counts while its verification task is `Pending`, `Revised` or `Revision Requested`. The tool's in-memory registry is now always checked against the database, and an entry is dropped when the database shows no conflict.
+4. Saves the `ApplicationSubmission` and attaches documents. It reuses an existing row instead of creating a new one, in this order:
+   - the `applicationId` sent in the request, if it belongs to the caller's NIC
+   - otherwise the caller's newest application for this service that is `Draft`, `AwaitingFeePayment`, or `PendingReview` with no verification task
+
+   After saving, the caller's other `Draft`/`AwaitingFeePayment` rows for the service, and `PendingReview` rows with no task, are marked `Deleted`.
 5. Handles the fee if the stage's template has a `payment` field (or, for a single-stage service without a template, the catalog fee from `CalculateFeeTool`):
    - An uploaded document under the payment field's label → a `Payment` with `Method: "Bank Deposit"`, `Status: "PendingVerification"`, and `manualSlipUrl` pointing to the document.
    - An answer of `"Online Ref: <ref>"` → a `Payment` with `Method: "Online"`, `Status: "Paid"`. Any other non-empty answer → `Bank Deposit`, `PendingVerification`.
@@ -372,17 +391,26 @@ What `submit` does, in order:
 ```json
 { "task": { /* queue row */ }, "submittedAt": "", "userEmail": "",
   "answers": { "Full name": "..." },
-  "documents": [ { "id": "guid", "fieldLabel": "", "fileName": "", "contentType": "", "sizeBytes": 0, "uploadedAt": "" } ],
+  "documents": [ { "id": "guid", "fieldLabel": "", "fileName": "", "contentType": "", "sizeBytes": 0, "uploadedAt": "",
+                   "category": "stage | payment | other" } ],
   "payment": { "id": 5, "hasPayment": true, "amount": 3500, "status": "PendingVerification", "isVerified": false,
                "method": "Bank Deposit", "slipUrl": "/api/verification/documents/<guid>/content", "paidDate": null } }
 ```
-`payment` is `null` unless the stage's template has a `payment` field (or it's a single-stage application with a payment). If the fee is due but unpaid, `payment` has `id: null, method: "Unpaid", status: "Pending"`.
+`documents` lists every upload on the application, with a `category` so the workspace can separate the current stage's documents:
+
+- `payment` - the upload referenced by the payment's `manualSlipUrl`, or whose label matches the stage template's payment field or fee type, or whose label or file name contains a payment word (`slip`, `deposit`, `payment`, `receipt`, `transfer`)
+- `stage` - everything else on a single-stage application, or when the current stage's template has no file fields, or when the label matches (or partly matches) one of the current stage's file fields
+- `other` - uploads from other stages
+
+The current stage is the submission's `CurrentStage`, falling back to the task's stage.
+
+`payment` is filled when the current stage's template has a `payment` field with a fee, or whenever a payment record exists for the application. If the fee is due but unpaid, `payment` has `id: 0, method: "Pending", status: "Pending"`.
 
 ### `VerificationDecisionRequest`
 ```json
 { "status": "Approved | Rejected | Revised", "comments": "string | null", "rejectionReasonId": 0 }
 ```
-Writes an `OfficerReview` and an `AuditLog` in the same transaction. **Approval lock:** if the task's stage template has a `payment` field, `Approved` is refused with `400` until the latest payment for the application is `Paid`. That means a Finance Officer has to verify it first. `approve-stage` has the same lock.
+Writes an `OfficerReview` and an `AuditLog` in the same transaction. `Revised` (or `Revision Requested`) sets the submission's `StageStatus` to `ActionRequired`; the citizen answers with [`submit-revision`](#applications-citizen---applicationscontroller-apiapplications). **Approval lock:** if the task's stage template has a `payment` field, `Approved` is refused with `400` until the latest payment for the application is `Paid`. That means a Finance Officer has to verify it first. `approve-stage` has the same lock.
 
 ### `approve-stage`
 This action advances a multi-stage application:
@@ -436,7 +464,7 @@ Amounts are in `LKR`. `Payment.status` is one of `Pending`, `PendingVerification
 
 The mobile app uses this for stage payments:
 
-- With no `applicationId`, it first creates an `ApplicationSubmission` for the department with `StageStatus: "AwaitingFeePayment"`.
+- With no `applicationId`, it reuses the caller's newest `Draft` or `AwaitingFeePayment` application for the department's service (updating its department), or creates an `ApplicationSubmission` with `StageStatus: "AwaitingFeePayment"` if there is none.
 - `Online` creates a `Pending` payment and starts Stripe Checkout (`502` if Stripe fails).
 - `Manual` and `BankTransfer` need a slip (`400` otherwise) and create a `Bank Deposit` payment in `PendingVerification`. The payment links the slip given in `manualSlipUrl` or, failing that, the application's latest upload whose label or file name mentions a slip, deposit or payment.
 - The email comes from the token when it has one, and an audit row is written either way.
@@ -579,10 +607,10 @@ In normal use, Agent 4 runs inside `applications/submit`, and Agents 2 + 3 run f
 | POST | `/api/ValidationAgent/decision-order` | `{ applicationId, serviceProcedureId, serviceName, citizenNic, citizenName, calculatedFee, determinationType, officerNotes, attachedDocumentNames }` → `DecisionOrderDraft` |
 | POST | `/api/ValidationAgent/remediation-notice` | `{ applicationId, serviceName, citizenNic, citizenName, defects }` → `RemediationNotice` (7-day hold) |
 
-- **Agent 1 (Intake & Planning)** embeds the text and takes the top 8 vector matches. With the LLM, it asks for a plan grounded in those chunks and answers `"Service Not Found"` (with the list of supported services) when the context holds nothing relevant. Without it, it accepts the first match that shares a keyword with the request.
-- **Agent 2 (Eligibility & Documents)** runs `CheckEligibilityRulesTool` and `GetDocumentRequirementsTool` and retrieves policy chunks. The LLM then decides `isEligible`, `matchPercentage`, missing documents and `reasoning`, matching upload names to required documents and asking for a re-upload when a file name is generic. It is told that any missing mandatory document means not eligible.
-- **Agent 3 (Action/Tool)** calls `PrefillApplicationTool`, `CalculateFeeTool` and `FindAppointmentSlotTool` (Mon-Fri 09:00-15:00 SLT, 30-min slots, ≥ 2 working days out). The LLM only rewrites the reasoning and adds officer notes; the draft, fee and slot always come from the tools.
-- **Agent 4 (Validation & Safety)** runs `SchemaValidatorTool`, `DuplicateCheckTool`, a fee check and a PII filter that masks card numbers and passwords in answers. The LLM adds a risk level, an officer briefing and consistency flags, but it **can't clear a submission**: any deterministic failure rejects it regardless of the LLM. In the normal flow it runs from `applications/submit` and `submit-stage`.
+- **Agent 1 (Intake & Planning)** embeds the text and takes the top 8 vector matches. With the LLM, it asks for a plan grounded in those chunks, using the exact service name from the chunk headers and only the fees the context states. It answers `"Service Not Found"` when the context holds nothing relevant and points the citizen to the service catalog or the Divisional Secretariat. Without the LLM, it accepts the first match that shares a keyword with the request. The controller then matches `recommendedService` against the live catalog (by name, loosely) and, on a match, replaces it with the catalog name and merges the catalog's document requirements into `requiredDocuments`.
+- **Agent 2 (Eligibility & Documents)** runs `CheckEligibilityRulesTool` and `GetDocumentRequirementsTool` and retrieves policy chunks. The LLM then decides `isEligible`, `matchPercentage`, missing documents and `reasoning`. It is told to audit only the documents required for this service and stage, and to treat an upload as suspicious when its file name suggests something unrelated (a diagram, screenshot, packaging label and so on), even if it was uploaded into the right slot. Any missing, unlabelled or suspicious mandatory document means not eligible. After the LLM answers, a code check removes from `missingDocuments` anything that matches an uploaded document.
+- **Agent 3 (Action/Tool)** calls `PrefillApplicationTool`, `CalculateFeeTool` and `FindAppointmentSlotTool` (Mon-Fri 09:00-15:00 SLT, 30-min slots, ≥ 2 working days out). The LLM only rewrites the reasoning and adds officer notes; the draft, fee and slot always come from the tools. The fee is calculated even when eligibility isn't met yet, so the officer always sees it. The stage fee comes from the stage template's `payment` field (`amount` or `feeAmount`, as a number or a string), falling back to the service's catalog fee schedules.
+- **Agent 4 (Validation & Safety)** runs `SchemaValidatorTool`, `DuplicateCheckTool`, a fee check and a PII filter that masks card numbers and passwords in answers. A required document also counts as provided when a non-empty form answer has a matching label. The LLM gets the stage number, total stages, department and `RequiredDocumentsForStage`, and adds a risk level, a structured officer briefing (identity, stage documents, compliance, recommended action) and consistency flags. It **can't clear a submission**: any deterministic failure rejects it regardless of the LLM. It **can now fail one**: each consistency flag that survives a code filter is added as an `INCONSISTENCY-FLAG` rejection reason. The filter drops flags about the NIC when one is attached or answered, about the department field, about extra or payment uploads, about stage numbers or the payload's own fields, and vague "ambiguous" flags. In the normal flow it runs from `applications/submit` and `submit-stage`.
 
 ### `ValidateDraftDto`
 ```json
@@ -683,7 +711,7 @@ Manages the `KnowledgeChunks` table in the **separate pgvector database** (`Conn
 | DELETE | `/api/RagSetup/service-knowledge/{serviceProcedureId}` | → removes that service's `Service:*` chunks |
 | POST | `/api/RagSetup/ingest-local-documents` | Ingests `backend/src/Data/KnowledgeDocuments/*.md` into the matching service |
 
-`ingest-local-documents` maps files to hardcoded service codes by filename (`passport` → `GSN-IMM-001`, `driving` → `GSN-DMT-002`, `police` → `GSN-POL-003`, `business` → `GSN-COM-004`, `death` → `GSN-CIV-005`). Files whose service code doesn't exist in the catalog are skipped silently.
+`ingest-local-documents` matches each file to a service whose `serviceId` or name appears in the file name (or whose name contains the file name). If none matches, it falls back to keywords: `passport` → `GSN-IMM-001` or a name containing "Passport", `driving` → `GSN-DMT-002` / "Driving", `police` → `GSN-POL-003` / "Police", `business` → `GSN-COM-004` / "Business", `death` → `GSN-CIV-005` / "Death". Files that match nothing are skipped silently.
 
 **Re-seed after catalog changes:** chunks are a snapshot. Adding a service or changing fees isn't reflected in agent answers until `seed` / `seed-action-agent` are called again. The same applies if the embedding algorithm in `LocalEmbeddingService` changes.
 

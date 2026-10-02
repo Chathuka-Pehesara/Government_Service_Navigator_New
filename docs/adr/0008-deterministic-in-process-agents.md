@@ -50,3 +50,7 @@ ADR-0015 put a Groq-hosted LLM on top of these agents. What still holds from thi
 - With no `GROQ_API_KEY`, each agent returns exactly the deterministic answer described above.
 
 What no longer holds when the key is set: "no API keys, no network dependency, identical output for identical input", and "there's no LLM downstream for an injection to affect". Agent 1 also retrieves the top 8 chunks now, not 3, and passes them all to the LLM instead of applying the keyword gate.
+
+## Amended: duplicates are flagged, not blocked
+
+`ValidationSafetyConfig.BlockDuplicateSubmissions` is now `false`. Agent 4 still runs the duplicate check and records the result, but a duplicate no longer rejects the submission; the officer sees it in the compliance checks. The in-memory registry is checked against the database on every call and an entry is dropped when the database shows no conflicting application, so the "static registry that's never cleared" consequence above no longer blocks a citizen from reapplying. Schema, injection, age and fee remain the deterministic gates that reject a submission.

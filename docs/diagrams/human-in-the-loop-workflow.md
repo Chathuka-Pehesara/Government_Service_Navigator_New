@@ -12,15 +12,16 @@ Related docs:
 
 | # | Pause | Triggered by | Resumed by | Resume action | Server-side guard |
 |---|---|---|---|---|---|
-| P0 | **Safety halt** | Agent 4 finds a violation at submit | Citizen | Fix the form and resubmit | Nothing is saved, so nothing reaches the queue |
+| P0 | **Safety halt** | Agent 4 finds a violation at submit, or (with the LLM on) a consistency flag survives its filter | Citizen | Fix the form and resubmit | Nothing is saved, so nothing reaches the queue |
 | P1 | **Awaiting fee** | Stage has a `payment` field and no slip or reference was given | Citizen | Pay (Stripe / installment plan), then `finalize` | `finalize` returns `402` until `Paid` payments or a started installment plan cover the fee |
 | P2 | **Awaiting payment verification** | Deposit slip uploaded → `Payment.Status = PendingVerification` | **Finance Officer** | `POST /api/payments/{id}/verify` or `PUT /api/payments/{id}/status` | `FinanceRoles` + department check (`403` across departments) |
 | P3 | **Awaiting officer review** | `VerificationTask.Status = Pending` in the department queue | **Verifying Officer** | `PUT tasks/{id}/decision` or `approve-stage` | `OfficerRoles` + department check. **Approval lock:** a stage with a `payment` field can't be approved until the latest payment is `Paid` |
 | P4 | **Awaiting next-stage form** | `approve-stage` on a non-final stage → `StageStatus = StageApproved` | Citizen | `POST /api/applications/submit-stage` | Only the owning NIC can submit, and the template must belong to the service |
 | P5 | **Awaiting installment verification** | Bank-transfer receipt uploaded → installment `PendingVerification` | Staff | `…/installments/{id}/pay` or `reject-transfer` | `StaffRoles` |
 | P6 | **Awaiting refund decision** | Citizen requests a refund → `RefundRequest.Status = Pending` | **Finance Officer** | `POST /api/refunds/{id}/approve` or `reject` (reason required), then `process` and `complete` | `FinanceRoles` + the refund's stored department (`404` across departments) |
+| P7 | **Awaiting citizen revision** | Officer decides `Revised` → task `Revised`, submission `ActionRequired` | Citizen | Upload the corrected document and send a note: `POST /api/applications/{id}/submit-revision` | None: the endpoint is unauthenticated and doesn't check ownership |
 
-P2, P3, P5 and P6 are the **human approval gates**. P0 is an automated gate that keeps invalid work out of human queues. P1 and P4 are pauses waiting on the citizen.
+P2, P3, P5 and P6 are the **human approval gates**. P0 is an automated gate that keeps invalid work out of human queues. P1, P4 and P7 are pauses waiting on the citizen.
 
 ## Flow
 
@@ -54,7 +55,9 @@ flowchart TD
     REVIEW --> DEC{"Decision"}
 
     DEC -- "Reject + reason" --> REJ["Task Rejected<br/>OfficerReview + AuditLog"]
-    DEC -- "Request revision + reason" --> REV["Task Revised<br/>OfficerReview + AuditLog"]
+    DEC -- "Request revision + reason" --> REV["Task Revised, StageStatus ActionRequired<br/>OfficerReview + AuditLog"]
+    REV --> RESUB(["P7 Citizen uploads correction<br/>submit-revision"])
+    RESUB --> Q
     DEC -- "Approve" --> LOCK{"Payment lock:<br/>stage fee Paid?"}
     LOCK -- "no" --> BLOCK["400 not verified<br/>by Finance"]
     BLOCK --> REVIEW
@@ -137,11 +140,11 @@ stateDiagram-v2
     Pending --> Approved: decision Approved<br/>or approve-stage on last stage
     Pending --> Rejected: decision Rejected<br/>(comment or reason code required in UI)
     Pending --> Revised: decision Revised<br/>(comment or reason code required in UI)
+    Revised --> Pending: citizen submit-revision
     Pending --> Cancelled: installment overdue<br/>(InstallmentMonitorService)
     Pending --> [*]: officer deletes task<br/>(audit-logged with reason)
     Approved --> [*]
     Rejected --> [*]
-    Revised --> [*]
     Cancelled --> [*]
 ```
 
@@ -152,9 +155,9 @@ Every decision writes an `OfficerReview` (officer, time, comments, reason code) 
 1. **No self-approval path for citizens.** The decision, approve-stage and payment-verify endpoints require staff roles. A citizen token (`role: User`) gets `403`.
 2. **Department isolation.** Officers only see and open their own department's tasks and payments. System Admin (`Admin` / `System Admin` roles) sees all.
 3. **Approval lock.** `decision` (Approved) and `approve-stage` refuse with `400` while a stage fee isn't `Paid`, which forces the Finance gate to happen first.
-4. **Agent 4 before the queue.** Invalid or adversarial submissions never become tasks, so officers aren't asked to review them.
+4. **Agent 4 before the queue.** Invalid or adversarial submissions never become tasks, so officers aren't asked to review them. Duplicates are the exception: they reach the queue with a failed duplicate check for the officer to judge.
 5. **Reason required for negative outcomes.** The React workspace blocks Reject / Request Revision without a comment or reason code, and the API requires a reason to reject a refund or a manual payment.
-6. **LLM output is advisory.** When the Groq LLM is on, it writes plans, eligibility reasoning, officer briefings and decision-order drafts. None of these changes an application: Agent 4's deterministic gates still decide what reaches the queue, and a decision order only fills in the officer's decision form (ADR-0015).
+6. **LLM output can't approve anything.** When the Groq LLM is on, it writes plans, eligibility reasoning, officer briefings and decision-order drafts. None of these approves or advances an application, and a decision order only fills in the officer's decision form (ADR-0015). It can, however, stop one: Agent 4 turns any consistency flag that survives its keyword filter into a rejection reason, so the model can hold a citizen's submission at P0.
 
 ## Where the loop can be bypassed or is weak
 
@@ -163,7 +166,9 @@ These are current gaps. They're documented here so the HITL claim isn't overstat
 - **Bulk verify skips the approval lock.** `POST tasks/bulk-verify` applies `Approved` to many tasks without the payment check.
 - **"Online Ref:" is trusted.** A typed reference creates a `Paid` payment with no verification, which satisfies the approval lock (`docs/adr/0011-stripe-checkout-without-webhooks.md`).
 - **The lock checks the latest payment, not this stage's payment.** A paid earlier-stage fee can satisfy a later stage (`docs/adr/0009-multi-stage-department-workflow.md`).
-- **Revision doesn't notify or reopen.** `Revised` only changes the task status: the citizen gets no email, `StageStatus` stays `PendingReview`, and there's no dedicated resubmit flow in the app for a revised stage. The citizen sees the status on refresh.
+- **Revision doesn't notify, and the resubmit isn't protected.** `Revised` sets the submission to `ActionRequired` and the app shows an "Officer Revisions Requested" banner with a correction form, but the citizen gets no email. The correction goes to `submit-revision`, which needs no token, doesn't check that the application is the caller's or that it was actually `Revised`, and links the newest unattached upload with the given file name, which could be another citizen's upload with the same name.
+- **Stale queue entries are deleted after an hour.** `DataRepairService` marks a `PendingReview` submission `Deleted` when its task has been `Pending` for over an hour with no officer review. In a busy queue that removes genuine applications before anyone looks at them (`docs/diagrams/system-architecture.md`).
+- **The LLM can hold a valid submission.** See guard 6. A wrong consistency flag stops the submit with `400`, and there's no override for the citizen or an officer.
 - **Regenerating a draft or compiling a dossier can reset a decided task to `Pending`.** Both re-run Agent 4, and so do the unauthenticated `ValidationAgent` `validate`, `orchestrate` and `briefing` endpoints. If the checks pass, Agent 4 calls the task enqueuer, which reuses the task and sets `Pending` (`docs/diagrams/agentic-ai-architecture.md`).
 - **Collection appointments are confirmed by Agent 3 alone.** `POST /api/ActionAgent/book-appointment` is unauthenticated and saves a `Confirmed` booking whenever the parsed time fits a slot with space. It takes a limited slot without an officer, which is the kind of action the project plan says needs approval. Department admins see bookings afterwards and can't approve or decline them.
 - **Compliance checks stored at submit aren't shown.** The `ComplianceChecks` rows written at submit aren't returned by `GET tasks/{id}`. The officer only sees the checks from the draft-time re-run.

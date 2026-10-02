@@ -68,6 +68,12 @@ jobs:
         env:
           GH_TOKEN: ${{ github.token }}
         run: |
+          # A release created by hand keeps its title and notes; only the installers are (re)attached
+          if gh release view "${{ github.ref_name }}" > /dev/null 2>&1; then
+            gh release upload "${{ github.ref_name }}" release/*.exe --clobber
+            exit 0
+          fi
+
           # A hand-written description in .github/release-notes/<tag>.md goes above the generated notes
           NOTES=../.github/release-notes/${{ github.ref_name }}.md
           if [ -f "$NOTES" ]; then

@@ -126,7 +126,7 @@ erDiagram
         datetime SubmittedAt
         int CurrentStage
         int MaxStages
-        string StageStatus "PendingReview, StageApproved, AwaitingFeePayment, Completed, Deleted, ..."
+        string StageStatus "PendingReview, Draft, AwaitingFeePayment, ActionRequired, StageApproved, Completed, Deleted, ..."
         string CurrentDepartment
         string DepartmentHistoryJson "unused"
     }

@@ -1,6 +1,6 @@
 # Documentation
 
-Documentation for Government Service Navigator v2.0.0, as built. These documents describe the code as it is, including known gaps. The original plan is kept separately for reference.
+Documentation for Government Service Navigator v3.0.0, as built. The citizen mobile app ships as **LankaServe**. These documents describe the code as it is, including known gaps. The original plan is kept separately for reference.
 
 ## Start here
 
