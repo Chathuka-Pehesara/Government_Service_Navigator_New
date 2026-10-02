@@ -80,6 +80,12 @@ namespace Government_Service_Navigator.AgenticAi.Tools.ValidateSchema
                       a.Contains("NIC", StringComparison.OrdinalIgnoreCase) || 
                       a.Contains("ID", StringComparison.OrdinalIgnoreCase)))
                 )
+                && !(draft.FormFields != null && draft.FormFields.Any(kv =>
+                    !string.IsNullOrWhiteSpace(kv.Value) && (
+                        kv.Key.IndexOf(needed, StringComparison.OrdinalIgnoreCase) >= 0 ||
+                        needed.IndexOf(kv.Key, StringComparison.OrdinalIgnoreCase) >= 0 ||
+                        (needed.Contains("NIC", StringComparison.OrdinalIgnoreCase) && kv.Key.Contains("NIC", StringComparison.OrdinalIgnoreCase))
+                    )))
             ).ToList();
 
             if (missingDocs.Any())

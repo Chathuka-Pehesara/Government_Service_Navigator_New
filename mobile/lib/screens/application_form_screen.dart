@@ -50,6 +50,7 @@ class _ApplicationFormScreenState extends ConsumerState<ApplicationFormScreen> {
   /// Saved application waiting for its fee to be paid (response from submit / finalize).
   Map<String, dynamic>? _pendingPayment;
   bool _isFinalizing = false;
+  int? _activeApplicationId;
 
   final Map<String, TextEditingController> _controllers = {};
   final Map<String, String?> _selectValues = {};
@@ -75,6 +76,7 @@ class _ApplicationFormScreenState extends ConsumerState<ApplicationFormScreen> {
   @override
   void initState() {
     super.initState();
+    _activeApplicationId = widget.applicationId;
     if (_isStageMode) {
       _loadStageForm();
     } else {
@@ -467,6 +469,7 @@ class _ApplicationFormScreenState extends ConsumerState<ApplicationFormScreen> {
       } else {
         result = await ServiceApiClient.submitApplication(
           serviceId: widget.serviceId,
+          applicationId: _activeApplicationId ?? widget.applicationId,
           templateId: _template?['id']?.toString(),
           answers: _collectAnswers(),
           documents: {for (final e in _documents.entries) e.key: e.value.id},

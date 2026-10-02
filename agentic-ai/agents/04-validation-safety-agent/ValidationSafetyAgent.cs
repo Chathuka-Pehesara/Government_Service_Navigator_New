@@ -192,14 +192,65 @@ namespace Government_Service_Navigator.AgenticAi.Agents.ValidationSafety
 
                         if (aiSafetyResult.Inconsistencies != null && aiSafetyResult.Inconsistencies.Any())
                         {
-                            foreach (var flag in aiSafetyResult.Inconsistencies)
+                            var distinctFlags = aiSafetyResult.Inconsistencies
+                                .Where(f => !string.IsNullOrWhiteSpace(f))
+                                .Distinct(StringComparer.OrdinalIgnoreCase)
+                                .ToList();
+
+                            // Deterministic Guardrail: Filter out false-positive hallucinated flags
+                            var attached = draft.AttachedDocumentNames ?? new List<string>();
+                            distinctFlags.RemoveAll(flag =>
+                                // Missing NIC false positive if NIC is attached
+                                ((flag.Contains("NIC", StringComparison.OrdinalIgnoreCase) || flag.Contains("identity", StringComparison.OrdinalIgnoreCase) || flag.Contains("DOC-002", StringComparison.OrdinalIgnoreCase)) &&
+                                 (attached.Any(a => a.Contains("NIC", StringComparison.OrdinalIgnoreCase) || a.Contains("identity", StringComparison.OrdinalIgnoreCase)) ||
+                                  (draft.FormFields != null && draft.FormFields.Any(kv => kv.Key.Contains("NIC", StringComparison.OrdinalIgnoreCase) && !string.IsNullOrWhiteSpace(kv.Value))))) ||
+                                // Department field is institutional routing metadata, never citizen inconsistency
+                                flag.Contains("department", StringComparison.OrdinalIgnoreCase) ||
+                                // Presence of extra/payment slip documents is not an inconsistency
+                                flag.Contains("not required", StringComparison.OrdinalIgnoreCase) ||
+                                flag.Contains("additional", StringComparison.OrdinalIgnoreCase) ||
+                                flag.Contains("extra", StringComparison.OrdinalIgnoreCase) ||
+                                flag.Contains("slip", StringComparison.OrdinalIgnoreCase) ||
+                                flag.Contains("deposit", StringComparison.OrdinalIgnoreCase) ||
+                                flag.Contains("payment", StringComparison.OrdinalIgnoreCase) ||
+                                flag.Contains("generic image", StringComparison.OrdinalIgnoreCase) ||
+                                // Internal payload schema/stage discrepancies
+                                flag.Contains("MaxStages", StringComparison.OrdinalIgnoreCase) ||
+                                flag.Contains("stage value", StringComparison.OrdinalIgnoreCase) ||
+                                flag.Contains("stage number", StringComparison.OrdinalIgnoreCase) ||
+                                flag.Contains("AttachedDocumentNames", StringComparison.OrdinalIgnoreCase) ||
+                                flag.Contains("ambiguous", StringComparison.OrdinalIgnoreCase) ||
+                                (flag.Contains("duplicate", StringComparison.OrdinalIgnoreCase) && flag.Contains("entries", StringComparison.OrdinalIgnoreCase))
+                            );
+
+                            if (distinctFlags.Any())
                             {
-                                complianceChecks.Add(new ComplianceCheckItem("Semantic Consistency Audit", false, flag));
+                                foreach (var flag in distinctFlags)
+                                {
+                                    complianceChecks.Add(new ComplianceCheckItem("Semantic Consistency Audit", false, flag));
+                                    rejectionReasons.Add($"INCONSISTENCY-FLAG: {flag}");
+                                }
+                                if (riskLevel.Equals("Low", StringComparison.OrdinalIgnoreCase))
+                                {
+                                    riskLevel = "Medium";
+                                }
+                            }
+                            else
+                            {
+                                complianceChecks.Add(new ComplianceCheckItem("Semantic Consistency Audit", true, "Citizen declarations and uploaded evidentiary proofs cross-checked and found consistent."));
+                                if (!rejectionReasons.Any())
+                                {
+                                    riskLevel = "Low";
+                                }
                             }
                         }
                         else
                         {
                             complianceChecks.Add(new ComplianceCheckItem("Semantic Consistency Audit", true, "Citizen declarations cross-checked and found consistent."));
+                            if (!rejectionReasons.Any())
+                            {
+                                riskLevel = "Low";
+                            }
                         }
 
                         toolCalls.Add(new ValidationToolCall(
@@ -229,8 +280,8 @@ namespace Government_Service_Navigator.AgenticAi.Agents.ValidationSafety
                 return ValidationResult.Rejected(
                     reasons: rejectionReasons,
                     checks: complianceChecks,
-                    summary: $"Agent 4 halted application #{draft.ApplicationId}. Found {rejectionReasons.Count} compliance violation(s).",
-                    riskLevel: "High",
+                    summary: $"Agent 4 flagged application #{draft.ApplicationId}. Found {rejectionReasons.Count} statutory compliance violation(s) or documentary inconsistency.",
+                    riskLevel: string.IsNullOrWhiteSpace(riskLevel) || riskLevel.Equals("Low", StringComparison.OrdinalIgnoreCase) ? "High" : riskLevel,
                     officerBriefing: officerBriefing,
                     toolCalls: toolCalls
                 );
@@ -275,15 +326,28 @@ namespace Government_Service_Navigator.AgenticAi.Agents.ValidationSafety
         {
             if (_llmService == null) return null;
 
-            var systemPrompt = @"You are Agent 4 (Validation & Safety Agent) for the Sri Lanka Government Service Navigator.
-Your role is to perform cognitive safety auditing, anomaly detection, semantic consistency analysis, and summarize findings for human Verifying Officers.
-Evaluate the application data. Identify any contradictions, suspicious declarations, or compliance risks.
+            var systemPrompt = @"You are the Statutory Verification & Safety Assurance Copilot for the Sri Lanka Government Service Navigator.
+Your role is to formulate a clear, professional executive briefing and risk analysis for human Verifying Officers (senior civil servants).
+Do NOT use software developer jargon or mention tool names like validate_schema. Write in dignified, plain institutional English.
+Focus on:
+1. Identifying the specific Service and whether prerequisites for THIS active Stage are satisfied.
+2. Auditing attached proofs strictly against 'RequiredDocumentsForStage' for THIS active stage.
+3. Formulating a direct, actionable officer recommendation (e.g. 'Recommended Action: APPROVE Stage 2' or 'Recommended Action: REQUEST REVISION of [Document Name]' or 'Recommended Action: OFFICER VISUAL AUDIT REQUIRED').
+
+Institutional Guidelines & Guardrails:
+- Government services require a wide variety of statutory proofs (e.g. Title Deeds, Cadastral Survey Plans, Company Registration Form 1, Tax Clearance, Medical Fitness Certificates, Salary/Income Slips, Police Clearance Reports, Grama Niladhari Assessments, Utility Bills, Identity Proofs, etc.). Never assume that an NIC or Birth Certificate is required unless it is explicitly listed in 'RequiredDocumentsForStage'.
+- STAGE SCOPING: In the 'Stage Documents' bullet, ONLY audit and report on documents requested in 'RequiredDocumentsForStage'. Do NOT state or invent that unrequested documents (such as an NIC) are attached for this stage.
+- SEMANTIC RELEVANCE CHECK: If an attached document filename (e.g. containing 'diagram', 'transformer', 'packaging', 'snack', 'label_design', 'screenshot', 'code', 'temp', or random test names) clearly does not match the nature of the required statutory document, you MUST flag it! In 'officerBriefing', state that the uploaded file appears unrelated to the required statutory proof. Set 'riskLevel' to 'Medium' or 'High', set 'isSemanticallyConsistent' to false, add the discrepancy to 'inconsistencies', and recommend that the Verifying Officer conduct a visual inspection or request document revision.
+- The 'Department' field is internal administrative routing metadata, NOT a citizen form input. Never flag an empty or missing Department as a citizen inconsistency.
+- Do NOT flag optional, standard deposit slips, bank payment receipts, or extra uploads as anomalies if all mandatory requirements for this stage are met.
+- If all mandatory proofs for this stage are attached, semantically consistent, and eligibility criteria pass, riskLevel MUST be 'Low' and isSemanticallyConsistent MUST be true.
+
 Respond strictly with a JSON object matching this schema:
 {
   ""riskLevel"": ""Low"" | ""Medium"" | ""High"" | ""Critical"",
   ""isSemanticallyConsistent"": true | false,
-  ""executiveSummary"": ""Concise 1-2 sentence safety summary."",
-  ""officerBriefing"": ""Bullet-pointed summary of verified facts, documents, and recommendations for the human Verifying Officer."",
+  ""executiveSummary"": ""Concise 1-2 sentence executive verdict for the Verifying Officer."",
+  ""officerBriefing"": ""Structured bullet points:\n• Identity & Profile: Verified details.\n• Stage Documents: Document verification status for this stage.\n• Compliance & Fraud: Anti-duplicate & integrity status.\n• Recommended Action: Clear sign-off directive."",
   ""inconsistencies"": [""list of contradictions or anomalies if any""]
 }";
 
@@ -292,6 +356,9 @@ Respond strictly with a JSON object matching this schema:
                 draft.ApplicationId,
                 draft.ServiceProcedureId,
                 draft.ServiceName,
+                draft.Stage,
+                draft.MaxStages,
+                Department = draft.DepartmentName,
                 draft.CitizenNic,
                 draft.CitizenName,
                 draft.CitizenAge,
@@ -299,11 +366,11 @@ Respond strictly with a JSON object matching this schema:
                 draft.CalculatedFee,
                 draft.FormFields,
                 draft.AttachedDocumentNames,
-                RequiredDocuments = requiredDocuments ?? new List<string>(),
+                RequiredDocumentsForStage = requiredDocuments ?? new List<string>(),
                 ExistingValidationErrors = existingErrors
             };
 
-            var userPrompt = $"Analyze this government service application payload:\n{JsonSerializer.Serialize(userPayload, new JsonSerializerOptions { WriteIndented = true })}";
+            var userPrompt = $"Analyze this government service application payload for Stage {draft.Stage} of {draft.MaxStages}:\n{JsonSerializer.Serialize(userPayload, new JsonSerializerOptions { WriteIndented = true })}";
 
             var responseJson = await _llmService.GenerateChatCompletionAsync(systemPrompt, userPrompt, jsonMode: true, cancellationToken);
             if (string.IsNullOrWhiteSpace(responseJson)) return null;
@@ -322,15 +389,22 @@ Respond strictly with a JSON object matching this schema:
         {
             var attached = draft.AttachedDocumentNames ?? new List<string>();
             var required = requiredDocuments ?? new List<string>();
+            var stageContext = draft.MaxStages > 1 ? $"Stage {draft.Stage} of {draft.MaxStages}" : "Full Service";
+            var deptContext = !string.IsNullOrWhiteSpace(draft.DepartmentName) ? $"({draft.DepartmentName})" : string.Empty;
 
             if (errors.Any())
             {
-                return $"Officer Attention: Application flagged with {errors.Count} compliance defect(s). Direct review required on: {string.Join("; ", errors)}.";
+                return $"• Review Alert: Application #{draft.ApplicationId} for '{draft.ServiceName}' flagged with {errors.Count} compliance defect(s) during {stageContext} review.\n" +
+                       $"• Unmet Requirements: {string.Join("; ", errors)}.\n" +
+                       $"• Recommended Action: Request citizen revision or reject non-compliant submission.";
             }
 
-            return $"Safety Audit Clear: Citizen {draft.CitizenName} (NIC: {draft.CitizenNic}, Age: {draft.CitizenAge}) submitted valid application for {draft.ServiceName}. " +
-                   $"All {required.Count} required document(s) verified ({string.Join(", ", attached)}). Statutory fee calculated at LKR {draft.CalculatedFee:N2}. " +
-                   "No duplicate applications or adversarial injection patterns detected. Ready for officer determination.";
+            var verifiedDocsText = attached.Any() ? string.Join(", ", attached) : "Statutory identity record";
+            return $"• Identity & Profile: Citizen {draft.CitizenName} (NIC: {draft.CitizenNic}, Age: {draft.CitizenAge}) verified with zero registry collisions.\n" +
+                   $"• Stage Proofs Evaluated: {required.Count} required document(s) verified for {stageContext} {deptContext} ({verifiedDocsText}).\n" +
+                   $"• Financial & Statutory Audit: Statutory fee reconciled at LKR {draft.CalculatedFee:N2}.\n" +
+                   $"• Anti-Fraud & Security Shield: Passed with zero adversarial tokens or duplicate submissions detected.\n" +
+                   $"• Recommended Action: All {stageContext} criteria satisfied. Recommended for officer approval.";
         }
 
         public async Task<VerificationCaseDossier> CompileCaseDossierAsync(

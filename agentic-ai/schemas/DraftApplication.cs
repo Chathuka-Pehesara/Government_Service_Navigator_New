@@ -16,6 +16,8 @@ namespace Government_Service_Navigator.AgenticAi.Schemas
         public List<string> AttachedDocumentNames { get; set; } = new();
         public decimal CalculatedFee { get; set; }
         public int Stage { get; set; } = 1;
+        public int MaxStages { get; set; } = 1;
+        public string DepartmentName { get; set; } = string.Empty;
         public DateTime? ProposedAppointmentDate { get; set; }
         public DateTime DraftedAt { get; set; } = DateTime.UtcNow;
     }

@@ -320,49 +320,72 @@ export default function PendingReviews() {
               </p>
             </div>
 
-            {/* Stat Cards for Pending Context */}
-            <Grid style={{ paddingLeft: 0, paddingRight: 0, marginBottom: '2rem' }}>
-              <Column sm={4} md={4} lg={4}>
-                <Tile>
-                  <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: '1rem' }}>
-                    <p style={{ color: '#525252', fontSize: '0.875rem' }}>Total Pending</p>
-                    <Hourglass size={20} />
-                  </div>
-                  <h3 style={{ fontSize: '2.5rem', fontWeight: 300, margin: '0.5rem 0' }}>45</h3>
-                  <p style={{ color: '#525252', fontSize: '0.875rem', marginTop: '1rem' }}>Active on hold</p>
-                </Tile>
-              </Column>
-              <Column sm={4} md={4} lg={4}>
-                <Tile style={{ borderTop: '4px solid #8a3ffc' }}>
-                  <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: '1rem' }}>
-                    <p style={{ color: '#525252', fontSize: '0.875rem' }}>Awaiting Citizen</p>
-                    <Email size={20} color="#8a3ffc" />
-                  </div>
-                  <h3 style={{ fontSize: '2.5rem', fontWeight: 300, margin: '0.5rem 0' }}>12</h3>
-                  <p style={{ color: '#8a3ffc', fontSize: '0.875rem', marginTop: '1rem' }}>Missing documents</p>
-                </Tile>
-              </Column>
-              <Column sm={4} md={4} lg={4}>
-                <Tile style={{ borderTop: '4px solid #da1e28' }}>
-                  <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: '1rem' }}>
-                    <p style={{ color: '#525252', fontSize: '0.875rem' }}>Action Required</p>
-                    <Flag size={20} color="#da1e28" />
-                  </div>
-                  <h3 style={{ fontSize: '2.5rem', fontWeight: 300, margin: '0.5rem 0' }}>5</h3>
-                  <p style={{ color: '#da1e28', fontSize: '0.875rem', marginTop: '1rem' }}>Flagged issues</p>
-                </Tile>
-              </Column>
-              <Column sm={4} md={4} lg={4}>
-                <Tile style={{ borderTop: '4px solid #f1c21b' }}>
-                  <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: '1rem' }}>
-                    <p style={{ color: '#525252', fontSize: '0.875rem' }}>SLA Overdue</p>
-                    <Warning size={20} color="#f1c21b" />
-                  </div>
-                  <h3 style={{ fontSize: '2.5rem', fontWeight: 300, margin: '0.5rem 0' }}>2</h3>
-                  <p style={{ color: '#f1c21b', fontSize: '0.875rem', marginTop: '1rem' }}>Exceeded target time</p>
-                </Tile>
-              </Column>
-            </Grid>
+            {/* Stat Cards for Pending Context (Live Metrics) */}
+            {(() => {
+              const totalPending = rows.length;
+              const awaitingCitizen = rows.filter(r => 
+                r.status?.toLowerCase().includes('citizen') || 
+                r.status?.toLowerCase().includes('revised') || 
+                r.reason?.toLowerCase().includes('citizen') || 
+                r.reason?.toLowerCase().includes('revised') || 
+                r.reason?.toLowerCase().includes('document')
+              ).length;
+              const actionRequired = rows.filter(r => 
+                r.status?.toLowerCase().includes('action') || 
+                r.status?.toLowerCase().includes('pending') || 
+                r.reason?.toLowerCase().includes('review')
+              ).length;
+              const slaOverdue = rows.filter(r => {
+                if (!r.rawCreatedDate) return false;
+                const diffHours = (Date.now() - new Date(r.rawCreatedDate).getTime()) / 3600000;
+                return diffHours >= 24;
+              }).length;
+
+              return (
+                <Grid style={{ paddingLeft: 0, paddingRight: 0, marginBottom: '2rem' }}>
+                  <Column sm={4} md={4} lg={4}>
+                    <Tile>
+                      <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: '1rem' }}>
+                        <p style={{ color: '#525252', fontSize: '0.875rem' }}>Total Pending</p>
+                        <Hourglass size={20} />
+                      </div>
+                      <h3 style={{ fontSize: '2.5rem', fontWeight: 300, margin: '0.5rem 0' }}>{totalPending}</h3>
+                      <p style={{ color: '#525252', fontSize: '0.875rem', marginTop: '1rem' }}>Active on hold</p>
+                    </Tile>
+                  </Column>
+                  <Column sm={4} md={4} lg={4}>
+                    <Tile style={{ borderTop: '4px solid #8a3ffc' }}>
+                      <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: '1rem' }}>
+                        <p style={{ color: '#525252', fontSize: '0.875rem' }}>Awaiting Citizen</p>
+                        <Email size={20} color="#8a3ffc" />
+                      </div>
+                      <h3 style={{ fontSize: '2.5rem', fontWeight: 300, margin: '0.5rem 0' }}>{awaitingCitizen}</h3>
+                      <p style={{ color: '#8a3ffc', fontSize: '0.875rem', marginTop: '1rem' }}>Missing documents</p>
+                    </Tile>
+                  </Column>
+                  <Column sm={4} md={4} lg={4}>
+                    <Tile style={{ borderTop: '4px solid #da1e28' }}>
+                      <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: '1rem' }}>
+                        <p style={{ color: '#525252', fontSize: '0.875rem' }}>Action Required</p>
+                        <Flag size={20} color="#da1e28" />
+                      </div>
+                      <h3 style={{ fontSize: '2.5rem', fontWeight: 300, margin: '0.5rem 0' }}>{actionRequired}</h3>
+                      <p style={{ color: '#da1e28', fontSize: '0.875rem', marginTop: '1rem' }}>Flagged issues</p>
+                    </Tile>
+                  </Column>
+                  <Column sm={4} md={4} lg={4}>
+                    <Tile style={{ borderTop: '4px solid #f1c21b' }}>
+                      <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: '1rem' }}>
+                        <p style={{ color: '#525252', fontSize: '0.875rem' }}>SLA Overdue</p>
+                        <Warning size={20} color="#f1c21b" />
+                      </div>
+                      <h3 style={{ fontSize: '2.5rem', fontWeight: 300, margin: '0.5rem 0' }}>{slaOverdue}</h3>
+                      <p style={{ color: '#f1c21b', fontSize: '0.875rem', marginTop: '1rem' }}>Exceeded target time</p>
+                    </Tile>
+                  </Column>
+                </Grid>
+              );
+            })()}
 
             {/* Data Table for Pending Reviews */}
             <DataTable rows={rows} headers={headers}>

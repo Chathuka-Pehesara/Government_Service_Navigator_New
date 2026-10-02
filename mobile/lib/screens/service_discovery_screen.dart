@@ -15,7 +15,15 @@ class _ServiceDiscoveryScreenState extends ConsumerState<ServiceDiscoveryScreen>
   String searchQuery = '';
   late String selectedCategory;
 
-  final List<String> categories = ['All', 'Commerce', 'Transport', 'Identity', 'Housing', 'Taxes'];
+  final List<String> categories = [
+    'All',
+    'Personal & Family',
+    'Transport & Travel',
+    'Legal & Security',
+    'Business & Trade',
+    'Public & Community Services',
+    'General',
+  ];
 
   @override
   void initState() {

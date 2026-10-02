@@ -7,6 +7,7 @@ namespace Government_Service_Navigator.Backend.DTOs.Requests
         [Required]
         public int ServiceProcedureId { get; set; }
 
+        public int? ApplicationId { get; set; }
         public Guid? TemplateId { get; set; }
 
         // Answers keyed by FormField label.

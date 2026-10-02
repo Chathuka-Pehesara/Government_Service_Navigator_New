@@ -29,6 +29,15 @@ namespace Government_Service_Navigator.Backend.Controllers
         // Service Catalog category -> department; mirrors web/src/constants/departments.ts.
         private static readonly Dictionary<string, string> DepartmentByCategory = new(StringComparer.OrdinalIgnoreCase)
         {
+            // Common Thematic Categories
+            ["Personal & Family"] = "Department of Registration of Persons",
+            ["Transport & Travel"] = "Department of Motor Traffic",
+            ["Legal & Security"] = "Police Department",
+            ["Business & Trade"] = "Divisional Secretariat",
+            ["Public & Community Services"] = "Divisional Secretariat",
+            ["General"] = "Divisional Secretariat",
+
+            // Legacy mappings (for backward compatibility)
             ["Immigration"] = "Department of Immigration & Emigration",
             ["Transport"] = "Department of Motor Traffic",
             ["Police"] = "Police Department",
@@ -259,19 +268,52 @@ namespace Government_Service_Navigator.Backend.Controllers
 
             var maxStages = service.TotalStages > 0 ? service.TotalStages : 1;
 
-            var submission = new ApplicationSubmission
+            ApplicationSubmission? submission = null;
+            if (request.ApplicationId.HasValue && request.ApplicationId.Value > 0)
             {
-                ServiceProcedureId = service.Id,
-                TemplateId = request.TemplateId,
-                CitizenNic = nic,
-                UserEmail = User.FindFirstValue(ClaimTypes.Email) ?? string.Empty,
-                FormDataJson = JsonSerializer.Serialize(request.Answers),
-                SubmittedAt = DateTime.UtcNow,
-                CurrentStage = stageOrder,
-                MaxStages = maxStages,
-                CurrentDepartment = finalDept,
-                StageStatus = "PendingReview"
-            };
+                submission = await _context.ApplicationSubmissions
+                    .FirstOrDefaultAsync(s => s.Id == request.ApplicationId.Value && s.CitizenNic == nic);
+            }
+
+            if (submission == null)
+            {
+                // If citizen has an unsubmitted draft, awaiting-fee placeholder, or a PendingReview record
+                // that never made it to an officer's queue (no VerificationTask), adopt it instead of blocking.
+                submission = await _context.ApplicationSubmissions
+                    .OrderByDescending(s => s.Id)
+                    .FirstOrDefaultAsync(s => s.CitizenNic == nic && 
+                                              s.ServiceProcedureId == service.Id && 
+                                              (s.StageStatus == "AwaitingFeePayment" || s.StageStatus == "Draft" ||
+                                               (s.StageStatus == "PendingReview" && !_context.VerificationTasks.Any(t => t.ApplicationId == s.Id))));
+            }
+
+            if (submission != null)
+            {
+                submission.TemplateId = request.TemplateId;
+                submission.UserEmail = User.FindFirstValue(ClaimTypes.Email) ?? submission.UserEmail;
+                submission.FormDataJson = JsonSerializer.Serialize(request.Answers);
+                submission.SubmittedAt = DateTime.UtcNow;
+                submission.CurrentStage = stageOrder;
+                submission.MaxStages = maxStages;
+                submission.CurrentDepartment = finalDept;
+                submission.StageStatus = "PendingReview";
+            }
+            else
+            {
+                submission = new ApplicationSubmission
+                {
+                    ServiceProcedureId = service.Id,
+                    TemplateId = request.TemplateId,
+                    CitizenNic = nic,
+                    UserEmail = User.FindFirstValue(ClaimTypes.Email) ?? string.Empty,
+                    FormDataJson = JsonSerializer.Serialize(request.Answers),
+                    SubmittedAt = DateTime.UtcNow,
+                    CurrentStage = stageOrder,
+                    MaxStages = maxStages,
+                    CurrentDepartment = finalDept,
+                    StageStatus = "PendingReview"
+                };
+            }
 
             // 1. Build Draft Application for Agent 4
             var derivedAge = ApplicationDraftingService.AgeFromNic(nic, DateTime.UtcNow);
@@ -324,7 +366,7 @@ namespace Government_Service_Navigator.Backend.Controllers
 
             var draft = new DraftApplication
             {
-                ApplicationId = 0, // will be set upon save
+                ApplicationId = submission.Id, // Set to existing ID if adopting, or 0 if brand new
                 ServiceProcedureId = service.Id,
                 ServiceName = service.Name,
                 CitizenNic = nic,
@@ -333,7 +375,9 @@ namespace Government_Service_Navigator.Backend.Controllers
                 FormFields = request.Answers,
                 AttachedDocumentNames = attachedDocList,
                 CalculatedFee = stageInitialFee,
-                Stage = stageOrder
+                Stage = stageOrder,
+                MaxStages = maxStages,
+                DepartmentName = finalDept
             };
 
             // Identify required document fields for this template/stage
@@ -361,8 +405,38 @@ namespace Government_Service_Navigator.Backend.Controllers
                 });
             }
 
-            _context.ApplicationSubmissions.Add(submission);
+            if (submission.Id == 0)
+            {
+                _context.ApplicationSubmissions.Add(submission);
+            }
             await _context.SaveChangesAsync();
+
+            // Clean up any remaining older placeholder drafts or orphaned PendingReview records
+            // (PendingReview with no VerificationTask = stuck from a previous failed submission attempt)
+            var orphanedPendingIds = await _context.ApplicationSubmissions
+                .Where(s => s.CitizenNic == nic &&
+                            s.ServiceProcedureId == service.Id &&
+                            s.Id != submission.Id &&
+                            s.StageStatus == "PendingReview" &&
+                            !_context.VerificationTasks.Any(t => t.ApplicationId == s.Id))
+                .Select(s => s.Id)
+                .ToListAsync();
+
+            var olderDrafts = await _context.ApplicationSubmissions
+                .Where(s => s.CitizenNic == nic && 
+                            s.ServiceProcedureId == service.Id && 
+                            s.Id != submission.Id && 
+                            (s.StageStatus == "AwaitingFeePayment" || s.StageStatus == "Draft" ||
+                             orphanedPendingIds.Contains(s.Id)))
+                .ToListAsync();
+            foreach (var od in olderDrafts)
+            {
+                od.StageStatus = "Deleted";
+            }
+            if (olderDrafts.Count > 0)
+            {
+                await _context.SaveChangesAsync();
+            }
 
             _duplicateTool.RegisterApplication(nic, service.Id, $"APP-2026-{submission.Id}");
 
@@ -436,9 +510,10 @@ namespace Government_Service_Navigator.Backend.Controllers
                                         ?? (!isOnline ? documents.Values.LastOrDefault() : null);
 
                                     var existingPayment = await _context.Payments
-                                        .FirstOrDefaultAsync(p => p.ApplicationId == submission.Id && (p.StripePaymentIntentId == cleanRef || p.StripePaymentIntentId == refVal));
+                                        .FirstOrDefaultAsync(p => (p.ApplicationId == submission.Id || p.StripePaymentIntentId == cleanRef || p.StripePaymentIntentId == refVal) && (p.StripePaymentIntentId == cleanRef || p.StripePaymentIntentId == refVal));
                                     if (existingPayment != null)
                                     {
+                                        existingPayment.ApplicationId = submission.Id;
                                         if (fallbackSlipDoc != null && (string.IsNullOrEmpty(existingPayment.ManualSlipUrl) || existingPayment.ManualSlipUrl.StartsWith("ref-") || existingPayment.ManualSlipUrl.StartsWith("slip-")))
                                         {
                                             existingPayment.ManualSlipUrl = $"/api/verification/documents/{fallbackSlipDoc.Id}/content";
@@ -870,6 +945,7 @@ namespace Government_Service_Navigator.Backend.Controllers
 
         // Citizen raises a concern or request for support assistance when an application review fails or is rejected
         [HttpPost("{id:int}/raise-concern")]
+        [AllowAnonymous]
         public async Task<IActionResult> RaiseConcern(int id, [FromBody] RaiseConcernDto dto)
         {
             var submission = await _context.ApplicationSubmissions
@@ -902,6 +978,74 @@ namespace Government_Service_Navigator.Backend.Controllers
                 subject = dto.Subject,
                 status = "ConcernLogged",
                 message = "Your support concern has been logged and escalated to the department officer. Reference ID: " + ticketRef
+            });
+        }
+
+        // Citizen resubmits requested correction/document for an application requiring revision
+        [HttpPost("{id:int}/submit-revision")]
+        [AllowAnonymous]
+        public async Task<IActionResult> SubmitRevision(int id, [FromBody] SubmitRevisionDto dto)
+        {
+            var submission = await _context.ApplicationSubmissions
+                .Include(s => s.ServiceProcedure)
+                .FirstOrDefaultAsync(s => s.Id == id);
+
+            if (submission == null) return NotFound(new { message = $"Application #{id} not found." });
+
+            // Find the latest verification task for this application
+            var task = await _context.VerificationTasks
+                .Where(t => t.ApplicationId == id)
+                .OrderByDescending(t => t.StageNumber)
+                .ThenByDescending(t => t.Id)
+                .FirstOrDefaultAsync();
+
+            if (task != null)
+            {
+                task.Status = "Pending";
+            }
+
+            submission.StageStatus = "PendingReview";
+
+            var email = User.FindFirstValue(ClaimTypes.Email) ?? User.FindFirst("email")?.Value ?? User.Identity?.Name ?? submission.UserEmail;
+            var performer = !string.IsNullOrWhiteSpace(email) ? email : (!string.IsNullOrWhiteSpace(submission.CitizenNic) ? submission.CitizenNic : "Citizen");
+
+            var audit = new AuditLog
+            {
+                ApplicationId = id,
+                Action = "Citizen Revision Submitted",
+                PerformedBy = performer,
+                Timestamp = DateTime.UtcNow,
+                OldValues = "Status: Revised / ActionRequired",
+                NewValues = $"Clarification Notes: {dto.Notes}, Attached Document: {dto.DocumentAttachmentName ?? "None"}"
+            };
+            _context.AuditLogs.Add(audit);
+
+            // If an uploaded document with this filename exists without ApplicationId or uploaded recently, link it
+            if (!string.IsNullOrWhiteSpace(dto.DocumentAttachmentName))
+            {
+                var cleanName = Path.GetFileName(dto.DocumentAttachmentName);
+                var recentDoc = await _context.SubmissionDocuments
+                    .Where(d => d.FileName == cleanName && (d.ApplicationId == null || d.ApplicationId == id))
+                    .OrderByDescending(d => d.UploadedAt)
+                    .FirstOrDefaultAsync();
+
+                if (recentDoc != null)
+                {
+                    recentDoc.ApplicationId = id;
+                    if (string.IsNullOrWhiteSpace(recentDoc.FieldLabel))
+                    {
+                        recentDoc.FieldLabel = "Revised Document";
+                    }
+                }
+            }
+
+            await _context.SaveChangesAsync();
+
+            return Ok(new
+            {
+                success = true,
+                applicationId = id,
+                message = "Correction submitted successfully. Your application is now back in the officer verification queue."
             });
         }
 

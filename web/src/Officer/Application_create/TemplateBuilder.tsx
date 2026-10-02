@@ -95,8 +95,6 @@ export interface SavedTemplate {
   subTitle?: string;
   lawText?: string;
   department?: string;
-  stageOrder: number;
-  stageDescription?: string;
   serviceProcedureId?: number;
   serviceProcedure?: {
     id: number;
@@ -116,10 +114,8 @@ export default function TemplateBuilder() {
   const [lawText, setLawText] = useState("");
   const [templateStatus, setTemplateStatus] = useState<string>("Active");
   
-  // Multi-department sequential stage configuration
+  // Multi-department workflow configuration
   const [department, setDepartment] = useState<string>("Civil Department");
-  const [stageOrder, setStageOrder] = useState<number>(1);
-  const [stageDescription, setStageDescription] = useState<string>("");
   
   // Dynamic Departments from Department Management
   const [departments, setDepartments] = useState<Department[]>([]);
@@ -133,7 +129,6 @@ export default function TemplateBuilder() {
   const [isLoadingTemplates, setIsLoadingTemplates] = useState<boolean>(true);
   const [templateSearchTerm, setTemplateSearchTerm] = useState<string>("");
   const [templateDeptFilter, setTemplateDeptFilter] = useState<string>("All");
-  const [templateStageFilter, setTemplateStageFilter] = useState<string>("All");
   const [templateStatusFilter, setTemplateStatusFilter] = useState<string>("All");
   const [activeView, setActiveView] = useState<"list" | "builder">(() => {
     const params = new URLSearchParams(window.location.search);
@@ -152,7 +147,7 @@ export default function TemplateBuilder() {
   
   const [newFieldLabel, setNewFieldLabel] = useState("");
   const [newFieldError, setNewFieldError] = useState<string | null>(null);
-  const [headerErrors, setHeaderErrors] = useState<{ formName?: string; subTitle?: string; lawText?: string; stageDescription?: string }>({});
+  const [headerErrors, setHeaderErrors] = useState<{ formName?: string; subTitle?: string; lawText?: string }>({});
   const [newFieldType, setNewFieldType] = useState<FieldType>("text");
   const [newFieldOptions, setNewFieldOptions] = useState("");
   const [newFieldRequired, setNewFieldRequired] = useState(false);
@@ -248,7 +243,7 @@ export default function TemplateBuilder() {
         setSubTitle(matched.description || `Official Public Service Intake - ${matched.name}`);
       }
       if (!formName || formName === "FORM NO" || formName.includes("-FORM-")) {
-        setFormName(`${matched.departmentCode}-FORM-${stageOrder}`);
+        setFormName(`${matched.departmentCode}-FORM-X`);
       }
     }
   };
@@ -266,8 +261,6 @@ export default function TemplateBuilder() {
           setLinkedServiceId(data.serviceProcedureId.toString());
         }
         if (data.department) setDepartment(data.department);
-        if (data.stageOrder) setStageOrder(data.stageOrder);
-        if (data.stageDescription) setStageDescription(data.stageDescription);
         if (data.fields) {
           setCustomFields(data.fields.map((f: { id?: string; label: string; type: FieldType; options?: string; isRequired?: boolean }) => ({
             id: f.id || Date.now().toString() + Math.random(),
@@ -291,33 +284,33 @@ export default function TemplateBuilder() {
     const cloneFromId = queryParams.get("cloneFromId");
     const isClone = queryParams.get("clone") === "true";
     const serviceId = queryParams.get("serviceId");
-    const stage = queryParams.get("stage");
     const dept = queryParams.get("department");
 
+    const stage = queryParams.get("stage");
+
     if (serviceId) setLinkedServiceId(serviceId);
-    if (stage) setStageOrder(parseInt(stage, 10) || 1);
     if (dept) setDepartment(dept);
 
-    // If cloning an existing base template for a workflow stage:
-    // We load all fields and structure, but set templateId to NULL so saving creates a separate copy!
+    // When adopting/customizing an existing base template for ANY workflow stage (including Stage 1):
+    // Always clone to create an independent copy (set templateId to null) so saving creates a separate copy
+    // and NEVER modifies or overwrites the original base template in the Template Builder!
     if (cloneFromId || (id && isClone)) {
       const sourceId = cloneFromId || id!;
       const loadClone = async () => {
         setIsClonedTemplate(true);
-        setTemplateId(null); // CRITICAL: null guarantees POST create (new independent stage template)
+        setTemplateId(null); // CRITICAL: null guarantees POST create (new independent stage copy)
         const data = await fetchTemplateData(sourceId);
         if (data) {
           setTemplateId(null); // Re-assert null so update isn't triggered
           setClonedSourceTitle(data.formName || "Base Template");
-          const targetStage = stage || data.stageOrder || 1;
-          setFormName(data.formName ? `${data.formName} (Stage ${targetStage})` : `Stage ${targetStage} Form`);
+          setFormName(data.formName ? `${data.formName} (Stage ${stage || 1})` : `Stage ${stage || 1} Form`);
           if (dept) setDepartment(dept);
-          if (stage) setStageOrder(parseInt(stage, 10) || 1);
         }
       };
       loadClone();
     } else if (id) {
       const load = async () => {
+        setIsClonedTemplate(false);
         setTemplateId(id);
         await fetchTemplateData(id);
       };
@@ -358,8 +351,6 @@ export default function TemplateBuilder() {
     setLinkedServiceDetail(null);
     setIsClonedTemplate(false);
     setClonedSourceTitle("");
-    setStageOrder(1);
-    setStageDescription("");
     if (departments.length > 0) {
       setDepartment(departments[0].name);
     }
@@ -378,8 +369,6 @@ export default function TemplateBuilder() {
     setLawText(template.lawText || "");
     setTemplateStatus(template.status || "Active");
     if (template.department) setDepartment(template.department);
-    if (template.stageOrder) setStageOrder(template.stageOrder);
-    if (template.stageDescription) setStageDescription(template.stageDescription);
     if (template.serviceProcedureId) {
       setLinkedServiceId(template.serviceProcedureId.toString());
     } else {
@@ -473,15 +462,11 @@ export default function TemplateBuilder() {
       formName: v.text("Form name", { min: 3, max: 200 })(formName) ?? undefined,
       subTitle: v.text("Main title", { max: 300, required: false })(subTitle) ?? undefined,
       lawText: v.text("Legal reference", { max: 5000, required: false })(lawText) ?? undefined,
-      stageDescription: v.text("Stage description", { max: 500, required: false })(stageDescription) ?? undefined,
     };
     setHeaderErrors(errors);
     const firstHeaderError = Object.values(errors).find(Boolean);
     if (firstHeaderError) return firstHeaderError;
 
-    if (!Number.isInteger(Number(stageOrder)) || Number(stageOrder) < 1 || Number(stageOrder) > 50) {
-      return "Stage must be between 1 and 50.";
-    }
     if (customFields.length > 200) return "A form can have at most 200 fields.";
 
     // Answers are stored by label, so two inputs with the same label would overwrite each other
@@ -515,8 +500,8 @@ export default function TemplateBuilder() {
         status: templateStatus,
         serviceProcedureId: linkedServiceId ? Number(linkedServiceId) : null,
         department: department || currentUser?.department || null,
-        stageOrder: Number(stageOrder) || 1,
-        stageDescription: stageDescription || null,
+        stageOrder: Number(new URLSearchParams(window.location.search).get("stage")) || 1,
+        stageDescription: null,
         fields: customFields.map(f => ({
           label: f.label,
           type: f.type,
@@ -547,13 +532,13 @@ export default function TemplateBuilder() {
       const isWorkflowContext = Boolean(searchServiceId) && new URLSearchParams(window.location.search).get("standalone") !== "true";
 
       if (isWorkflowContext) {
-        alert(`Stage ${stageOrder} Form Template Saved Successfully!`);
+        alert(`Form Template Saved Successfully!`);
         const returnSvcId = linkedServiceId || searchServiceId || "";
         window.location.href = `/admin/services/config?serviceId=${encodeURIComponent(returnSvcId)}&tab=3`;
       } else {
         setListNotification({
           type: "success",
-          message: `Template "${formName || "Application Form"}" (Stage ${stageOrder}) was successfully saved!`
+          message: `Template "${formName || "Application Form"}" was successfully saved!`
         });
         await fetchAllTemplates();
         const navUrl = new URL(window.location.href);
@@ -695,9 +680,6 @@ export default function TemplateBuilder() {
                 </span>
               </div>
               <div style={{ display: 'flex', gap: '0.5rem', alignItems: 'center' }}>
-                <span style={{ fontSize: '0.7rem', backgroundColor: 'rgba(255,255,255,0.2)', padding: '2px 8px', borderRadius: '10px', fontWeight: 600 }}>
-                  STAGE {stageOrder} REQUIRED
-                </span>
                 <span style={{ fontSize: '0.7rem', backgroundColor: '#ffffff', color: '#0043ce', padding: '2px 8px', borderRadius: '10px', fontWeight: 700 }}>
                   {department}
                 </span>
@@ -859,16 +841,12 @@ export default function TemplateBuilder() {
       templateDeptFilter === "All" ||
       (t.department && t.department.toLowerCase() === templateDeptFilter.toLowerCase());
 
-    const matchesStage =
-      templateStageFilter === "All" ||
-      (templateStageFilter === "4+" ? t.stageOrder >= 4 : t.stageOrder.toString() === templateStageFilter);
-
     const matchesStatus =
       templateStatusFilter === "All" ||
       (templateStatusFilter === "Active" && (t.status === "Active" || !t.status)) ||
       (templateStatusFilter === "Inactive" && (t.status === "Inactive" || t.status === "Deactive"));
 
-    return matchesSearch && matchesDept && matchesStage && matchesStatus;
+    return matchesSearch && matchesDept && matchesStatus;
   });
 
   return (
@@ -975,13 +953,6 @@ export default function TemplateBuilder() {
               </div>
               <div style={{ fontSize: '0.75rem', color: '#6f6f6f', marginTop: '0.25rem' }}>With assigned templates</div>
             </Tile>
-            <Tile style={{ padding: '1.25rem', borderLeft: '4px solid #8a3ffc', backgroundColor: '#fff' }}>
-              <div style={{ fontSize: '0.8rem', color: '#525252', textTransform: 'uppercase', letterSpacing: '0.5px', fontWeight: 600 }}>Multi-Stage Templates</div>
-              <div style={{ fontSize: '2.25rem', fontWeight: 600, color: '#161616', marginTop: '0.25rem' }}>
-                {savedTemplates.filter(t => t.stageOrder > 1).length}
-              </div>
-              <div style={{ fontSize: '0.75rem', color: '#6f6f6f', marginTop: '0.25rem' }}>Stage 2+ workflow forms</div>
-            </Tile>
             <Tile style={{ padding: '1.25rem', borderLeft: '4px solid #0043ce', backgroundColor: '#fff' }}>
               <div style={{ fontSize: '0.8rem', color: '#525252', textTransform: 'uppercase', letterSpacing: '0.5px', fontWeight: 600 }}>Linked to Services</div>
               <div style={{ fontSize: '2.25rem', fontWeight: 600, color: '#161616', marginTop: '0.25rem' }}>
@@ -1025,24 +996,6 @@ export default function TemplateBuilder() {
             </div>
             <div style={{ width: '160px' }}>
               <Select
-                id="stageFilter"
-                labelText="Filter by Stage"
-                value={templateStageFilter}
-                onChange={(e) => {
-                  setTemplateStageFilter(e.target.value);
-                  setTemplatePage(1);
-                }}
-                size="md"
-              >
-                <SelectItem value="All" text="All Stages" />
-                <SelectItem value="1" text="Stage 1" />
-                <SelectItem value="2" text="Stage 2" />
-                <SelectItem value="3" text="Stage 3" />
-                <SelectItem value="4+" text="Stage 4+" />
-              </Select>
-            </div>
-            <div style={{ width: '160px' }}>
-              <Select
                 id="statusFilter"
                 labelText="Filter by Status"
                 value={templateStatusFilter}
@@ -1057,14 +1010,13 @@ export default function TemplateBuilder() {
                 <SelectItem value="Inactive" text="Deactive" />
               </Select>
             </div>
-            {(templateSearchTerm || templateDeptFilter !== "All" || templateStageFilter !== "All" || templateStatusFilter !== "All") && (
+            {(templateSearchTerm || templateDeptFilter !== "All" || templateStatusFilter !== "All") && (
               <Button
                 kind="ghost"
                 size="md"
                 onClick={() => {
                   setTemplateSearchTerm("");
                   setTemplateDeptFilter("All");
-                  setTemplateStageFilter("All");
                   setTemplateStatusFilter("All");
                   setTemplatePage(1);
                 }}
@@ -1135,7 +1087,6 @@ export default function TemplateBuilder() {
                     <TableRow style={{ backgroundColor: '#e0e0e0', borderBottom: '2px solid #525252' }}>
                       <TableHeader style={{ backgroundColor: '#e0e0e0', color: '#161616', fontWeight: 700 }}>Form Identifier</TableHeader>
                       <TableHeader style={{ backgroundColor: '#e0e0e0', color: '#161616', fontWeight: 700 }}>Department</TableHeader>
-                      <TableHeader style={{ backgroundColor: '#e0e0e0', color: '#161616', fontWeight: 700 }}>Workflow Stage</TableHeader>
                       <TableHeader style={{ backgroundColor: '#e0e0e0', color: '#161616', fontWeight: 700 }}>Linked Service</TableHeader>
                       <TableHeader style={{ backgroundColor: '#e0e0e0', color: '#161616', fontWeight: 700 }}>Configured Fields</TableHeader>
                       <TableHeader style={{ backgroundColor: '#e0e0e0', color: '#161616', fontWeight: 700 }}>Status</TableHeader>
@@ -1156,16 +1107,6 @@ export default function TemplateBuilder() {
                           <Tag type="blue" size="md">
                             {template.department || "General"}
                           </Tag>
-                        </TableCell>
-                        <TableCell>
-                          <Tag type={template.stageOrder === 1 ? "cool-gray" : "teal"} size="md">
-                            Stage {template.stageOrder}
-                          </Tag>
-                          {template.stageDescription && (
-                            <div style={{ fontSize: '0.75rem', color: '#6f6f6f', marginTop: '2px', maxWidth: '180px' }}>
-                              {template.stageDescription}
-                            </div>
-                          )}
                         </TableCell>
                         <TableCell>
                           {template.serviceProcedure?.name ? (
@@ -1282,7 +1223,7 @@ export default function TemplateBuilder() {
             </p>
             {deletingTemplate?.department && (
               <p style={{ marginBottom: '0.5rem', color: '#525252', fontSize: '0.875rem' }}>
-                Department: <strong>{deletingTemplate.department}</strong> (Stage {deletingTemplate.stageOrder})
+                Department: <strong>{deletingTemplate.department}</strong>
               </p>
             )}
             <p style={{ color: '#da1e28', fontSize: '0.85rem' }}>
@@ -1310,7 +1251,6 @@ export default function TemplateBuilder() {
               </Button>
               <div style={{ display: 'flex', gap: '0.5rem', alignItems: 'center' }}>
                 <Tag type="blue" size="md">ADMIN SERVICE DESIGNER</Tag>
-                <Tag type="teal" size="md">STAGE {stageOrder}</Tag>
               </div>
             </div>
           )}
@@ -1318,8 +1258,8 @@ export default function TemplateBuilder() {
           {isClonedTemplate && (
             <InlineNotification
               kind="info"
-              title="Customizing Stage-Specific Template Copy"
-              subtitle={`You are configuring a customized copy for Stage ${stageOrder} based on "${clonedSourceTitle}". Any fields you add, modify, or remove will be saved as a separate template for this service stage. The original base template in Template Builder will NOT be modified.`}
+              title="Customizing Template Copy"
+              subtitle={`You are configuring a customized copy based on "${clonedSourceTitle}". Any fields you add, modify, or remove will be saved as a separate template. The original base template in Template Builder will NOT be modified.`}
               lowContrast
               hideCloseButton
               style={{ marginBottom: '1.5rem' }}
@@ -1332,14 +1272,14 @@ export default function TemplateBuilder() {
                 {templateId 
                   ? `Edit Template: ${formName || "Application Form"}`
                   : isClonedTemplate 
-                    ? `Customize Template for Stage ${stageOrder}` 
+                    ? `Customize Template` 
                     : "Create New Application Template"}
               </h1>
               <p style={{ color: '#525252', marginTop: '0.5rem' }}>
                 {templateId
                   ? `Editing existing template (${templateId}). Changes will update this template upon saving.`
                   : isClonedTemplate 
-                    ? `Tailoring form fields for ${department}. Saving creates a new stage template copy.`
+                    ? `Tailoring form fields for ${department}. Saving creates a new template copy.`
                     : "Design highly customizable application forms matching official Sri Lankan government layouts."}
               </p>
             </div>
@@ -1399,9 +1339,8 @@ export default function TemplateBuilder() {
               }}>
                 <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '0.75rem' }}>
                   <span style={{ fontSize: '0.75rem', fontWeight: 'bold', color: '#0f62fe', textTransform: 'uppercase', letterSpacing: '0.5px' }}>
-                    Workflow Stage Assignment
+                    Workflow Assignment
                   </span>
-                  <Tag type="blue" size="sm">Stage {stageOrder}</Tag>
                 </div>
 
                 <div style={{ marginBottom: '0.75rem' }}>
@@ -1451,16 +1390,6 @@ export default function TemplateBuilder() {
                   )}
                 </Select>
 
-                <TextInput
-                  id="stageOrder"
-                  type="number"
-                  min={1}
-                  labelText="Sequential Workflow Stage Number"
-                  helperText="Enter the sequential stage number this form belongs to (e.g. 1, 2, 3, 4, 5...)."
-                  value={stageOrder.toString()}
-                  onChange={(e) => setStageOrder(Math.max(1, parseInt(e.target.value, 10) || 1))}
-                />
-
                 <Select
                   id="linkedService"
                   labelText="Linked Service Catalog Entry"
@@ -1475,14 +1404,6 @@ export default function TemplateBuilder() {
                 </Select>
               </>
             )}
-
-            <TextInput
-              id="stageDescription"
-              labelText="Stage Instructions for Citizens"
-              placeholder="e.g. Identity and address verification by Civil Department"
-              value={stageDescription}
-              onChange={(e) => setStageDescription(e.target.value)}
-            />
 
             {linkedServiceId && (
               <div style={{ padding: '1rem', backgroundColor: '#f4f4f4', borderLeft: '4px solid #24a148' }}>
@@ -1701,19 +1622,13 @@ export default function TemplateBuilder() {
           
           <div className="p-4 sm:p-8 lg:p-12" style={{ backgroundColor: '#fff', border: '1px solid #ccc', boxShadow: '0 4px 8px rgba(0,0,0,0.1)' }}>
 
-            {/* Stage & Department Banner */}
+            {/* Department Banner */}
             <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '0.6rem 1rem', backgroundColor: '#edf5ff', border: '1px solid #a6c8ff', borderRadius: '4px', marginBottom: '2rem' }}>
               <div style={{ display: 'flex', alignItems: 'center', gap: '0.6rem' }}>
-                <Tag type="blue">Stage {stageOrder}</Tag>
                 <span style={{ fontWeight: 600, color: '#0043ce', fontSize: '0.875rem' }}>
                   {department}
                 </span>
               </div>
-              {stageDescription && (
-                <span style={{ fontSize: '0.8rem', color: '#525252', fontStyle: 'italic' }}>
-                  {stageDescription}
-                </span>
-              )}
             </div>
 
             {/* Form Header matching Official Sri Lankan Government Style */}
@@ -1759,16 +1674,16 @@ export default function TemplateBuilder() {
                       {formName || "APPLICATION FORM"}
                     </h3>
                     <h4 style={{ fontSize: '0.95rem', fontWeight: 600, margin: '0.2rem 0', color: '#393939' }}>
-                      {subTitle || (currentDeptObj ? `${currentDeptObj.name} - Stage ${stageOrder} Application` : "Official Public Service Intake")}
+                      {subTitle || (currentDeptObj ? `${currentDeptObj.name} Application Form` : "Official Public Service Intake")}
                     </h4>
                     {lawText && <p style={{ fontSize: '0.8rem', fontStyle: 'italic', margin: '0.2rem 0 0 0', color: '#525252' }}>{lawText}</p>}
                  </div>
 
-                 {/* Right: Official Department Seal / Stage Stamp */}
+                 {/* Right: Official Department Seal Stamp */}
                  <div style={{ width: '95px', height: '85px', flexShrink: 0, border: '2px dashed #0043ce', display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', backgroundColor: '#f0f5ff', borderRadius: '4px', padding: '6px' }}>
                    <span style={{ fontSize: '0.6rem', textTransform: 'uppercase', color: '#0043ce', fontWeight: 'bold' }}>OFFICIAL STAMP</span>
-                   <span style={{ fontSize: '0.85rem', fontWeight: 'bold', color: '#161616', marginTop: '2px' }}>{currentDeptObj?.departmentCode || `DEP-${stageOrder}`}</span>
-                   <span style={{ fontSize: '0.65rem', color: '#24a148', fontWeight: 600, marginTop: '2px' }}>✓ STAGE {stageOrder}</span>
+                   <span style={{ fontSize: '0.85rem', fontWeight: 'bold', color: '#161616', marginTop: '2px' }}>{currentDeptObj?.departmentCode || "DEP-OFFICIAL"}</span>
+                   <span style={{ fontSize: '0.65rem', color: '#24a148', fontWeight: 600, marginTop: '2px' }}>✓ VERIFIED FORM</span>
                  </div>
               </div>
             </div>

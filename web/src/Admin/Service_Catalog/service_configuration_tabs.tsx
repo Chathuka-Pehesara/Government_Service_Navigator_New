@@ -57,11 +57,13 @@ import {
   Document,
   View,
   CheckmarkFilled,
+  Launch,
 } from "@carbon/icons-react";
 import { parseApiError } from "../../utils/validation";
 import { documentError, feeError } from "./serviceCatalogValidation";
 import type { Department } from "../Department_Management/types";
 import { API_BASE_URL } from "../../utils/api";
+import { ServiceProcedurePickerModal } from "../../components/ServiceProcedurePickerModal";
 
 const docHeaders = [
   { key: "documentName", header: "Document Type" },
@@ -170,6 +172,10 @@ export default function ServiceConfigurationTabs() {
   const [searchQuery, setSearchQuery] = useState("");
   const [serviceSearchQuery, setServiceSearchQuery] = useState("");
   const [selectedCategoryFilter, setSelectedCategoryFilter] = useState("All");
+  const [isPickerModalOpen, setIsPickerModalOpen] = useState(false);
+  const [docSearchQuery, setDocSearchQuery] = useState("");
+  const [feeSearchQuery, setFeeSearchQuery] = useState("");
+  const [policySearchQuery, setPolicySearchQuery] = useState("");
   const [selectedTabIndex, setSelectedTabIndex] = useState<number>(() => {
     const params = new URLSearchParams(window.location.search);
     const tab = params.get("tab");
@@ -414,6 +420,55 @@ export default function ServiceConfigurationTabs() {
       }
     }
     window.location.href = targetUrl;
+  };
+
+
+  const handleUnlinkStageTemplate = async (templateId: string, stageNum: number) => {
+    if (!window.confirm(`Are you sure you want to unlink this template from Stage ${stageNum}? The original template in the Template Builder will NOT be deleted.`)) {
+      return;
+    }
+    try {
+      const res = await fetch(`${API_BASE_URL}/api/templates/${templateId}`);
+      if (!res.ok) throw new Error("Could not find template");
+      const tplData = await res.json();
+      const token = localStorage.getItem("officerToken");
+      await fetch(`${API_BASE_URL}/api/templates/update/${templateId}`, {
+        method: "PUT",
+        headers: {
+          "Content-Type": "application/json",
+          ...(token ? { Authorization: `Bearer ${token}` } : {})
+        },
+        body: JSON.stringify({
+          formName: tplData.formName,
+          subTitle: tplData.subTitle,
+          lawText: tplData.lawText,
+          status: tplData.status || "Active",
+          serviceProcedureId: null,
+          department: tplData.department,
+          stageOrder: 1,
+          stageDescription: null,
+          fields: (tplData.fields || []).map((f: any) => ({
+            label: f.label,
+            type: f.type,
+            options: f.options,
+            required: f.required ?? f.isRequired ?? false
+          }))
+        })
+      });
+      setNotification({
+        type: "success",
+        title: "Template Unlinked",
+        subtitle: `Template has been unlinked from Stage ${stageNum}.`
+      });
+      if (selectedServiceId) await fetchTemplatesForService(selectedServiceId);
+      await fetchAllTemplates();
+    } catch (err: any) {
+      setNotification({
+        type: "error",
+        title: "Unlink Failed",
+        subtitle: err.message || "Unable to unlink template"
+      });
+    }
   };
 
   const fetchKnowledge = async (svcId: string) => {
@@ -904,15 +959,29 @@ export default function ServiceConfigurationTabs() {
 
   const filteredDocs = documents.filter(
     (d) =>
-      d.documentName?.toLowerCase().includes(searchQuery.toLowerCase()) ||
-      d.description?.toLowerCase().includes(searchQuery.toLowerCase()),
+      !docSearchQuery.trim() ||
+      d.documentName?.toLowerCase().includes(docSearchQuery.toLowerCase()) ||
+      d.description?.toLowerCase().includes(docSearchQuery.toLowerCase()),
   );
 
   const filteredFees = fees.filter(
     (f) =>
-      f.feeType?.toLowerCase().includes(searchQuery.toLowerCase()) ||
-      f.amount?.toString().includes(searchQuery),
+      !feeSearchQuery.trim() ||
+      f.feeType?.toLowerCase().includes(feeSearchQuery.toLowerCase()) ||
+      f.amount?.toString().includes(feeSearchQuery),
   );
+
+  const filteredGroupedPolicies = useMemo(() => {
+    if (!policySearchQuery.trim()) return groupedPolicies;
+    const q = policySearchQuery.toLowerCase().trim();
+    return groupedPolicies.filter(
+      (p) =>
+        p.title.toLowerCase().includes(q) ||
+        p.category.toLowerCase().includes(q) ||
+        p.preview.toLowerCase().includes(q) ||
+        p.clauses.some((c) => c.text.toLowerCase().includes(q))
+    );
+  }, [groupedPolicies, policySearchQuery]);
 
   const handleLogout = async () => {
     const token = localStorage.getItem("officerToken");
@@ -1116,7 +1185,7 @@ export default function ServiceConfigurationTabs() {
           <div
             style={{
               display: "grid",
-              gridTemplateColumns: "repeat(auto-fit, minmax(240px, 1fr))",
+              gridTemplateColumns: "repeat(auto-fit, minmax(220px, 1fr)) auto",
               gap: "1rem",
               alignItems: "flex-end",
             }}
@@ -1125,8 +1194,8 @@ export default function ServiceConfigurationTabs() {
             <div>
               <Search
                 id="service-procedure-search"
-                labelText="Search Procedures"
-                placeholder="Search by code (e.g. GSN-IMM) or name..."
+                labelText="Quick Filter"
+                placeholder="Search by code or name..."
                 size="md"
                 value={serviceSearchQuery}
                 onChange={(e) => setServiceSearchQuery(e.target.value)}
@@ -1187,6 +1256,19 @@ export default function ServiceConfigurationTabs() {
                 )}
               </Select>
             </div>
+
+            {/* Browse All Catalog Modal Button */}
+            <div>
+              <Button
+                kind="tertiary"
+                size="md"
+                renderIcon={Launch}
+                onClick={() => setIsPickerModalOpen(true)}
+                style={{ width: "100%", whiteSpace: "nowrap" }}
+              >
+                Browse Catalog ({visibleServices.length})
+              </Button>
+            </div>
           </div>
 
           {/* Active Filter Bar & Reset */}
@@ -1226,6 +1308,22 @@ export default function ServiceConfigurationTabs() {
           )}
         </Tile>
 
+        {/* Modal for browsing & picking services from entire catalog */}
+        <ServiceProcedurePickerModal
+          isOpen={isPickerModalOpen}
+          onClose={() => setIsPickerModalOpen(false)}
+          services={visibleServices}
+          selectedServiceId={selectedServiceId}
+          onSelectService={(srv) => {
+            const idStr = srv.id.toString();
+            setSelectedServiceId(idStr);
+            sessionStorage.setItem("admin_selected_service_id", idStr);
+            const url = new URL(window.location.href);
+            url.searchParams.set("serviceId", idStr);
+            window.history.replaceState({}, "", url.toString());
+          }}
+        />
+
         <div style={{ width: "100%" }}>
           <Tabs
             selectedIndex={selectedTabIndex}
@@ -1254,6 +1352,36 @@ export default function ServiceConfigurationTabs() {
                   />
                 ) : (
                   <>
+                    <div
+                      style={{
+                        display: "flex",
+                        justifyContent: "space-between",
+                        alignItems: "center",
+                        gap: "1rem",
+                        marginBottom: "1rem",
+                        flexWrap: "wrap",
+                      }}
+                    >
+                      <div style={{ maxWidth: "360px", width: "100%" }}>
+                        <Search
+                          id="search-documents-tab"
+                          labelText="Search Documents"
+                          placeholder="Search document name or description..."
+                          size="md"
+                          value={docSearchQuery}
+                          onChange={(e) => setDocSearchQuery(e.target.value)}
+                          onClear={() => setDocSearchQuery("")}
+                        />
+                      </div>
+                      <Button
+                        kind="primary"
+                        renderIcon={Add}
+                        onClick={openAddDocModal}
+                      >
+                        Add Document Requirement
+                      </Button>
+                    </div>
+
                     <DataTable rows={filteredDocs} headers={docHeaders}>
                       {({
                         rows,
@@ -1264,7 +1392,7 @@ export default function ServiceConfigurationTabs() {
                       }) => (
                         <TableContainer
                           title="Document Checklist"
-                          description="Files required from citizens for this specific procedure."
+                          description={`Showing ${filteredDocs.length} of ${documents.length} files required from citizens for this specific procedure.`}
                         >
                           <Table {...getTableProps()}>
                             <TableHead>
@@ -1289,8 +1417,9 @@ export default function ServiceConfigurationTabs() {
                                       padding: "2rem",
                                     }}
                                   >
-                                    No document requirements configured for this
-                                    procedure yet.
+                                    {docSearchQuery
+                                      ? "No documents match your search criteria."
+                                      : "No document requirements configured for this procedure yet."}
                                   </TableCell>
                                 </TableRow>
                               ) : (
@@ -1365,14 +1494,6 @@ export default function ServiceConfigurationTabs() {
                         </TableContainer>
                       )}
                     </DataTable>
-                    <Button
-                      kind="secondary"
-                      renderIcon={Add}
-                      style={{ marginTop: "1.5rem" }}
-                      onClick={openAddDocModal}
-                    >
-                      Add Document Requirement
-                    </Button>
                   </>
                 )}
               </TabPanel>
@@ -1385,6 +1506,36 @@ export default function ServiceConfigurationTabs() {
                   <Loading description="Loading fees..." withOverlay={false} />
                 ) : (
                   <>
+                    <div
+                      style={{
+                        display: "flex",
+                        justifyContent: "space-between",
+                        alignItems: "center",
+                        gap: "1rem",
+                        marginBottom: "1rem",
+                        flexWrap: "wrap",
+                      }}
+                    >
+                      <div style={{ maxWidth: "360px", width: "100%" }}>
+                        <Search
+                          id="search-fees-tab"
+                          labelText="Search Fee Schedules"
+                          placeholder="Search fee type or amount..."
+                          size="md"
+                          value={feeSearchQuery}
+                          onChange={(e) => setFeeSearchQuery(e.target.value)}
+                          onClear={() => setFeeSearchQuery("")}
+                        />
+                      </div>
+                      <Button
+                        kind="primary"
+                        renderIcon={Add}
+                        onClick={openAddFeeModal}
+                      >
+                        Add Fee Tier
+                      </Button>
+                    </div>
+
                     <DataTable
                       rows={filteredFees.map((f) => ({
                         ...f,
@@ -1645,6 +1796,18 @@ export default function ServiceConfigurationTabs() {
                     </div>
                   </div>
 
+                  <div style={{ marginBottom: "1rem" }}>
+                    <Search
+                      id="search-policies-tab"
+                      labelText="Search Policies"
+                      placeholder="Search circular title, category, or legal clauses..."
+                      size="md"
+                      value={policySearchQuery}
+                      onChange={(e) => setPolicySearchQuery(e.target.value)}
+                      onClear={() => setPolicySearchQuery("")}
+                    />
+                  </div>
+
                   {knowledgeLoading ? (
                     <div style={{ padding: "3rem", textAlign: "center", backgroundColor: "#ffffff", borderRadius: "8px" }}>
                       <Loading description="Loading policy registry from Neon DB..." withOverlay={false} small />
@@ -1669,9 +1832,14 @@ export default function ServiceConfigurationTabs() {
                         Ingest Default Sri Lankan Gazettes
                       </Button>
                     </Tile>
+                  ) : filteredGroupedPolicies.length === 0 ? (
+                    <Tile style={{ padding: "2rem", textAlign: "center", backgroundColor: "#ffffff", borderRadius: "8px" }}>
+                      <p style={{ margin: 0, fontWeight: 600, color: "#161616" }}>No policies matched "{policySearchQuery}"</p>
+                      <p style={{ fontSize: "0.85rem", color: "#6f6f6f", marginTop: "0.25rem" }}>Try a different keyword or reset search.</p>
+                    </Tile>
                   ) : (
                     <div style={{ display: "flex", flexDirection: "column", gap: "1rem" }}>
-                      {groupedPolicies.map((doc, index) => (
+                      {filteredGroupedPolicies.map((doc, index) => (
                         <Tile
                           key={doc.title || index}
                           style={{
@@ -1963,15 +2131,25 @@ export default function ServiceConfigurationTabs() {
 
                           <div style={{ display: "flex", alignItems: "center", gap: "0.75rem" }}>
                             {templateForStage ? (
-                              <Button
-                                kind="tertiary"
-                                size="sm"
-                                onClick={() => handleNavigateToBuilder(
-                                  `/admin/services/builder?id=${templateForStage.id}&serviceId=${selectedServiceId}&stage=${stageNum}&department=${encodeURIComponent(stageDept)}`
-                                )}
-                              >
-                                Edit Stage Form in Builder
-                              </Button>
+                              <>
+                                <Button
+                                  kind="tertiary"
+                                  size="sm"
+                                  onClick={() => handleNavigateToBuilder(
+                                    `/admin/services/builder?id=${templateForStage.id}&serviceId=${selectedServiceId}&stage=${stageNum}&department=${encodeURIComponent(stageDept)}`
+                                  )}
+                                >
+                                  Edit Stage Form in Builder
+                                </Button>
+                                <Button
+                                  kind="ghost"
+                                  size="sm"
+                                  style={{ color: "#da1e28" }}
+                                  onClick={() => handleUnlinkStageTemplate(templateForStage.id, stageNum)}
+                                >
+                                  Unlink Form
+                                </Button>
+                              </>
                             ) : (
                               <Button
                                 kind="primary"
@@ -1987,6 +2165,7 @@ export default function ServiceConfigurationTabs() {
                         </div>
 
                         {/* Adopt Pre-Built Template Option */}
+                        {/* Adopt Pre-Built Template Option */}
                         {matchingPrebuilts.length > 0 && (
                           <div style={{ marginTop: "1.25rem", padding: "1rem", backgroundColor: "#edf5ff", border: "1px solid #a6c8ff", borderRadius: "4px" }}>
                             <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: "0.5rem", flexWrap: "wrap", gap: "0.5rem" }}>
@@ -1997,7 +2176,7 @@ export default function ServiceConfigurationTabs() {
                                 <Tag type="blue" size="sm">{matchingPrebuilts.length} Available in Builder</Tag>
                               </div>
                               <span style={{ fontSize: "0.75rem", color: "#525252" }}>
-                                Customizing will save as an independent Stage {stageNum} copy. The original template in Template Builder will NOT be modified.
+                                Customizing will save as an independent Stage {stageNum} copy. The original base template in Template Builder will NOT be modified.
                               </span>
                             </div>
                             <div style={{ display: "flex", gap: "0.75rem", alignItems: "center", flexWrap: "wrap" }}>

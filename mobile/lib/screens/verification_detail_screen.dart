@@ -1,5 +1,6 @@
 import 'package:flutter/cupertino.dart';
 import 'package:flutter/material.dart';
+import 'package:file_picker/file_picker.dart';
 import '../models/verification_models.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import '../providers/application_providers.dart';
@@ -9,6 +10,8 @@ import '../widgets/service_roadmap_tracker.dart';
 import 'payments/payment_screen.dart';
 import 'application_form_screen.dart';
 import '../utils/validators.dart';
+import '../services/service_api_client.dart';
+import '../providers/session_provider.dart';
 
 class VerificationDetailScreen extends ConsumerStatefulWidget {
   /// The application as it looked in the list; newer data from [myApplicationsProvider] wins.
@@ -106,12 +109,15 @@ class _VerificationDetailScreenState extends ConsumerState<VerificationDetailScr
       appBar: AppBar(
         backgroundColor: AppColors.cardBg,
         elevation: 0,
+        centerTitle: false,
+        titleSpacing: 0,
         leading: IconButton(
           icon: const Icon(CupertinoIcons.back, color: AppColors.dark),
           onPressed: () => Navigator.pop(context, _app),
         ),
         title: Text(
           _app.referenceNumber,
+          overflow: TextOverflow.ellipsis,
           style: const TextStyle(
             color: AppColors.dark,
             fontWeight: FontWeight.bold,
@@ -276,13 +282,14 @@ class _VerificationDetailScreenState extends ConsumerState<VerificationDetailScr
           const Divider(height: 1, color: AppColors.divider),
           const SizedBox(height: 14),
           Row(
-            mainAxisAlignment: MainAxisAlignment.spaceBetween,
             children: [
-              _buildMetaItem('Department', _app.category),
+              _buildMetaItem('Department', _app.category, flexible: true),
+              const SizedBox(width: 8),
               _buildMetaItem(
                 'Submitted Date',
                 '${_app.submittedDate.year}-${_app.submittedDate.month.toString().padLeft(2, '0')}-${_app.submittedDate.day.toString().padLeft(2, '0')}',
               ),
+              const SizedBox(width: 12),
               _buildMetaItem(
                 'App ID',
                 '#${_app.applicationId}',
@@ -294,12 +301,15 @@ class _VerificationDetailScreenState extends ConsumerState<VerificationDetailScr
     );
   }
 
-  Widget _buildMetaItem(String label, String value) {
-    return Column(
+  Widget _buildMetaItem(String label, String value, {bool flexible = false}) {
+    final item = Column(
       crossAxisAlignment: CrossAxisAlignment.start,
+      mainAxisSize: MainAxisSize.min,
       children: [
         Text(
           label.toUpperCase(),
+          maxLines: 1,
+          overflow: TextOverflow.ellipsis,
           style: const TextStyle(
             fontSize: 10,
             fontWeight: FontWeight.w600,
@@ -310,6 +320,8 @@ class _VerificationDetailScreenState extends ConsumerState<VerificationDetailScr
         const SizedBox(height: 3),
         Text(
           value,
+          maxLines: 1,
+          overflow: TextOverflow.ellipsis,
           style: const TextStyle(
             fontSize: 13,
             fontWeight: FontWeight.w600,
@@ -318,6 +330,7 @@ class _VerificationDetailScreenState extends ConsumerState<VerificationDetailScr
         ),
       ],
     );
+    return flexible ? Expanded(child: item) : item;
   }
 
   // --- WIDGET 2: Action Required Banner (Revised status) ---
@@ -1032,7 +1045,8 @@ class _VerificationDetailScreenState extends ConsumerState<VerificationDetailScr
   // --- MODAL: Resubmission Sheet for Revised status ---
   void _openResubmissionSheet(BuildContext context) {
     final noteController = TextEditingController();
-    String attachedDoc = 'Survey_Plan_Registered_2026_Signed.pdf';
+    String attachedDoc = 'Tap paperclip to select document...';
+    PlatformFile? pickedFile;
     bool isSubmitting = false;
 
     showModalBottomSheet(
@@ -1095,19 +1109,33 @@ class _VerificationDetailScreenState extends ConsumerState<VerificationDetailScr
                     Expanded(
                       child: Text(
                         attachedDoc,
-                        style: const TextStyle(
+                        style: TextStyle(
                           fontSize: 13,
                           fontWeight: FontWeight.w600,
-                          color: AppColors.dark,
+                          color: attachedDoc.startsWith('Tap') ? AppColors.secondaryLabel : AppColors.dark,
                         ),
                       ),
                     ),
                     IconButton(
                       icon: const Icon(CupertinoIcons.paperclip, color: AppColors.primary),
-                      onPressed: () {
-                        setModalState(() {
-                          attachedDoc = 'Updated_Certified_Boundary_Plan_v2.pdf';
-                        });
+                      onPressed: () async {
+                        final messenger = ScaffoldMessenger.of(context);
+                        try {
+                          final res = await FilePicker.pickFiles(
+                            type: FileType.custom,
+                            allowedExtensions: const ['pdf', 'jpg', 'jpeg', 'png', 'doc', 'docx'],
+                          );
+                          if (res.isNotEmpty) {
+                            setModalState(() {
+                              pickedFile = res.first;
+                              attachedDoc = res.first.name;
+                            });
+                          }
+                        } catch (e) {
+                          messenger.showSnackBar(
+                            SnackBar(content: Text('Could not pick document: $e')),
+                          );
+                        }
                       },
                     ),
                   ],
@@ -1148,16 +1176,35 @@ class _VerificationDetailScreenState extends ConsumerState<VerificationDetailScr
                       ? null
                       : () async {
                           final messenger = ScaffoldMessenger.of(context);
+                          if (attachedDoc.startsWith('Tap')) {
+                            messenger.showSnackBar(const SnackBar(content: Text('Please tap the paperclip to select your corrected document.')));
+                            return;
+                          }
                           final noteError = Validators.text(noteController.text, field: 'Revision note', min: 5, max: 2000);
                           if (noteError != null) {
                             messenger.showSnackBar(SnackBar(content: Text(noteError)));
                             return;
                           }
                           setModalState(() => isSubmitting = true);
+                          final token = ref.read(authTokenProvider);
+                          if (pickedFile != null && token.isNotEmpty) {
+                            try {
+                              final bytes = await pickedFile!.readAsBytes();
+                              await ServiceApiClient.uploadDocument(
+                                fieldLabel: 'Revised Evidentiary Document',
+                                fileName: pickedFile!.name,
+                                bytes: bytes,
+                                token: token,
+                              );
+                            } catch (_) {
+                              // Non-fatal if pre-upload fails, backend fallback still accepts documentAttachmentName
+                            }
+                          }
                           final submitted = await VerificationApiService.submitRevision(
                             applicationId: _app.applicationId,
                             notes: noteController.text,
                             documentAttachmentName: attachedDoc,
+                            token: token,
                           );
                           if (!submitted) {
                             setModalState(() => isSubmitting = false);

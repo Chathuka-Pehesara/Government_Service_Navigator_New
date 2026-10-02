@@ -3,6 +3,7 @@ import 'package:flutter/foundation.dart';
 import 'package:http/http.dart' as http;
 import '../config/app_config.dart';
 import '../models/verification_models.dart';
+import 'session_storage.dart';
 
 class VerificationApiService {
   static String get baseUrl => '${AppConfig.baseUrl}/verification';
@@ -105,12 +106,59 @@ class VerificationApiService {
   }
 
   /// Citizen resubmission for an application marked "Revised".
-  /// The backend does not expose a resubmission endpoint yet, so this reports failure.
   static Future<bool> submitRevision({
     required int applicationId,
     required String notes,
     required String documentAttachmentName,
+    String? token,
   }) async {
+    try {
+      var authToken = token;
+      if (authToken == null || authToken.isEmpty) {
+        final saved = await SessionStorage.load();
+        authToken = saved?.token;
+      }
+
+      final headers = <String, String>{
+        'Content-Type': 'application/json',
+        if (authToken != null && authToken.isNotEmpty) 'Authorization': 'Bearer $authToken',
+      };
+
+      // 1. Try dedicated submit-revision endpoint
+      final response = await http.post(
+        Uri.parse('${AppConfig.baseUrl}/applications/$applicationId/submit-revision'),
+        headers: headers,
+        body: jsonEncode({
+          'notes': notes,
+          'documentAttachmentName': documentAttachmentName,
+        }),
+      );
+
+      if (response.statusCode == 200 || response.statusCode == 201) {
+        return true;
+      }
+
+      // 2. If hosted Azure API returns 404 (endpoint not yet deployed to cloud), fall back to raise-concern
+      if (response.statusCode == 404) {
+        final concernRes = await raiseConcern(
+          applicationId,
+          subject: 'Revision Document Submitted: $documentAttachmentName',
+          message: 'Citizen submitted requested revision. Attached file: $documentAttachmentName. Remarks: $notes',
+          token: authToken,
+        );
+        if (concernRes != null) {
+          return true;
+        }
+      }
+
+      if (kDebugMode) {
+        print('submitRevision error status: ${response.statusCode}, body: ${response.body}');
+      }
+    } catch (e) {
+      if (kDebugMode) {
+        print('submitRevision failed: $e');
+      }
+    }
     return false;
   }
 

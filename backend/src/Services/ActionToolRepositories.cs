@@ -34,19 +34,38 @@ public class FeeScheduleRepository : IFeeScheduleRepository
                     try
                     {
                         using var pDoc = JsonDocument.Parse(paymentField.Options);
-                        if (pDoc.RootElement.TryGetProperty("amount", out var amt) && amt.GetDecimal() > 0)
+                        decimal stageAmt = 0m;
+                        if (pDoc.RootElement.TryGetProperty("amount", out var amt))
                         {
-                            var stageAmt = amt.GetDecimal();
-                            string feeName = pDoc.RootElement.TryGetProperty("feeType", out var ft) && ft.GetString() is string s && !string.IsNullOrWhiteSpace(s)
-                                ? s
-                                : paymentField.Label;
+                            if (amt.ValueKind == JsonValueKind.Number) stageAmt = amt.GetDecimal();
+                            else if (amt.ValueKind == JsonValueKind.String && decimal.TryParse(amt.GetString(), System.Globalization.NumberStyles.Any, System.Globalization.CultureInfo.InvariantCulture, out var parsed)) stageAmt = parsed;
+                        }
+                        else if (pDoc.RootElement.TryGetProperty("feeAmount", out var famt))
+                        {
+                            if (famt.ValueKind == JsonValueKind.Number) stageAmt = famt.GetDecimal();
+                            else if (famt.ValueKind == JsonValueKind.String && decimal.TryParse(famt.GetString(), System.Globalization.NumberStyles.Any, System.Globalization.CultureInfo.InvariantCulture, out var parsed)) stageAmt = parsed;
+                        }
+
+                        if (stageAmt > 0)
+                        {
+                            string feeName = "Statutory Processing Fee";
+                            if (pDoc.RootElement.TryGetProperty("feeType", out var ft) && ft.GetString() is string s && !string.IsNullOrWhiteSpace(s))
+                                feeName = s;
+                            else if (!string.IsNullOrWhiteSpace(paymentField.Label))
+                                feeName = paymentField.Label;
                             return new List<FeeScheduleEntry> { new(feeName, stageAmt, DateTime.UtcNow) };
                         }
                     }
                     catch { }
                 }
 
-                // If this stage template exists and has no payment field, then no fee is charged for this stage
+                // If template has no payment field or 0 fee, check if procedure has configured fee schedules before returning empty
+                var catalogFees = await _db.FeeSchedules
+                    .Where(f => f.ServiceProcedureId == serviceProcedureId)
+                    .Select(f => new FeeScheduleEntry(f.FeeType, f.Amount, f.EffectiveDate))
+                    .ToListAsync(cancellationToken);
+                if (catalogFees.Count > 0) return catalogFees;
+
                 return new List<FeeScheduleEntry>();
             }
         }

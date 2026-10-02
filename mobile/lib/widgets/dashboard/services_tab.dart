@@ -42,20 +42,20 @@ class _ServicesTabState extends ConsumerState<ServicesTab> {
     final lowerName = name.toLowerCase();
     final lowerCat = category.toLowerCase();
 
-    if (lowerName.contains('passport') || lowerCat.contains('immigra')) {
+    if (lowerName.contains('passport') || lowerCat.contains('immigra') || lowerCat.contains('travel')) {
       return CupertinoIcons.airplane;
     }
     if (lowerName.contains('license') || lowerName.contains('driving') || lowerCat.contains('transport')) {
       return CupertinoIcons.car_detailed;
     }
-    if (lowerName.contains('identity') || lowerName.contains('nic') || lowerCat.contains('identity')) {
-      return CupertinoIcons.person_crop_rectangle;
+    if (lowerName.contains('identity') || lowerName.contains('nic') || lowerCat.contains('identity') || lowerCat.contains('personal') || lowerCat.contains('family')) {
+      return CupertinoIcons.person_2_fill;
     }
-    if (lowerName.contains('police') || lowerName.contains('clearance') || lowerCat.contains('police')) {
+    if (lowerName.contains('police') || lowerName.contains('clearance') || lowerCat.contains('police') || lowerCat.contains('legal') || lowerCat.contains('security')) {
       return CupertinoIcons.shield_lefthalf_fill;
     }
-    if (lowerName.contains('birth') || lowerName.contains('marriage') || lowerName.contains('death') || lowerCat.contains('civil')) {
-      return CupertinoIcons.person_2_fill;
+    if (lowerName.contains('birth') || lowerName.contains('marriage') || lowerName.contains('death') || lowerCat.contains('civil') || lowerCat.contains('public') || lowerCat.contains('community')) {
+      return CupertinoIcons.building_2_fill;
     }
     if (lowerCat.contains('commerce') || lowerCat.contains('business') || lowerName.contains('trade')) {
       return CupertinoIcons.briefcase_fill;

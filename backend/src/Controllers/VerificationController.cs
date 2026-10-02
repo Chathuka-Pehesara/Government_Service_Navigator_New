@@ -197,8 +197,10 @@ namespace Government_Service_Navigator.Backend.Controllers
                 catch (JsonException) { }
             }
 
-            // Metadata only; the officer fetches each file's bytes from documents/{id}/content
-            var documents = await _context.SubmissionDocuments
+            // Fetch all documents for this application (VO can see everything — swipe gallery).
+            // Each doc is tagged with a category so the UI knows which ones are stage-specific.
+            // Note: in-memory filtering used because EF/Npgsql cannot translate StringComparison to SQL.
+            var allDocuments = await _context.SubmissionDocuments
                 .Where(d => d.ApplicationId == task.ApplicationId)
                 .OrderBy(d => d.UploadedAt)
                 .Select(d => new { d.Id, d.FieldLabel, d.FileName, d.ContentType, d.SizeBytes, d.UploadedAt })
@@ -210,28 +212,91 @@ namespace Government_Service_Navigator.Backend.Controllers
                 .OrderByDescending(p => p.Id)
                 .FirstOrDefaultAsync();
 
+            // Load active template for the current stage to inspect required file & payment fields
+            string[] paymentKeywords = ["slip", "deposit", "payment", "receipt", "transfer", "bank slip", "bank deposit"];
+            HashSet<string> stageFileLabels = new(StringComparer.OrdinalIgnoreCase);
+            HashSet<string> stagePaymentLabels = new(StringComparer.OrdinalIgnoreCase);
             decimal stageFeeAmount = 0m;
             bool stageHasPaymentField = false;
+
+            int activeReviewStage = submission?.CurrentStage > 0
+                ? submission.CurrentStage
+                : (task.CurrentStage > 0 ? task.CurrentStage : (task.StageNumber > 0 ? task.StageNumber : 1));
+
             if (submission != null)
             {
-                var template = await _context.Templates
+                var stageTemplate = await _context.Templates
                     .Include(t => t.Fields)
-                    .FirstOrDefaultAsync(t => t.ServiceProcedureId == submission.ServiceProcedureId && t.StageOrder == task.StageNumber && t.Status == "Active");
-                var paymentField = template?.Fields.FirstOrDefault(f => f.Type == "payment");
-                if (paymentField != null)
+                    .Where(t => t.ServiceProcedureId == submission.ServiceProcedureId
+                                && t.StageOrder == activeReviewStage
+                                && t.Status == "Active")
+                    .OrderByDescending(t => t.CreatedAt)
+                    .FirstOrDefaultAsync();
+
+                if (stageTemplate != null)
                 {
-                    stageHasPaymentField = true;
-                    if (!string.IsNullOrWhiteSpace(paymentField.Options))
+                    foreach (var f in stageTemplate.Fields)
                     {
-                        try
+                        var clean = f.Label.Trim().TrimEnd(':');
+                        if (f.Type == "file" || f.Type == "document" || f.Type == "documentUpload")
                         {
-                            using var pDoc = JsonDocument.Parse(paymentField.Options);
-                            if (pDoc.RootElement.TryGetProperty("amount", out var a)) stageFeeAmount = a.GetDecimal();
+                            stageFileLabels.Add(clean);
                         }
-                        catch { }
+                        else if (f.Type == "payment")
+                        {
+                            stageHasPaymentField = true;
+                            stagePaymentLabels.Add(clean);
+                            if (!string.IsNullOrWhiteSpace(f.Options))
+                            {
+                                try
+                                {
+                                    using var pDoc = JsonDocument.Parse(f.Options);
+                                    if (pDoc.RootElement.TryGetProperty("amount", out var a)) stageFeeAmount = a.GetDecimal();
+                                    if (pDoc.RootElement.TryGetProperty("feeType", out var ft) && !string.IsNullOrWhiteSpace(ft.GetString()))
+                                        stagePaymentLabels.Add(ft.GetString()!.Trim().TrimEnd(':'));
+                                }
+                                catch { }
+                            }
+                        }
                     }
                 }
             }
+
+            // Tag each document: "stage" | "payment" | "other"
+            var documents = allDocuments.Select(d =>
+            {
+                string category;
+                var label = d.FieldLabel?.Trim().TrimEnd(':') ?? "";
+
+                // 1. Payment slip check:
+                // Matches payment.ManualSlipUrl (contains document GUID), matches template payment field labels,
+                // or contains payment keywords in label or filename.
+                bool isPaymentSlip = (payment != null && !string.IsNullOrEmpty(payment.ManualSlipUrl) && payment.ManualSlipUrl.Contains(d.Id.ToString(), StringComparison.OrdinalIgnoreCase))
+                    || stagePaymentLabels.Contains(label)
+                    || paymentKeywords.Any(k => (!string.IsNullOrEmpty(label) && label.Contains(k, StringComparison.OrdinalIgnoreCase)) || d.FileName.Contains(k, StringComparison.OrdinalIgnoreCase));
+
+                if (isPaymentSlip)
+                {
+                    category = "payment";
+                }
+                // 2. Stage document check:
+                // If single-stage application, all non-payment documents belong to this stage.
+                // If no file template fields defined, treat as stage-relevant.
+                // Or if the label matches (or fuzzy matches) a file field for this active stage.
+                else if ((submission?.MaxStages <= 1)
+                    || stageFileLabels.Count == 0
+                    || (!string.IsNullOrEmpty(label) && stageFileLabels.Contains(label))
+                    || (!string.IsNullOrEmpty(label) && stageFileLabels.Any(s => s.Contains(label, StringComparison.OrdinalIgnoreCase) || label.Contains(s, StringComparison.OrdinalIgnoreCase))))
+                {
+                    category = "stage";
+                }
+                else
+                {
+                    category = "other";
+                }
+
+                return new { d.Id, d.FieldLabel, d.FileName, d.ContentType, d.SizeBytes, d.UploadedAt, category };
+            }).ToList();
 
             object? paymentInfo = null;
             if (stageHasPaymentField && stageFeeAmount > 0)
@@ -254,19 +319,21 @@ namespace Government_Service_Navigator.Backend.Controllers
                 {
                     paymentInfo = new
                     {
-                        id = (int?)null,
+                        id = 0,
                         hasPayment = true,
                         amount = stageFeeAmount,
                         status = "Pending",
                         isVerified = false,
-                        method = "Unpaid",
+                        method = "Pending",
                         slipUrl = (string?)null,
                         paidDate = (DateTime?)null
                     };
                 }
             }
-            else if (submission != null && submission.MaxStages <= 1 && payment != null)
+            else if (payment != null)
             {
+                // Template fee could not be read (template not found, fee=0, or multi-stage) but a real
+                // payment record exists — always surface it so the officer sees the actual paid amount.
                 paymentInfo = new
                 {
                     id = payment.Id,
@@ -447,6 +514,11 @@ namespace Government_Service_Navigator.Backend.Controllers
                     sub.StageStatus = "ActionRequired";
                 }
                 else if (string.Equals(request.Status, "Rejected", StringComparison.OrdinalIgnoreCase))
+                {
+                    sub.StageStatus = "ActionRequired";
+                }
+                else if (string.Equals(request.Status, "Revised", StringComparison.OrdinalIgnoreCase) ||
+                         string.Equals(request.Status, "Revision Requested", StringComparison.OrdinalIgnoreCase))
                 {
                     sub.StageStatus = "ActionRequired";
                 }

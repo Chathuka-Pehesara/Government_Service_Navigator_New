@@ -17,7 +17,7 @@ import {
   Toggle,
   Modal
 } from "@carbon/react";
-import { Checkmark, Close, Document, ChevronLeft, ArrowRight, Warning, Money, TrashCan, Launch, Security, Task, CheckmarkFilled, WarningAltFilled } from "@carbon/icons-react";
+import { Checkmark, Close, Document, ChevronLeft, ArrowRight, Warning, Money, TrashCan, Security, Task, CheckmarkFilled, WarningAltFilled } from "@carbon/icons-react";
 import AgentDraftPanel from "./AgentDraftPanel";
 import DocumentPreview from "./DocumentPreview";
 import { getAgentDraft, generateAgentDraft, type AgentDraftView } from "./agentDraftApi";
@@ -44,6 +44,7 @@ interface TaskDetail {
     citizenName?: string | null;
     citizenNic?: string | null;
     serviceName?: string | null;
+    department?: string | null;
     currentStage?: number;
     maxStages?: number;
   };
@@ -61,6 +62,7 @@ interface UploadedDocument {
   contentType: string;
   sizeBytes: number;
   uploadedAt: string;
+  category: 'stage' | 'payment' | 'other'; // tagged by backend
 }
 
 interface GalleryDocument {
@@ -69,6 +71,39 @@ interface GalleryDocument {
   fieldLabel?: string;
   file?: UploadedDocument;
   aiTag: string;
+  /** true = belongs to current stage → verify toggle active */
+  isStageDoc: boolean;
+  /** visual category label shown in gallery */
+  docCategory: 'stage' | 'payment' | 'other' | 'missing';
+}
+
+function isDocumentAlreadyAttached(missingName: string, attached: GalleryDocument[]): boolean {
+  const normMissing = missingName.toLowerCase().replace(/[^a-z0-9]/g, '');
+  if (!normMissing) return false;
+
+  return attached.some(att => {
+    const label = (att.fieldLabel || '').toLowerCase().replace(/[^a-z0-9]/g, '');
+    const name = (att.name || '').toLowerCase().replace(/[^a-z0-9]/g, '');
+
+    // Exact or substring match
+    if (label && (label === normMissing || label.includes(normMissing) || normMissing.includes(label))) return true;
+    if (name && (name === normMissing || name.includes(normMissing) || normMissing.includes(name))) return true;
+
+    // Common acronyms & synonyms
+    const isNicMissing = normMissing.includes('nic') || normMissing.includes('nationalidentity');
+    const isNicAttached = label.includes('nic') || label.includes('nationalidentity') || name.includes('nic');
+    if (isNicMissing && isNicAttached) return true;
+
+    const isBcMissing = normMissing.includes('birth') || normMissing === 'bc';
+    const isBcAttached = label.includes('birth') || name.includes('birth') || label === 'bc';
+    if (isBcMissing && isBcAttached) return true;
+
+    const isPayMissing = normMissing.includes('payment') || normMissing.includes('slip') || normMissing.includes('deposit') || normMissing.includes('receipt') || normMissing.includes('fee');
+    const isPayAttached = label.includes('payment') || label.includes('slip') || label.includes('deposit') || label.includes('receipt') || label.includes('fee') || att.docCategory === 'payment';
+    if (isPayMissing && isPayAttached) return true;
+
+    return false;
+  });
 }
 
 export default function VerificationWorkspace() {
@@ -97,14 +132,62 @@ export default function VerificationWorkspace() {
 
   const documents = useMemo<GalleryDocument[]>(() => {
     const uploaded = detail?.documents ?? [];
-    // Older applications have no stored files, only the names the agent saw
-    const attached: GalleryDocument[] = uploaded.length > 0
-      ? uploaded.map(d => ({ key: d.id, name: d.fileName, fieldLabel: d.fieldLabel, file: d, aiTag: "Submitted by citizen" }))
-      : (agentDraft?.action.draft?.attachedDocumentNames ?? []).map(name => ({ key: `name:${name}`, name, aiTag: "Submitted by citizen" }));
-    const missing = (agentDraft?.eligibility.missingDocuments ?? [])
-      .map(name => ({ key: `missing:${name}`, name, aiTag: "Missing (flagged by agent)" }));
+
+    let attached: GalleryDocument[];
+    if (uploaded.length > 0) {
+      // The officer ONLY reviews:
+      // 1. Current stage documents (category === 'stage')
+      // 2. Active statutory payment slip for this current stage (category === 'payment')
+      const stageDocs = uploaded.filter(d => d.category === 'stage');
+      const paymentDocs = uploaded.filter(d => d.category === 'payment');
+
+      // Pick at most ONE active payment slip (matching detail.payment.slipUrl, or newest upload)
+      const activeSlip = paymentDocs.find(d => detail?.payment?.slipUrl && detail.payment.slipUrl.includes(d.id))
+        ?? (paymentDocs.length > 0 ? paymentDocs[paymentDocs.length - 1] : null);
+
+      const relevant = activeSlip ? [...stageDocs, activeSlip] : stageDocs;
+      const order: Record<string, number> = { stage: 0, payment: 1 };
+      const sorted = [...relevant].sort((a, b) => (order[a.category] ?? 99) - (order[b.category] ?? 99));
+
+      attached = sorted.map(d => ({
+        key: d.id,
+        name: d.fileName,
+        fieldLabel: d.fieldLabel,
+        file: d,
+        aiTag: d.category === 'payment' ? 'Payment slip' : 'Submitted by citizen',
+        isStageDoc: d.category === 'stage',
+        docCategory: d.category,
+      }));
+    } else {
+      // Legacy: no stored files — fall back to agent-seen names, treat all as stage
+      attached = (agentDraft?.action.draft?.attachedDocumentNames ?? []).map(name => ({
+        key: `name:${name}`,
+        name,
+        aiTag: 'Submitted by citizen',
+        isStageDoc: true,
+        docCategory: 'stage' as const,
+      }));
+    }
+
+    // Missing docs flagged by agent — only for the current stage AND only if NOT already uploaded!
+    const missing: GalleryDocument[] = (agentDraft?.eligibility.missingDocuments ?? [])
+      .filter(name => !isDocumentAlreadyAttached(name, attached))
+      .map(name => ({
+        key: `missing:${name}`,
+        name,
+        aiTag: 'Missing (flagged by agent)',
+        isStageDoc: false,
+        docCategory: 'missing' as const,
+      }));
+
     return [...attached, ...missing];
   }, [detail, agentDraft]);
+
+  useEffect(() => {
+    if (currentDocIndex >= documents.length && documents.length > 0) {
+      setCurrentDocIndex(documents.length - 1);
+    }
+  }, [documents.length, currentDocIndex]);
 
   const applyAgentDraft = (view: AgentDraftView) => {
     setAgentDraft(view);
@@ -341,9 +424,11 @@ export default function VerificationWorkspace() {
                 <div style={{ marginBottom: '1rem', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
                   <div>
                     <h2 style={{ fontSize: '1.25rem', fontWeight: 600 }}>Submitted Documents</h2>
-                    <p style={{ fontSize: '0.875rem', color: '#525252' }}>Manually review and verify each uploaded proof.</p>
+                    <p style={{ fontSize: '0.875rem', color: '#525252' }}>
+                      Swipe to review all uploads. Verify toggle is active for current-stage documents only.
+                    </p>
                   </div>
-                  {currentDoc && (
+                  {currentDoc && currentDoc.isStageDoc && currentDoc.docCategory === 'stage' && (
                   <div style={{ backgroundColor: currentDocVerified ? '#defbe6' : '#fff', padding: '0.5rem 1rem', border: '1px solid #e0e0e0', borderRadius: '4px' }}>
                      <Toggle
                         id="doc-verify-toggle"
@@ -353,6 +438,15 @@ export default function VerificationWorkspace() {
                         toggled={currentDocVerified}
                         onToggle={handleDocumentVerificationToggle}
                      />
+                  </div>
+                  )}
+                  {currentDoc && (!currentDoc.isStageDoc || currentDoc.docCategory !== 'stage') && (
+                  <div style={{ padding: '0.5rem 1rem', border: '1px solid #e0e0e0', borderRadius: '4px', color: currentDoc.docCategory === 'missing' ? '#da1e28' : '#8d8d8d', fontSize: '0.75rem', fontWeight: currentDoc.docCategory === 'missing' ? 600 : 400 }}>
+                    {currentDoc.docCategory === 'payment'
+                      ? '💳 Payment slip — view only'
+                      : currentDoc.docCategory === 'missing'
+                      ? '⚠️ Missing document — not uploaded'
+                      : '📄 Other stage — view only'}
                   </div>
                   )}
                 </div>
@@ -372,10 +466,26 @@ export default function VerificationWorkspace() {
                      )}
                      <p style={{ fontSize: '1.25rem', margin: '0.75rem 0 0.25rem' }}>{currentDoc.name}</p>
                      {currentDoc.fieldLabel && <p style={{ fontSize: '0.875rem', marginBottom: '0.5rem' }}>{currentDoc.fieldLabel}</p>}
-                     <Tag type={currentDoc.aiTag.includes("Missing") ? "red" : "blue"}>
-                        {currentDoc.aiTag}
-                     </Tag>
-                     {currentDocVerified && (
+                     <div style={{ display: 'flex', gap: '0.5rem', justifyContent: 'center', flexWrap: 'wrap' }}>
+                       <Tag type={
+                         currentDoc.docCategory === 'missing' ? 'red'
+                         : currentDoc.docCategory === 'payment' ? 'purple'
+                         : currentDoc.docCategory === 'other' ? 'cool-gray'
+                         : 'blue'
+                       }>
+                         {currentDoc.aiTag}
+                       </Tag>
+                       {currentDoc.docCategory === 'stage' && (
+                         <Tag type="green">Stage document</Tag>
+                       )}
+                       {currentDoc.docCategory === 'payment' && (
+                         <Tag type="purple">Payment slip — view only</Tag>
+                       )}
+                       {currentDoc.docCategory === 'other' && (
+                         <Tag type="cool-gray">Other stage — view only</Tag>
+                       )}
+                     </div>
+                     {currentDocVerified && currentDoc.isStageDoc && (
                         <div style={{ marginTop: '1rem', color: '#198038', display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '0.5rem' }}>
                            <Checkmark size={20} />
                            <span style={{ fontWeight: 600 }}>Marked as Verified manually</span>
@@ -514,17 +624,6 @@ export default function VerificationWorkspace() {
                       </div>
                     </div>
                     <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', flexWrap: 'wrap' }}>
-                      {detail.payment.slipUrl && (
-                        <Button
-                          size="sm"
-                          kind="tertiary"
-                          renderIcon={Launch}
-                          href={detail.payment.slipUrl}
-                          target="_blank"
-                        >
-                          View Deposit Slip
-                        </Button>
-                      )}
                       <Tag
                         type={
                           detail.payment.isVerified
@@ -565,14 +664,24 @@ export default function VerificationWorkspace() {
                     }}
                   >
                     <Security size={16} />
-                    <span>Statutory Verification & Compliance Copilot</span>
+                    <span>Statutory Advisor</span>
                     {agentDraft?.validation && (
                       <span style={{
                         fontSize: '0.7rem',
-                        padding: '2px 6px',
+                        padding: '2px 8px',
                         borderRadius: '10px',
-                        background: agentDraft.validation.riskLevel?.toLowerCase() === 'high' ? '#ffd7d9' : '#defbe6',
-                        color: agentDraft.validation.riskLevel?.toLowerCase() === 'high' ? '#da1e28' : '#0e6027',
+                        background:
+                          agentDraft.validation.riskLevel?.toLowerCase() === 'high'
+                            ? '#ffd7d9'
+                            : agentDraft.validation.riskLevel?.toLowerCase() === 'medium'
+                            ? '#fed2aa'
+                            : '#defbe6',
+                        color:
+                          agentDraft.validation.riskLevel?.toLowerCase() === 'high'
+                            ? '#da1e28'
+                            : agentDraft.validation.riskLevel?.toLowerCase() === 'medium'
+                            ? '#bc4a04'
+                            : '#0e6027',
                         fontWeight: 700
                       }}>
                         {agentDraft.validation.riskLevel ?? 'Audited'}
@@ -645,6 +754,13 @@ export default function VerificationWorkspace() {
                       loading={agentLoading}
                       error={agentError}
                       answers={detail?.answers ?? {}}
+                      serviceName={detail?.task.serviceName ?? undefined}
+                      currentStage={detail?.task.currentStage ?? 1}
+                      maxStages={detail?.task.maxStages ?? 1}
+                      departmentName={detail?.task.department ?? 'Government Department'}
+                      citizenName={detail?.task.citizenName ?? undefined}
+                      citizenNic={detail?.task.citizenNic ?? undefined}
+                      paymentAmount={detail?.payment?.amount}
                       onRegenerate={regenerateAgentDraft}
                       onApplyDecisionOrder={(decType, text) => {
                         setDecision(decType);
@@ -784,68 +900,54 @@ export default function VerificationWorkspace() {
                   </div>
                 )}
 
-                {/* Docked Quick Action Bar: Always accessible at bottom across tabs */}
-                <div style={{
-                  padding: '0.875rem 1rem',
-                  backgroundColor: '#f4f4f4',
-                  border: '1px solid #e0e0e0',
-                  borderRadius: '4px',
-                  display: 'flex',
-                  alignItems: 'center',
-                  justifyContent: 'space-between',
-                  gap: '0.75rem',
-                  flexWrap: 'wrap',
-                  marginBottom: '1.5rem'
-                }}>
-                  <div style={{ fontSize: '0.8125rem', color: '#525252' }}>
-                    <strong>Action:</strong> {decision ? `Selected: ${decision}` : 'Review above and record determination'}
+                {/* Docked Quick Action Bar: Only shown on Copilot and Application tabs (hidden on Official Determination to prevent duplicate buttons) */}
+                {workspaceTab !== 'decision' && (
+                  <div style={{
+                    padding: '0.875rem 1rem',
+                    backgroundColor: '#f4f4f4',
+                    border: '1px solid #e0e0e0',
+                    borderRadius: '4px',
+                    display: 'flex',
+                    alignItems: 'center',
+                    justifyContent: 'space-between',
+                    gap: '0.75rem',
+                    flexWrap: 'wrap',
+                    marginBottom: '1.5rem'
+                  }}>
+                    <div style={{ fontSize: '0.8125rem', color: '#525252' }}>
+                      <strong>Action:</strong> {decision ? `Selected: ${decision}` : 'Review above and record determination'}
+                    </div>
+                    <div style={{ display: 'flex', gap: '0.5rem', flexWrap: 'wrap' }}>
+                      <Button
+                        kind={decision === "Approved" ? "primary" : "tertiary"}
+                        size="sm"
+                        renderIcon={Checkmark}
+                        onClick={() => { handleDecision("Approved"); setWorkspaceTab("decision"); }}
+                        disabled={isSubmitting || (detail?.payment != null && !detail.payment.isVerified)}
+                      >
+                        Approve
+                      </Button>
+                      <Button
+                        kind={decision === "Revision Requested" ? "primary" : "tertiary"}
+                        size="sm"
+                        renderIcon={Warning}
+                        onClick={() => { handleDecision("Revision Requested"); setWorkspaceTab("decision"); }}
+                        disabled={isSubmitting}
+                      >
+                        Request Revision
+                      </Button>
+                      <Button
+                        kind={decision === "Rejected" ? "danger" : "danger--tertiary"}
+                        size="sm"
+                        renderIcon={Close}
+                        onClick={() => { handleDecision("Rejected"); setWorkspaceTab("decision"); }}
+                        disabled={isSubmitting}
+                      >
+                        Reject
+                      </Button>
+                    </div>
                   </div>
-                  <div style={{ display: 'flex', gap: '0.5rem', flexWrap: 'wrap' }}>
-                    <Button
-                      kind={decision === "Approved" ? "primary" : "tertiary"}
-                      size="sm"
-                      renderIcon={Checkmark}
-                      onClick={() => { handleDecision("Approved"); setWorkspaceTab("decision"); }}
-                      disabled={isSubmitting || (detail?.payment != null && !detail.payment.isVerified)}
-                    >
-                      Approve
-                    </Button>
-                    <Button
-                      kind={decision === "Revision Requested" ? "primary" : "tertiary"}
-                      size="sm"
-                      renderIcon={Warning}
-                      onClick={() => { handleDecision("Revision Requested"); setWorkspaceTab("decision"); }}
-                      disabled={isSubmitting}
-                    >
-                      Request Revision
-                    </Button>
-                    <Button
-                      kind={decision === "Rejected" ? "danger" : "danger--tertiary"}
-                      size="sm"
-                      renderIcon={Close}
-                      onClick={() => { handleDecision("Rejected"); setWorkspaceTab("decision"); }}
-                      disabled={isSubmitting}
-                    >
-                      Reject
-                    </Button>
-                  </div>
-                </div>
-
-                   <div style={{ marginTop: '2rem', paddingTop: '1.25rem', borderTop: '1px solid #e0e0e0' }}>
-                     <p style={{ fontSize: '0.8rem', color: '#525252', marginBottom: '0.75rem' }}>
-                       Application does not need review? (e.g. duplicate, invalid, or test submission):
-                     </p>
-                     <Button
-                       kind="danger--tertiary"
-                       size="sm"
-                       renderIcon={TrashCan}
-                       onClick={() => setDeleteModalOpen(true)}
-                       disabled={isSubmitting || isDeleting}
-                       style={{ width: '100%' }}
-                     >
-                       Delete Application (Audit Logged)
-                     </Button>
-                   </div>
+                )}
               </Column>
             </Grid>
 
