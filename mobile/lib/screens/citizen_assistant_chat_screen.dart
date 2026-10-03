@@ -588,6 +588,63 @@ class _CitizenAssistantChatScreenState extends State<CitizenAssistantChatScreen>
         continue;
       }
 
+      // Numbered items: 1. Item, 2. Item
+      final numMatch = RegExp(r'^(\d+)\.\s+(.*)$').firstMatch(line);
+      if (numMatch != null) {
+        final numStr = numMatch.group(1)!;
+        final itemText = numMatch.group(2)!;
+        widgets.add(
+          Padding(
+            padding: const EdgeInsets.only(left: 4, bottom: 5),
+            child: Row(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Container(
+                  width: 18,
+                  height: 18,
+                  margin: const EdgeInsets.only(top: 2, right: 8),
+                  alignment: Alignment.center,
+                  decoration: BoxDecoration(
+                    color: AppColors.primary.withValues(alpha: 0.1),
+                    borderRadius: BorderRadius.circular(9),
+                  ),
+                  child: Text(
+                    numStr,
+                    style: const TextStyle(
+                      fontSize: 10,
+                      fontWeight: FontWeight.w700,
+                      color: AppColors.primary,
+                    ),
+                  ),
+                ),
+                Expanded(child: _buildRichInline(itemText, false)),
+              ],
+            ),
+          ),
+        );
+        continue;
+      }
+
+      // Blockquotes or official notices: > text or *Notice:*
+      if (line.startsWith('> ') || line.startsWith('*Notice') || line.startsWith('*Administrative')) {
+        final quoteText = line.startsWith('> ') ? line.substring(2).trim() : line;
+        widgets.add(
+          Container(
+            margin: const EdgeInsets.symmetric(vertical: 4),
+            padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 8),
+            decoration: BoxDecoration(
+              color: const Color(0xFFF1F5F9),
+              borderRadius: BorderRadius.circular(6),
+              border: const Border(
+                left: BorderSide(color: AppColors.primary, width: 3),
+              ),
+            ),
+            child: _buildRichInline(quoteText, false),
+          ),
+        );
+        continue;
+      }
+
       // Bullet points: - item, * item, • item
       if (line.startsWith('- ') || line.startsWith('* ') || line.startsWith('• ')) {
         final bulletText = line.substring(2).trim();
@@ -614,7 +671,7 @@ class _CitizenAssistantChatScreenState extends State<CitizenAssistantChatScreen>
       // Standard paragraph line with inline markdown bold (**text**)
       widgets.add(
         Padding(
-          padding: const EdgeInsets.only(bottom: 3),
+          padding: const EdgeInsets.only(bottom: 4),
           child: _buildRichInline(line, false),
         ),
       );

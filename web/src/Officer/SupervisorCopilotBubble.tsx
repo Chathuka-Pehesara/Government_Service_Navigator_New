@@ -34,6 +34,133 @@ interface Message {
   timestamp: Date;
 }
 
+function renderInlineFormatting(text: string, isOfficer: boolean) {
+  const parts = text.split("**");
+  return parts.map((part, i) => (
+    <span
+      key={i}
+      style={{
+        fontWeight: i % 2 === 1 ? 700 : 400,
+        color: i % 2 === 1 ? (isOfficer ? "#ffffff" : "#0f172a") : undefined,
+      }}
+    >
+      {part}
+    </span>
+  ));
+}
+
+function renderFormattedMessageContent(content: string, isOfficer: boolean) {
+  if (isOfficer) {
+    return <div>{content}</div>;
+  }
+
+  const lines = content.split("\n");
+  const elements: React.ReactNode[] = [];
+
+  for (let i = 0; i < lines.length; i++) {
+    const line = lines[i].trim();
+    if (!line) {
+      elements.push(<div key={`empty-${i}`} style={{ height: "6px" }} />);
+      continue;
+    }
+
+    // Header 3 or 2: ### Header
+    if (line.startsWith("### ") || line.startsWith("## ") || line.startsWith("# ")) {
+      const heading = line.replace(/^#+\s*/, "").trim();
+      elements.push(
+        <div
+          key={`heading-${i}`}
+          style={{
+            fontWeight: 700,
+            fontSize: "0.875rem",
+            color: "#0f172a",
+            marginTop: "6px",
+            marginBottom: "3px",
+            display: "flex",
+            alignItems: "center",
+            gap: "5px",
+          }}
+        >
+          <span style={{ width: "3px", height: "12px", backgroundColor: "#0f62fe", borderRadius: "2px", display: "inline-block" }} />
+          {heading}
+        </div>
+      );
+      continue;
+    }
+
+    // Numbered Item: 1. Item
+    const numMatch = line.match(/^(\d+)\.\s+(.*)$/);
+    if (numMatch) {
+      elements.push(
+        <div key={`num-${i}`} style={{ display: "flex", alignItems: "flex-start", gap: "6px", margin: "2px 0 2px 4px" }}>
+          <span
+            style={{
+              minWidth: "16px",
+              height: "16px",
+              borderRadius: "50%",
+              backgroundColor: "#edf5ff",
+              color: "#0043ce",
+              fontSize: "0.625rem",
+              fontWeight: 700,
+              display: "inline-flex",
+              alignItems: "center",
+              justifyContent: "center",
+              marginTop: "2px",
+            }}
+          >
+            {numMatch[1]}
+          </span>
+          <div style={{ flex: 1 }}>{renderInlineFormatting(numMatch[2], isOfficer)}</div>
+        </div>
+      );
+      continue;
+    }
+
+    // Bullet Point: - Item or * Item
+    if (line.startsWith("- ") || line.startsWith("* ") || line.startsWith("• ")) {
+      const bullet = line.substring(2).trim();
+      elements.push(
+        <div key={`bullet-${i}`} style={{ display: "flex", alignItems: "flex-start", gap: "6px", margin: "2px 0 2px 4px" }}>
+          <span style={{ color: "#0f62fe", fontWeight: 700, fontSize: "0.875rem", lineHeight: "1" }}>•</span>
+          <div style={{ flex: 1 }}>{renderInlineFormatting(bullet, isOfficer)}</div>
+        </div>
+      );
+      continue;
+    }
+
+    // Blockquote or Administrative Callout
+    if (line.startsWith("> ") || line.startsWith("*Notice") || line.startsWith("*Administrative")) {
+      const text = line.startsWith("> ") ? line.substring(2).trim() : line;
+      elements.push(
+        <div
+          key={`quote-${i}`}
+          style={{
+            margin: "4px 0",
+            padding: "6px 10px",
+            backgroundColor: "#f4f4f4",
+            borderLeft: "3px solid #0f62fe",
+            borderRadius: "0 4px 4px 0",
+            fontSize: "0.75rem",
+            color: "#393939",
+          }}
+        >
+          {renderInlineFormatting(text, isOfficer)}
+        </div>
+      );
+      continue;
+    }
+
+    // Standard paragraph
+    elements.push(
+      <div key={`p-${i}`} style={{ marginBottom: "2px" }}>
+        {renderInlineFormatting(line, isOfficer)}
+      </div>
+    );
+  }
+
+  return <div style={{ display: "flex", flexDirection: "column" }}>{elements}</div>;
+}
+
 interface Props {
   applicationId?: number;
   serviceProcedureId?: number;
@@ -469,11 +596,10 @@ export default function SupervisorCopilotBubble({
                       boxShadow: "0 2px 6px rgba(0, 0, 0, 0.08)",
                       border: isOfficer ? "none" : "1px solid #e0e0e0",
                       fontSize: "0.8125rem",
-                      lineHeight: "1.45",
-                      whiteSpace: "pre-line",
+                      lineHeight: "1.5",
                     }}
                   >
-                    {m.content}
+                    {renderFormattedMessageContent(m.content, isOfficer)}
 
                     {/* Official Recommendation Badge if present */}
                     {m.recommendation && (

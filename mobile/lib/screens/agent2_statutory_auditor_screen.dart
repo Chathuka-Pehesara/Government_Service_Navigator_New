@@ -1248,95 +1248,59 @@ class _Agent2StatutoryAuditorScreenState
 
           // Groq LLM Legal Determination
           if (result.reasoning.isNotEmpty) ...[
-            const Row(
-              children: [
-                Icon(Icons.psychology_outlined, size: 16, color: Color(0xFF1E3A6E)),
-                SizedBox(width: 6),
-                Text(
-                  'AI Statutory Reasoning (Groq LLM):',
-                  style: TextStyle(fontWeight: FontWeight.bold, fontSize: 13),
-                ),
-              ],
-            ),
-            const SizedBox(height: 8),
-            Container(
-              padding: const EdgeInsets.all(12),
-              decoration: BoxDecoration(
-                color: const Color(0xFFF8FAFC),
-                borderRadius: BorderRadius.circular(10),
-                border: Border.all(color: const Color(0xFFE2E8F0)),
-              ),
-              child: Text(
-                result.reasoning,
-                style: const TextStyle(fontSize: 12, height: 1.45, color: Color(0xFF2D3748)),
-              ),
-            ),
+            _buildStyledReasoning(result.reasoning),
             const SizedBox(height: 14),
           ],
 
           // Missing Legal Criteria
           if (hasCriteriaErrors) ...[
-            const Text(
-              'Statutory Criteria Not Met:',
-              style: TextStyle(fontWeight: FontWeight.bold, color: Color(0xFFB83A3A), fontSize: 12),
-            ),
-            const SizedBox(height: 6),
-            ...result.missingCriteria.map((c) => Padding(
-                  padding: const EdgeInsets.only(bottom: 4.0),
-                  child: Row(
-                    children: [
-                      const Icon(Icons.close, size: 14, color: Color(0xFFB83A3A)),
-                      const SizedBox(width: 6),
-                      Expanded(
-                        child: Text(c, style: const TextStyle(color: Color(0xFFB83A3A), fontSize: 12)),
-                      ),
-                    ],
-                  ),
-                )),
-            const SizedBox(height: 10),
+            _buildStyledCriteriaList(result.missingCriteria),
+            const SizedBox(height: 12),
           ],
 
           // Missing Documents
           if (result.missingDocuments.isNotEmpty) ...[
-            const Text(
-              'Missing Required Proofs for Application:',
-              style: TextStyle(fontWeight: FontWeight.bold, color: Color(0xFFB7791F), fontSize: 12),
-            ),
-            const SizedBox(height: 6),
-            ...result.missingDocuments.map((doc) => Padding(
-                  padding: const EdgeInsets.only(bottom: 4.0),
-                  child: Row(
-                    children: [
-                      const Icon(Icons.pending_actions, size: 14, color: Color(0xFFB7791F)),
-                      const SizedBox(width: 6),
-                      Expanded(
-                        child: Text(
-                          doc,
-                          style: const TextStyle(
-                            color: Color(0xFFB7791F),
-                            fontSize: 12,
-                            fontWeight: FontWeight.w600,
+            _buildStyledMissingDocsList(result.missingDocuments),
+            const SizedBox(height: 12),
+          ] else ...[
+            Container(
+              padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 12),
+              decoration: BoxDecoration(
+                color: const Color(0xFFF0FDF4),
+                borderRadius: BorderRadius.circular(10),
+                border: Border.all(color: const Color(0xFFBBF7D0)),
+              ),
+              child: const Row(
+                children: [
+                  Icon(Icons.verified_rounded, color: Color(0xFF16A34A), size: 20),
+                  SizedBox(width: 10),
+                  Expanded(
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        Text(
+                          'Statutory Compliance Satisfied',
+                          style: TextStyle(
+                            color: Color(0xFF166534),
+                            fontWeight: FontWeight.bold,
+                            fontSize: 13,
                           ),
                         ),
-                      ),
-                    ],
+                        SizedBox(height: 2),
+                        Text(
+                          'All mandatory evidentiary attachments and eligibility criteria verified.',
+                          style: TextStyle(
+                            color: Color(0xFF15803D),
+                            fontSize: 11,
+                          ),
+                        ),
+                      ],
+                    ),
                   ),
-                )),
-            const SizedBox(height: 10),
-          ] else ...[
-            const Row(
-              children: [
-                Icon(Icons.verified, color: Color(0xFF2E7D5B), size: 16),
-                SizedBox(width: 6),
-                Expanded(
-                  child: Text(
-                    'All required statutory documents verified!',
-                    style: TextStyle(color: Color(0xFF2E7D5B), fontWeight: FontWeight.bold, fontSize: 12),
-                  ),
-                ),
-              ],
+                ],
+              ),
             ),
-            const SizedBox(height: 10),
+            const SizedBox(height: 12),
           ],
 
           // PGVector Gazette Snippets
@@ -1372,6 +1336,288 @@ class _Agent2StatutoryAuditorScreenState
           ],
         ],
       ),
+    );
+  }
+
+  Widget _buildStyledReasoning(String reasoning) {
+    return Container(
+      decoration: BoxDecoration(
+        color: Colors.white,
+        borderRadius: BorderRadius.circular(12),
+        border: Border.all(color: const Color(0xFFE2E8F0)),
+        boxShadow: [
+          BoxShadow(
+            color: Colors.black.withValues(alpha: 0.03),
+            blurRadius: 8,
+            offset: const Offset(0, 2),
+          ),
+        ],
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          // Header Bar
+          Container(
+            padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
+            decoration: const BoxDecoration(
+              color: Color(0xFF0F172A),
+              borderRadius: BorderRadius.only(
+                topLeft: Radius.circular(11),
+                topRight: Radius.circular(11),
+              ),
+            ),
+            child: Row(
+              children: [
+                Container(
+                  padding: const EdgeInsets.all(4),
+                  decoration: BoxDecoration(
+                    color: Colors.white.withValues(alpha: 0.15),
+                    borderRadius: BorderRadius.circular(6),
+                  ),
+                  child: const Icon(Icons.auto_awesome, size: 14, color: Color(0xFF38BDF8)),
+                ),
+                const SizedBox(width: 8),
+                const Expanded(
+                  child: Text(
+                    'AI Statutory Determination (Groq LLM)',
+                    style: TextStyle(
+                      color: Colors.white,
+                      fontWeight: FontWeight.w700,
+                      fontSize: 12.5,
+                      letterSpacing: -0.2,
+                    ),
+                  ),
+                ),
+                Container(
+                  padding: const EdgeInsets.symmetric(horizontal: 7, vertical: 2.5),
+                  decoration: BoxDecoration(
+                    color: const Color(0xFF38BDF8).withValues(alpha: 0.2),
+                    borderRadius: BorderRadius.circular(10),
+                    border: Border.all(color: const Color(0xFF38BDF8).withValues(alpha: 0.4)),
+                  ),
+                  child: const Text(
+                    'Legally Grounded',
+                    style: TextStyle(
+                      color: Color(0xFF38BDF8),
+                      fontSize: 9.5,
+                      fontWeight: FontWeight.w600,
+                    ),
+                  ),
+                ),
+              ],
+            ),
+          ),
+
+          // Reasoning Body
+          Padding(
+            padding: const EdgeInsets.all(14),
+            child: _buildRichReasoningText(reasoning),
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildRichReasoningText(String text) {
+    // Break into sentences/paragraphs for readable layout
+    final paragraphs = text.split('\n\n');
+    final widgets = <Widget>[];
+
+    for (int p = 0; p < paragraphs.length; p++) {
+      final paragraph = paragraphs[p].trim();
+      if (paragraph.isEmpty) continue;
+
+      final spans = <TextSpan>[];
+      final words = paragraph.split(' ');
+
+      for (int w = 0; w < words.length; w++) {
+        final word = words[w];
+
+        bool isAlert = word.contains('WhatsApp') || word.contains('generic') || word.contains('unlabelled') || word.contains('unverified') || word.contains('ineligibility') || word.contains('missing');
+        bool isDocName = word.contains('Certificate') || word.contains('Photograph') || word.contains('Receipt') || word.contains('Birth') || word.contains('NIC');
+        bool isSuccess = word.contains('meets') || word.contains('confirmed') || word.contains('eligible') || word.contains('verified');
+
+        Color textColor = const Color(0xFF1E293B);
+        FontWeight weight = FontWeight.w400;
+
+        if (isAlert) {
+          textColor = const Color(0xFFB45309);
+          weight = FontWeight.w700;
+        } else if (isDocName) {
+          textColor = const Color(0xFF0F172A);
+          weight = FontWeight.w700;
+        } else if (isSuccess) {
+          textColor = const Color(0xFF15803D);
+          weight = FontWeight.w600;
+        }
+
+        spans.add(
+          TextSpan(
+            text: '$word ',
+            style: TextStyle(
+              fontSize: 12.5,
+              height: 1.55,
+              fontWeight: weight,
+              color: textColor,
+            ),
+          ),
+        );
+      }
+
+      widgets.add(
+        Padding(
+          padding: EdgeInsets.only(bottom: p < paragraphs.length - 1 ? 8 : 0),
+          child: Text.rich(TextSpan(children: spans)),
+        ),
+      );
+    }
+
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: widgets,
+    );
+  }
+
+  Widget _buildStyledMissingDocsList(List<String> missingDocs) {
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        Row(
+          mainAxisAlignment: MainAxisAlignment.spaceBetween,
+          children: [
+            const Text(
+              'Missing Required Evidentiary Proofs:',
+              style: TextStyle(
+                fontWeight: FontWeight.w700,
+                color: Color(0xFF0F172A),
+                fontSize: 13,
+                letterSpacing: -0.2,
+              ),
+            ),
+            Container(
+              padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 2),
+              decoration: BoxDecoration(
+                color: const Color(0xFFFFFBEB),
+                borderRadius: BorderRadius.circular(12),
+                border: Border.all(color: const Color(0xFFFCD34D)),
+              ),
+              child: Text(
+                '${missingDocs.length} Pending',
+                style: const TextStyle(
+                  fontSize: 10,
+                  fontWeight: FontWeight.w700,
+                  color: Color(0xFFB45309),
+                ),
+              ),
+            ),
+          ],
+        ),
+        const SizedBox(height: 8),
+        ...missingDocs.map((doc) => Container(
+              margin: const EdgeInsets.only(bottom: 8),
+              padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
+              decoration: BoxDecoration(
+                color: const Color(0xFFFFFBEB),
+                borderRadius: BorderRadius.circular(10),
+                border: Border.all(color: const Color(0xFFFDE68A)),
+              ),
+              child: Row(
+                children: [
+                  Container(
+                    padding: const EdgeInsets.all(6),
+                    decoration: BoxDecoration(
+                      color: const Color(0xFFF59E0B).withValues(alpha: 0.15),
+                      borderRadius: BorderRadius.circular(6),
+                    ),
+                    child: const Icon(Icons.description_outlined, size: 16, color: Color(0xFFB45309)),
+                  ),
+                  const SizedBox(width: 10),
+                  Expanded(
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        Text(
+                          doc,
+                          style: const TextStyle(
+                            fontWeight: FontWeight.w700,
+                            fontSize: 12.5,
+                            color: Color(0xFF78350F),
+                          ),
+                        ),
+                        const SizedBox(height: 2),
+                        const Text(
+                          'Mandatory Statutory Proof • Must be uploaded to pass audit',
+                          style: TextStyle(
+                            fontSize: 10.5,
+                            color: Color(0xFFB45309),
+                          ),
+                        ),
+                      ],
+                    ),
+                  ),
+                  Container(
+                    padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
+                    decoration: BoxDecoration(
+                      color: Colors.white,
+                      borderRadius: BorderRadius.circular(8),
+                      border: Border.all(color: const Color(0xFFFCD34D)),
+                    ),
+                    child: const Text(
+                      'Required',
+                      style: TextStyle(
+                        fontSize: 10,
+                        fontWeight: FontWeight.w700,
+                        color: Color(0xFFB45309),
+                      ),
+                    ),
+                  ),
+                ],
+              ),
+            )),
+      ],
+    );
+  }
+
+  Widget _buildStyledCriteriaList(List<String> missingCriteria) {
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        const Text(
+          'Statutory Criteria Not Met:',
+          style: TextStyle(
+            fontWeight: FontWeight.w700,
+            color: Color(0xFFDC2626),
+            fontSize: 13,
+            letterSpacing: -0.2,
+          ),
+        ),
+        const SizedBox(height: 8),
+        ...missingCriteria.map((c) => Container(
+              margin: const EdgeInsets.only(bottom: 6),
+              padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 9),
+              decoration: BoxDecoration(
+                color: const Color(0xFFFEF2F2),
+                borderRadius: BorderRadius.circular(8),
+                border: Border.all(color: const Color(0xFFFECACA)),
+              ),
+              child: Row(
+                children: [
+                  const Icon(Icons.cancel_rounded, size: 16, color: Color(0xFFDC2626)),
+                  const SizedBox(width: 8),
+                  Expanded(
+                    child: Text(
+                      c,
+                      style: const TextStyle(
+                        color: Color(0xFF991B1B),
+                        fontWeight: FontWeight.w600,
+                        fontSize: 12,
+                      ),
+                    ),
+                  ),
+                ],
+              ),
+            )),
+      ],
     );
   }
 }
