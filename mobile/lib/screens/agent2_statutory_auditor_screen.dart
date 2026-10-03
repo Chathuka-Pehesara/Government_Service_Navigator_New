@@ -1,3 +1,4 @@
+import 'package:flutter/cupertino.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:file_picker/file_picker.dart';
@@ -1205,20 +1206,20 @@ class _Agent2StatutoryAuditorScreenState
                   children: [
                     Text(
                       statusTitle,
-                      maxLines: 1,
+                      maxLines: 2,
                       overflow: TextOverflow.ellipsis,
                       style: TextStyle(
                         fontSize: 15,
-                        fontWeight: FontWeight.bold,
+                        fontWeight: FontWeight.w700,
                         color: statusColor,
                       ),
                     ),
                     const SizedBox(height: 2),
                     Text(
-                      'Statutory Audit: $_selectedService',
+                      'Statutory Procedure: $_selectedService',
                       maxLines: 1,
                       overflow: TextOverflow.ellipsis,
-                      style: const TextStyle(fontSize: 11, color: Colors.grey),
+                      style: const TextStyle(fontSize: 11.5, color: Color(0xFF64748B)),
                     ),
                   ],
                 ),
@@ -1227,14 +1228,15 @@ class _Agent2StatutoryAuditorScreenState
               Container(
                 padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 5),
                 decoration: BoxDecoration(
-                  color: statusColor,
-                  borderRadius: BorderRadius.circular(20),
+                  color: statusColor.withValues(alpha: 0.1),
+                  borderRadius: BorderRadius.circular(16),
+                  border: Border.all(color: statusColor.withValues(alpha: 0.3)),
                 ),
                 child: Text(
                   '${result.matchPercentage}%',
-                  style: const TextStyle(
-                    color: Colors.white,
-                    fontWeight: FontWeight.bold,
+                  style: TextStyle(
+                    color: statusColor,
+                    fontWeight: FontWeight.w700,
                     fontSize: 13,
                   ),
                 ),
@@ -1343,74 +1345,59 @@ class _Agent2StatutoryAuditorScreenState
     return Container(
       decoration: BoxDecoration(
         color: Colors.white,
-        borderRadius: BorderRadius.circular(12),
+        borderRadius: BorderRadius.circular(10),
         border: Border.all(color: const Color(0xFFE2E8F0)),
-        boxShadow: [
-          BoxShadow(
-            color: Colors.black.withValues(alpha: 0.03),
-            blurRadius: 8,
-            offset: const Offset(0, 2),
-          ),
-        ],
       ),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          // Header Bar
+          // Institutional Header
           Container(
             padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
             decoration: const BoxDecoration(
-              color: Color(0xFF0F172A),
+              color: Color(0xFFF8FAFC),
               borderRadius: BorderRadius.only(
-                topLeft: Radius.circular(11),
-                topRight: Radius.circular(11),
+                topLeft: Radius.circular(9),
+                topRight: Radius.circular(9),
+              ),
+              border: Border(
+                bottom: BorderSide(color: Color(0xFFE2E8F0)),
               ),
             ),
-            child: Row(
+            child: const Row(
               children: [
-                Container(
-                  padding: const EdgeInsets.all(4),
-                  decoration: BoxDecoration(
-                    color: Colors.white.withValues(alpha: 0.15),
-                    borderRadius: BorderRadius.circular(6),
-                  ),
-                  child: const Icon(Icons.auto_awesome, size: 14, color: Color(0xFF38BDF8)),
+                Icon(
+                  CupertinoIcons.checkmark_shield,
+                  size: 16,
+                  color: Color(0xFF1E3A6E),
                 ),
-                const SizedBox(width: 8),
-                const Expanded(
+                SizedBox(width: 8),
+                Expanded(
                   child: Text(
-                    'AI Statutory Determination (Groq LLM)',
+                    'Statutory Assessment Findings',
                     style: TextStyle(
-                      color: Colors.white,
-                      fontWeight: FontWeight.w700,
-                      fontSize: 12.5,
-                      letterSpacing: -0.2,
+                      color: Color(0xFF0F172A),
+                      fontWeight: FontWeight.w600,
+                      fontSize: 13,
+                      letterSpacing: -0.1,
                     ),
                   ),
                 ),
-                Container(
-                  padding: const EdgeInsets.symmetric(horizontal: 7, vertical: 2.5),
-                  decoration: BoxDecoration(
-                    color: const Color(0xFF38BDF8).withValues(alpha: 0.2),
-                    borderRadius: BorderRadius.circular(10),
-                    border: Border.all(color: const Color(0xFF38BDF8).withValues(alpha: 0.4)),
-                  ),
-                  child: const Text(
-                    'Legally Grounded',
-                    style: TextStyle(
-                      color: Color(0xFF38BDF8),
-                      fontSize: 9.5,
-                      fontWeight: FontWeight.w600,
-                    ),
+                Text(
+                  'Official Procedure Audit',
+                  style: TextStyle(
+                    color: Color(0xFF64748B),
+                    fontSize: 11,
+                    fontWeight: FontWeight.w500,
                   ),
                 ),
               ],
             ),
           ),
 
-          // Reasoning Body
+          // Editorial Body
           Padding(
-            padding: const EdgeInsets.all(14),
+            padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 12),
             child: _buildRichReasoningText(reasoning),
           ),
         ],
@@ -1419,55 +1406,93 @@ class _Agent2StatutoryAuditorScreenState
   }
 
   Widget _buildRichReasoningText(String text) {
-    // Break into sentences/paragraphs for readable layout
-    final paragraphs = text.split('\n\n');
+    final paragraphs = text.split(RegExp(r'\n+'));
     final widgets = <Widget>[];
 
     for (int p = 0; p < paragraphs.length; p++) {
       final paragraph = paragraphs[p].trim();
       if (paragraph.isEmpty) continue;
 
-      final spans = <TextSpan>[];
-      final words = paragraph.split(' ');
+      // Parse inline elements: quotes (e.g. "NIC_of user 7.jpg") and bold (**text**)
+      final spans = <InlineSpan>[];
+      final regex = RegExp(r'("([^"]+)"|\*\*([^*]+)\*\*)');
+      int lastIndex = 0;
 
-      for (int w = 0; w < words.length; w++) {
-        final word = words[w];
-
-        bool isAlert = word.contains('WhatsApp') || word.contains('generic') || word.contains('unlabelled') || word.contains('unverified') || word.contains('ineligibility') || word.contains('missing');
-        bool isDocName = word.contains('Certificate') || word.contains('Photograph') || word.contains('Receipt') || word.contains('Birth') || word.contains('NIC');
-        bool isSuccess = word.contains('meets') || word.contains('confirmed') || word.contains('eligible') || word.contains('verified');
-
-        Color textColor = const Color(0xFF1E293B);
-        FontWeight weight = FontWeight.w400;
-
-        if (isAlert) {
-          textColor = const Color(0xFFB45309);
-          weight = FontWeight.w700;
-        } else if (isDocName) {
-          textColor = const Color(0xFF0F172A);
-          weight = FontWeight.w700;
-        } else if (isSuccess) {
-          textColor = const Color(0xFF15803D);
-          weight = FontWeight.w600;
+      for (final match in regex.allMatches(paragraph)) {
+        if (match.start > lastIndex) {
+          spans.add(TextSpan(
+            text: paragraph.substring(lastIndex, match.start),
+            style: const TextStyle(
+              fontSize: 13,
+              height: 1.55,
+              color: Color(0xFF334155),
+            ),
+          ));
         }
 
-        spans.add(
-          TextSpan(
-            text: '$word ',
-            style: TextStyle(
-              fontSize: 12.5,
-              height: 1.55,
-              fontWeight: weight,
-              color: textColor,
+        if (match.group(2) != null) {
+          // Quoted document name or filename
+          final quoted = match.group(2)!;
+          spans.add(WidgetSpan(
+            alignment: PlaceholderAlignment.middle,
+            child: Container(
+              margin: const EdgeInsets.symmetric(horizontal: 2),
+              padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 1.5),
+              decoration: BoxDecoration(
+                color: const Color(0xFFF1F5F9),
+                borderRadius: BorderRadius.circular(4),
+                border: Border.all(color: const Color(0xFFCBD5E1), width: 0.8),
+              ),
+              child: Row(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  const Icon(CupertinoIcons.doc, size: 11, color: Color(0xFF475569)),
+                  const SizedBox(width: 4),
+                  Text(
+                    quoted,
+                    style: const TextStyle(
+                      fontSize: 11.5,
+                      fontWeight: FontWeight.w600,
+                      color: Color(0xFF1E293B),
+                    ),
+                  ),
+                ],
+              ),
             ),
+          ));
+        } else if (match.group(3) != null) {
+          // Bold
+          spans.add(TextSpan(
+            text: match.group(3)!,
+            style: const TextStyle(
+              fontSize: 13,
+              height: 1.55,
+              fontWeight: FontWeight.w600,
+              color: Color(0xFF0F172A),
+            ),
+          ));
+        }
+
+        lastIndex = match.end;
+      }
+
+      if (lastIndex < paragraph.length) {
+        spans.add(TextSpan(
+          text: paragraph.substring(lastIndex),
+          style: const TextStyle(
+            fontSize: 13,
+            height: 1.55,
+            color: Color(0xFF334155),
           ),
-        );
+        ));
       }
 
       widgets.add(
         Padding(
           padding: EdgeInsets.only(bottom: p < paragraphs.length - 1 ? 8 : 0),
-          child: Text.rich(TextSpan(children: spans)),
+          child: Text.rich(
+            TextSpan(children: spans),
+          ),
         ),
       );
     }
@@ -1483,10 +1508,11 @@ class _Agent2StatutoryAuditorScreenState
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
         Row(
-          mainAxisAlignment: MainAxisAlignment.spaceBetween,
           children: [
+            const Icon(CupertinoIcons.exclamationmark_triangle_fill, size: 15, color: Color(0xFFD97706)),
+            const SizedBox(width: 6),
             const Text(
-              'Missing Required Evidentiary Proofs:',
+              'Required Documents to Complete Application',
               style: TextStyle(
                 fontWeight: FontWeight.w700,
                 color: Color(0xFF0F172A),
@@ -1494,43 +1520,29 @@ class _Agent2StatutoryAuditorScreenState
                 letterSpacing: -0.2,
               ),
             ),
-            Container(
-              padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 2),
-              decoration: BoxDecoration(
-                color: const Color(0xFFFFFBEB),
-                borderRadius: BorderRadius.circular(12),
-                border: Border.all(color: const Color(0xFFFCD34D)),
-              ),
-              child: Text(
-                '${missingDocs.length} Pending',
-                style: const TextStyle(
-                  fontSize: 10,
-                  fontWeight: FontWeight.w700,
-                  color: Color(0xFFB45309),
-                ),
+            const Spacer(),
+            Text(
+              '${missingDocs.length} pending',
+              style: const TextStyle(
+                fontSize: 11,
+                fontWeight: FontWeight.w600,
+                color: Color(0xFFD97706),
               ),
             ),
           ],
         ),
         const SizedBox(height: 8),
         ...missingDocs.map((doc) => Container(
-              margin: const EdgeInsets.only(bottom: 8),
+              margin: const EdgeInsets.only(bottom: 6),
               padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
               decoration: BoxDecoration(
-                color: const Color(0xFFFFFBEB),
-                borderRadius: BorderRadius.circular(10),
-                border: Border.all(color: const Color(0xFFFDE68A)),
+                color: Colors.white,
+                borderRadius: BorderRadius.circular(8),
+                border: Border.all(color: const Color(0xFFE2E8F0)),
               ),
               child: Row(
                 children: [
-                  Container(
-                    padding: const EdgeInsets.all(6),
-                    decoration: BoxDecoration(
-                      color: const Color(0xFFF59E0B).withValues(alpha: 0.15),
-                      borderRadius: BorderRadius.circular(6),
-                    ),
-                    child: const Icon(Icons.description_outlined, size: 16, color: Color(0xFFB45309)),
-                  ),
+                  const Icon(CupertinoIcons.doc_text, size: 16, color: Color(0xFF64748B)),
                   const SizedBox(width: 10),
                   Expanded(
                     child: Column(
@@ -1539,34 +1551,34 @@ class _Agent2StatutoryAuditorScreenState
                         Text(
                           doc,
                           style: const TextStyle(
-                            fontWeight: FontWeight.w700,
+                            fontWeight: FontWeight.w600,
                             fontSize: 12.5,
-                            color: Color(0xFF78350F),
+                            color: Color(0xFF1E293B),
                           ),
                         ),
-                        const SizedBox(height: 2),
+                        const SizedBox(height: 1),
                         const Text(
-                          'Mandatory Statutory Proof • Must be uploaded to pass audit',
+                          'Mandatory statutory proof required for application',
                           style: TextStyle(
                             fontSize: 10.5,
-                            color: Color(0xFFB45309),
+                            color: Color(0xFF64748B),
                           ),
                         ),
                       ],
                     ),
                   ),
                   Container(
-                    padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
+                    padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 2.5),
                     decoration: BoxDecoration(
-                      color: Colors.white,
-                      borderRadius: BorderRadius.circular(8),
-                      border: Border.all(color: const Color(0xFFFCD34D)),
+                      color: const Color(0xFFFFFBEB),
+                      borderRadius: BorderRadius.circular(6),
+                      border: Border.all(color: const Color(0xFFFDE68A)),
                     ),
                     child: const Text(
-                      'Required',
+                      'Missing',
                       style: TextStyle(
                         fontSize: 10,
-                        fontWeight: FontWeight.w700,
+                        fontWeight: FontWeight.w600,
                         color: Color(0xFFB45309),
                       ),
                     ),
@@ -1582,34 +1594,40 @@ class _Agent2StatutoryAuditorScreenState
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
-        const Text(
-          'Statutory Criteria Not Met:',
-          style: TextStyle(
-            fontWeight: FontWeight.w700,
-            color: Color(0xFFDC2626),
-            fontSize: 13,
-            letterSpacing: -0.2,
-          ),
+        const Row(
+          children: [
+            Icon(CupertinoIcons.xmark_circle_fill, size: 15, color: Color(0xFFDC2626)),
+            SizedBox(width: 6),
+            Text(
+              'Statutory Ineligibility Factors',
+              style: TextStyle(
+                fontWeight: FontWeight.w700,
+                color: Color(0xFF0F172A),
+                fontSize: 13,
+                letterSpacing: -0.2,
+              ),
+            ),
+          ],
         ),
         const SizedBox(height: 8),
         ...missingCriteria.map((c) => Container(
               margin: const EdgeInsets.only(bottom: 6),
               padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 9),
               decoration: BoxDecoration(
-                color: const Color(0xFFFEF2F2),
+                color: Colors.white,
                 borderRadius: BorderRadius.circular(8),
                 border: Border.all(color: const Color(0xFFFECACA)),
               ),
               child: Row(
                 children: [
-                  const Icon(Icons.cancel_rounded, size: 16, color: Color(0xFFDC2626)),
+                  const Icon(CupertinoIcons.clear, size: 13, color: Color(0xFFDC2626)),
                   const SizedBox(width: 8),
                   Expanded(
                     child: Text(
                       c,
                       style: const TextStyle(
                         color: Color(0xFF991B1B),
-                        fontWeight: FontWeight.w600,
+                        fontWeight: FontWeight.w500,
                         fontSize: 12,
                       ),
                     ),
