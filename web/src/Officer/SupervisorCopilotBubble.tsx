@@ -299,7 +299,7 @@ export default function SupervisorCopilotBubble({
     setLoading(true);
     try {
       const res = await askSupervisorAgent({
-        query: `Perform initial statutory compliance, evidentiary verification, and safety audit for this case.`,
+        query: `Provide an initial case verification summary and officer guidance.`,
         applicationId,
         serviceProcedureId,
         stage: currentStage,
@@ -323,11 +323,11 @@ export default function SupervisorCopilotBubble({
           id: "welcome-err",
           sender: "supervisor",
           content:
-            "GovNavigator Statutory Supervisor connected. I am ready to advise on evidentiary audits, statutory fee gazette regulations, and anti-fraud duplicate checks across all 4 autonomous sub-agents.",
+            "GovNavigator Supervisor connected. Ready to assist with document checks, statutory fee guidelines, and application verification.",
           followups: [
-            "Audit uploaded documents against gazette rules",
-            "Check duplicate submissions in database",
-            "Explain statutory fee tariff calculation",
+            "Check missing documents & age rules",
+            "Explain fee calculation for this stage",
+            "Verify duplicate applications in registry",
           ],
           timestamp: new Date(),
         },

@@ -433,9 +433,9 @@ namespace Government_Service_Navigator.AgenticAi.Orchestration
             var followups = isWeb
                 ? new List<string>
                 {
-                    "Explain statutory fee tariff calculation",
-                    "Audit uploaded documents against gazette rules",
-                    "Check duplicate submissions in database",
+                    "Check missing documents & age rules",
+                    "Explain fee calculation for this stage",
+                    "Verify duplicate applications in registry",
                     "Draft official determination remarks"
                 }
                 : new List<string>
@@ -475,16 +475,18 @@ namespace Government_Service_Navigator.AgenticAi.Orchestration
             if (isWeb)
             {
                 systemPrompt =
-                    "You are the GovNavigator Master Supervisor Agent — the official statutory AI co-pilot for Sri Lanka Government Verification Officers.\n" +
-                    "Your role is to advise the human officer on application compliance, evidentiary audits, gazette provisions, and fraud safety.\n\n" +
-                    "GOVERNMENT AUDIT LANGUAGE DIRECTIVES:\n" +
-                    "- Maintain an authoritative, formal, and objective administrative advisory tone.\n" +
-                    "- Use official statutory terminology: 'Evidentiary Proof', 'Gazette Compliance', 'Statutory Tariff', 'Case Dossier', 'Administrative Determination', 'Integrity Audit'.\n" +
-                    "- Always highlight which sub-agents (Agent 1, Agent 2, Agent 3, Agent 4) were consulted.\n" +
-                    "- Clearly distinguish between deterministic verification (schema checks, fee math, database queries) and cognitive AI assessment.\n" +
-                    "- DETERMINATION INTEGRITY MANDATE: If any sub-agent reports missing documents, schema errors, or anomalies, your determination MUST conclude NON-COMPLIANT (Request Evidentiary Revision) or REJECT. You must NEVER approve a case with missing documents or schema errors.\n" +
-                    "- PRESENTATION GUIDELINES: Format your briefing with clear section headers and concise bullet points. When providing structured tables, keep column widths compact so they fit comfortably in the officer sidebar.\n" +
-                    "- Ground recommendations strictly on the provided case data. Do NOT invent policies or facts.";
+                    "You are the GovNavigator Supervisor — the official administrative advisory co-pilot assisting Sri Lanka Government Verification Officers.\n" +
+                    "Your role is to help the human officer quickly verify application completeness, identify any missing documents or discrepancies, and recommend clear next steps.\n\n" +
+                    "COMMUNICATION DIRECTIVES FOR HUMAN OFFICERS:\n" +
+                    "- Write in clear, professional, human-readable administrative English. Speak directly as an experienced government advisor.\n" +
+                    "- ABSOLUTELY NO INTERNAL AI JARGON: NEVER mention internal AI architecture such as 'sub-agents', 'Agent 1', 'Agent 2', 'Agent 3', 'Agent 4', 'deterministic verification', 'cognitive AI assessment', 'semantic document interpretation', 'schema codes (like SCHEMA-AGE-002, DOC-002)', or 'algorithmic fee math'. A verification officer needs practical, plain-language facts, not system logs.\n" +
+                    "- STRUCTURE CASE BRIEFINGS CLEARLY:\n" +
+                    "  1. Case Overview: 1-2 sentences stating the applicant, service, and immediate status (e.g. ⚠️ Action Required — Incomplete Submission, or ✅ Ready for Determination).\n" +
+                    "  2. Key Verification Findings: Clear, scannable bullet points detailing what is missing or problematic, and what was verified successfully (e.g. 'Missing Document: National Identity Card (NIC) was not uploaded', 'Data Discrepancy: Applicant age is entered as 0 years (minimum required age is 16)', 'Duplicate Check: Clean — no duplicate application found', 'Stage 1 Statutory Fee: LKR 0.00').\n" +
+                    "  3. Recommended Officer Action: 2-3 concrete, actionable steps for the officer (e.g. 'Request the applicant to upload a clear copy of their NIC (front & back)', 'Verify the applicant's date of birth before granting approval').\n" +
+                    "- DIRECT ANSWERS TO QUESTIONS: When the officer asks a specific question (e.g., about fees, rules, or duplicate checks), answer directly, concisely, and practically in 1-2 paragraphs in plain terms without re-pasting system logs or internal engineering terms.\n" +
+                    "- DETERMINATION INTEGRITY: If any required document is missing or any eligibility rule is violated, conclude clearly that the application CANNOT be approved yet and requires evidentiary revision. Never say all rules are satisfied when deficiencies exist.\n" +
+                    "- STRICT FACTUAL GROUNDING: Rely strictly on the provided case data, verified catalog rules, and fee schedules. Never invent unverified policies or requirements.";
             }
             else
             {
@@ -500,20 +502,22 @@ namespace Government_Service_Navigator.AgenticAi.Orchestration
                     "- NO HALLUCINATION RULE: Agent 1's role is strictly limited to providing guidelines verified against policies in the vector database. If Agent 1 or the sub-agents have not verified a statutory policy for this inquiry, DO NOT invent, assume, or hallucinate document checklists, fee schedules, or steps. State clearly that no policy exists in the database.";
             }
 
-            var findingsSummary = string.Join("\n", trace.Select(t => $"- [{t.AgentName}] ({t.Action}): {t.Summary}"));
+            var findingsSummary = isWeb
+                ? string.Join("\n", trace.Select(t => $"- {t.Summary}"))
+                : string.Join("\n", trace.Select(t => $"- [{t.AgentName}] ({t.Action}): {t.Summary}"));
 
             var intakeSummary = agent1 != null && agent1.RecommendedService != "Service Not Found"
-                ? $"\nOFFICIAL INTAKE ROADMAP (Agent 1):\n- Recommended Service: {agent1.RecommendedService}\n- Mandatory Documents: {string.Join(", ", agent1.RequiredDocuments)}\n- Steps: {string.Join(" -> ", agent1.StepByStepPlan)}\n"
+                ? $"\nOFFICIAL INTAKE ROADMAP:\n- Recommended Service: {agent1.RecommendedService}\n- Mandatory Documents: {string.Join(", ", agent1.RequiredDocuments)}\n- Steps: {string.Join(" -> ", agent1.StepByStepPlan)}\n"
                 : "";
 
             var userPrompt =
                 $"PLATFORM: {(isWeb ? "Government Verification Officer Workspace" : "Citizen Mobile Application")}\n" +
                 $"SERVICE: {serviceName} (Stage {currentStage})\n" +
                 $"CITIZEN NIC: {caseContext?.CitizenNic ?? "N/A"} | APPLICANT: {caseContext?.CitizenName ?? "N/A"}\n" +
-                $"ACTIVE FINDINGS FROM SUB-AGENTS:\n{findingsSummary}\n" +
+                $"VERIFICATION AUDIT FINDINGS:\n{findingsSummary}\n" +
                 intakeSummary + "\n" +
-                $"USER QUERY: \"{request.Query}\"\n\n" +
-                "Respond to the query adhering strictly to your persona and language directives.";
+                $"OFFICER QUERY: \"{request.Query}\"\n\n" +
+                "Respond to the officer query adhering strictly to your human-friendly advisory directives. Translate any technical findings (such as missing documents or age bounds) into plain, professional administrative language.";
 
             var aiContent = await _llmService!.GenerateChatCompletionAsync(systemPrompt, userPrompt, jsonMode: false, cancellationToken);
             if (!string.IsNullOrWhiteSpace(aiContent))
