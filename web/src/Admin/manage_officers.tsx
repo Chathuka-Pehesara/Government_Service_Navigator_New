@@ -131,6 +131,31 @@ export default function ManageOfficers() {
   const [selectedOfficer, setSelectedOfficer] = useState<Officer | null>(null);
   const [activeActionModal, setActiveActionModal] = useState<"edit" | "reset" | "suspend" | null>(null);
 
+  // Dynamic Departments from API with static fallbacks
+  const [departmentOptions, setDepartmentOptions] = useState<string[]>(() =>
+    DEPARTMENTS.map((d) => d.label)
+  );
+
+  const fetchDepartments = useCallback(async () => {
+    try {
+      const res = await fetch(`${API_BASE_URL}/api/departments`, {
+        cache: "no-store",
+      });
+      if (res.ok) {
+        const data = await res.json();
+        if (Array.isArray(data) && data.length > 0) {
+          const names = data
+            .map((d: { name: string }) => d.name?.trim())
+            .filter(Boolean);
+          const combined = Array.from(new Set([...names, ...DEPARTMENTS.map((d) => d.label)]));
+          setDepartmentOptions(combined);
+        }
+      }
+    } catch {
+      // Keep static defaults on network failure
+    }
+  }, []);
+
   const fetchOfficers = useCallback(async () => {
     try {
       const url = isDepartmentAdmin
@@ -159,9 +184,10 @@ export default function ManageOfficers() {
   useEffect(() => {
     const run = async () => {
       await fetchOfficers();
+      await fetchDepartments();
     };
     run();
-  }, [fetchOfficers]);
+  }, [fetchOfficers, fetchDepartments]);
 
   const handleLogout = async () => {
     const token = localStorage.getItem("officerToken");
@@ -216,6 +242,7 @@ export default function ManageOfficers() {
           role: "Verifying Officer"
         });
         fetchOfficers();
+        fetchDepartments();
       } else {
         const body = await response.text();
         try {
@@ -401,7 +428,13 @@ export default function ManageOfficers() {
                 <TableToolbar>
                   <TableToolbarContent>
                     <TableToolbarSearch onChange={onInputChange} persistent />
-                    <Button renderIcon={Add} onClick={() => setIsAddModalOpen(true)}>
+                    <Button
+                      renderIcon={Add}
+                      onClick={() => {
+                        fetchDepartments();
+                        setIsAddModalOpen(true);
+                      }}
+                    >
                       Add Officer
                     </Button>
                   </TableToolbarContent>
@@ -441,6 +474,7 @@ export default function ManageOfficers() {
                                   <OverflowMenuItem
                                     itemText="Edit Profile"
                                     onClick={() => {
+                                      fetchDepartments();
                                       setSelectedOfficer(currentOfficer ?? null);
                                       setActiveActionModal("edit");
                                     }}
@@ -570,8 +604,8 @@ export default function ManageOfficers() {
               invalidText={fieldErrors.department}
             >
               <SelectItem value="" text="Choose a department" />
-              {DEPARTMENTS.map((dept) => (
-                <SelectItem key={dept.slug} value={dept.label} text={dept.label} />
+              {departmentOptions.map((deptName) => (
+                <SelectItem key={deptName} value={deptName} text={deptName} />
               ))}
             </Select>
 
@@ -599,6 +633,7 @@ export default function ManageOfficers() {
           onClose={() => setActiveActionModal(null)}
           onSuccess={fetchOfficers}
           officer={selectedOfficer}
+          departmentOptions={departmentOptions}
         />
 
         <ResetPasswordModal

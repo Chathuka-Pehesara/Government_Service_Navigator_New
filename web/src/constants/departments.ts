@@ -34,14 +34,30 @@ export const CATEGORY_PREFIX_MAP: Record<string, string> = {
 };
 
 export function getDepartmentSlug(department: string): string | null {
+  if (!department) return null;
   const normalized = department.trim().toLowerCase();
   const match = DEPARTMENTS.find((d) => d.label.toLowerCase() === normalized);
-  return match ? match.slug : null;
+  if (match) return match.slug;
+  const slugified = normalized.replace(/[^a-z0-9]+/g, "-").replace(/^-+|-+$/g, "");
+  return slugified || null;
 }
 
 export function getDepartmentLabel(slug: string): string | null {
+  if (!slug) return null;
   const match = DEPARTMENTS.find((d) => d.slug === slug.toLowerCase());
-  return match ? match.label : null;
+  if (match) return match.label;
+  const storedUser = localStorage.getItem("officerUser");
+  if (storedUser) {
+    try {
+      const u = JSON.parse(storedUser);
+      if (u.department && getDepartmentSlug(u.department) === slug.toLowerCase()) {
+        return u.department;
+      }
+    } catch {
+      // ignore
+    }
+  }
+  return slug.split("-").map(w => w.charAt(0).toUpperCase() + w.slice(1)).join(" ");
 }
 
 export function getCategoryForDepartment(department: string): string | null {

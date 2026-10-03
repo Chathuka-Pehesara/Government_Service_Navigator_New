@@ -25,6 +25,7 @@ interface EditOfficerModalProps {
   onClose: () => void;
   onSuccess: () => void;
   officer: Officer | null; // Pass the selected officer row data here
+  departmentOptions?: string[];
 }
 
 function getStoredOfficerUser(): { department?: string; role?: string } {
@@ -39,7 +40,7 @@ function getStoredOfficerUser(): { department?: string; role?: string } {
   return {};
 }
 
-export default function EditOfficerModal({ isOpen, onClose, onSuccess, officer }: EditOfficerModalProps) {
+export default function EditOfficerModal({ isOpen, onClose, onSuccess, officer, departmentOptions }: EditOfficerModalProps) {
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [formError, setFormError] = useState<string | null>(null);
   const [fieldErrors, setFieldErrors] = useState<Partial<Record<"fullName" | "department" | "role", string>>>({});
@@ -151,8 +152,11 @@ export default function EditOfficerModal({ isOpen, onClose, onSuccess, officer }
           invalidText={fieldErrors.department}
         >
           <SelectItem value="" text="Choose a department" />
-          {DEPARTMENTS.map((dept) => (
-            <SelectItem key={dept.slug} value={dept.label} text={dept.label} />
+          {Array.from(new Set([
+            ...(departmentOptions && departmentOptions.length > 0 ? departmentOptions : DEPARTMENTS.map((d) => d.label)),
+            ...(formData.department ? [formData.department] : []),
+          ])).map((deptName) => (
+            <SelectItem key={deptName} value={deptName} text={deptName} />
           ))}
         </Select>
         <Select
