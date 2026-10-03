@@ -468,6 +468,11 @@ namespace Government_Service_Navigator.Backend.Controllers
                             bool paymentProvided = false;
                             var cleanFieldLabel = paymentField.Label.Trim().TrimEnd(':');
 
+                            // Check if an existing payment was already recorded for this application and stage amount
+                            var existingPayment = await _context.Payments
+                                .OrderByDescending(p => p.CreatedDate)
+                                .FirstOrDefaultAsync(p => p.ApplicationId == submission.Id && Math.Abs(p.Amount - stageAmt) < 0.01m);
+
                             // 1. Check if citizen uploaded a bank deposit slip
                             var matchedDocKvp = request.Documents.FirstOrDefault(kvp =>
                                 string.Equals(kvp.Key.Trim().TrimEnd(':'), cleanFieldLabel, StringComparison.OrdinalIgnoreCase)
@@ -476,20 +481,39 @@ namespace Government_Service_Navigator.Backend.Controllers
                                 || kvp.Key.Contains("payment", StringComparison.OrdinalIgnoreCase));
                             if (matchedDocKvp.Value != Guid.Empty && documents.TryGetValue(matchedDocKvp.Value, out var slipDoc))
                             {
-                                var payment = new Payment
+                                if (existingPayment != null)
                                 {
-                                    ApplicationId = submission.Id,
-                                    Amount = stageAmt,
-                                    Currency = "LKR",
-                                    Method = "Bank Deposit",
-                                    Status = "PendingVerification",
-                                    ManualSlipUrl = $"/api/verification/documents/{slipDoc.Id}/content",
-                                    UserEmail = submission.UserEmail,
-                                    CreatedDate = DateTime.UtcNow
-                                };
-                                _context.Payments.Add(payment);
-                                await _context.SaveChangesAsync();
-                                paymentProvided = true;
+                                    if (string.IsNullOrEmpty(existingPayment.ManualSlipUrl) || 
+                                        existingPayment.ManualSlipUrl.StartsWith("ref-", StringComparison.OrdinalIgnoreCase) || 
+                                        existingPayment.ManualSlipUrl.StartsWith("slip-", StringComparison.OrdinalIgnoreCase) || 
+                                        existingPayment.ManualSlipUrl.StartsWith("PAY-", StringComparison.OrdinalIgnoreCase))
+                                    {
+                                        existingPayment.ManualSlipUrl = $"/api/verification/documents/{slipDoc.Id}/content";
+                                    }
+                                    if (existingPayment.Amount <= 0)
+                                    {
+                                        existingPayment.Amount = stageAmt;
+                                    }
+                                    await _context.SaveChangesAsync();
+                                    paymentProvided = true;
+                                }
+                                else
+                                {
+                                    var payment = new Payment
+                                    {
+                                        ApplicationId = submission.Id,
+                                        Amount = stageAmt,
+                                        Currency = "LKR",
+                                        Method = "Bank Deposit",
+                                        Status = "PendingVerification",
+                                        ManualSlipUrl = $"/api/verification/documents/{slipDoc.Id}/content",
+                                        UserEmail = submission.UserEmail,
+                                        CreatedDate = DateTime.UtcNow
+                                    };
+                                    _context.Payments.Add(payment);
+                                    await _context.SaveChangesAsync();
+                                    paymentProvided = true;
+                                }
                             }
                             // 2. Check if citizen provided an online transaction reference
                             var matchedAnswerKvp = request.Answers.FirstOrDefault(kvp =>
@@ -509,14 +533,14 @@ namespace Government_Service_Navigator.Backend.Controllers
                                         d.FileName.Contains("deposit", StringComparison.OrdinalIgnoreCase))
                                         ?? (!isOnline ? documents.Values.LastOrDefault() : null);
 
-                                    var existingPayment = await _context.Payments
+                                    var refPayment = existingPayment ?? await _context.Payments
                                         .FirstOrDefaultAsync(p => (p.ApplicationId == submission.Id || p.StripePaymentIntentId == cleanRef || p.StripePaymentIntentId == refVal) && (p.StripePaymentIntentId == cleanRef || p.StripePaymentIntentId == refVal));
-                                    if (existingPayment != null)
+                                    if (refPayment != null)
                                     {
-                                        existingPayment.ApplicationId = submission.Id;
-                                        if (fallbackSlipDoc != null && (string.IsNullOrEmpty(existingPayment.ManualSlipUrl) || existingPayment.ManualSlipUrl.StartsWith("ref-") || existingPayment.ManualSlipUrl.StartsWith("slip-")))
+                                        refPayment.ApplicationId = submission.Id;
+                                        if (fallbackSlipDoc != null && (string.IsNullOrEmpty(refPayment.ManualSlipUrl) || refPayment.ManualSlipUrl.StartsWith("ref-") || refPayment.ManualSlipUrl.StartsWith("slip-")))
                                         {
-                                            existingPayment.ManualSlipUrl = $"/api/verification/documents/{fallbackSlipDoc.Id}/content";
+                                            refPayment.ManualSlipUrl = $"/api/verification/documents/{fallbackSlipDoc.Id}/content";
                                         }
                                         await _context.SaveChangesAsync();
                                         paymentProvided = true;
@@ -846,6 +870,11 @@ namespace Government_Service_Navigator.Backend.Controllers
                 bool stagePaymentProvided = false;
                 var cleanStageLabel = stagePaymentField.Label.Trim().TrimEnd(':');
 
+                // Check if an existing payment was already recorded for this application and stage amount
+                var existingStagePayment = await _context.Payments
+                    .OrderByDescending(p => p.CreatedDate)
+                    .FirstOrDefaultAsync(p => p.ApplicationId == submission.Id && Math.Abs(p.Amount - stageAmt) < 0.01m);
+
                 // 1. Check if citizen uploaded a bank deposit slip
                 var matchedDocKvp = request.Documents.FirstOrDefault(kvp =>
                     string.Equals(kvp.Key.Trim().TrimEnd(':'), cleanStageLabel, StringComparison.OrdinalIgnoreCase)
@@ -854,20 +883,39 @@ namespace Government_Service_Navigator.Backend.Controllers
                     || kvp.Key.Contains("payment", StringComparison.OrdinalIgnoreCase));
                 if (matchedDocKvp.Value != Guid.Empty && documents.TryGetValue(matchedDocKvp.Value, out var slipDoc))
                 {
-                    var payment = new Payment
+                    if (existingStagePayment != null)
                     {
-                        ApplicationId = submission.Id,
-                        Amount = stageAmt,
-                        Currency = "LKR",
-                        Method = "Bank Deposit",
-                        Status = "PendingVerification",
-                        ManualSlipUrl = $"/api/verification/documents/{slipDoc.Id}/content",
-                        UserEmail = submission.UserEmail,
-                        CreatedDate = DateTime.UtcNow
-                    };
-                    _context.Payments.Add(payment);
-                    await _context.SaveChangesAsync();
-                    stagePaymentProvided = true;
+                        if (string.IsNullOrEmpty(existingStagePayment.ManualSlipUrl) || 
+                            existingStagePayment.ManualSlipUrl.StartsWith("ref-", StringComparison.OrdinalIgnoreCase) || 
+                            existingStagePayment.ManualSlipUrl.StartsWith("slip-", StringComparison.OrdinalIgnoreCase) || 
+                            existingStagePayment.ManualSlipUrl.StartsWith("PAY-", StringComparison.OrdinalIgnoreCase))
+                        {
+                            existingStagePayment.ManualSlipUrl = $"/api/verification/documents/{slipDoc.Id}/content";
+                        }
+                        if (existingStagePayment.Amount <= 0)
+                        {
+                            existingStagePayment.Amount = stageAmt;
+                        }
+                        await _context.SaveChangesAsync();
+                        stagePaymentProvided = true;
+                    }
+                    else
+                    {
+                        var payment = new Payment
+                        {
+                            ApplicationId = submission.Id,
+                            Amount = stageAmt,
+                            Currency = "LKR",
+                            Method = "Bank Deposit",
+                            Status = "PendingVerification",
+                            ManualSlipUrl = $"/api/verification/documents/{slipDoc.Id}/content",
+                            UserEmail = submission.UserEmail,
+                            CreatedDate = DateTime.UtcNow
+                        };
+                        _context.Payments.Add(payment);
+                        await _context.SaveChangesAsync();
+                        stagePaymentProvided = true;
+                    }
                 }
                 // 2. Check if citizen provided an online transaction reference
                 var matchedAnswerKvp = request.Answers.FirstOrDefault(kvp =>
@@ -887,13 +935,13 @@ namespace Government_Service_Navigator.Backend.Controllers
                             d.FileName.Contains("deposit", StringComparison.OrdinalIgnoreCase))
                             ?? (!isOnline ? documents.Values.LastOrDefault() : null);
 
-                        var existingPayment = await _context.Payments
+                        var refPayment = existingStagePayment ?? await _context.Payments
                             .FirstOrDefaultAsync(p => p.ApplicationId == submission.Id && (p.StripePaymentIntentId == cleanRef || p.StripePaymentIntentId == refVal));
-                        if (existingPayment != null)
+                        if (refPayment != null)
                         {
-                            if (fallbackSlipDoc != null && (string.IsNullOrEmpty(existingPayment.ManualSlipUrl) || existingPayment.ManualSlipUrl.StartsWith("ref-") || existingPayment.ManualSlipUrl.StartsWith("slip-")))
+                            if (fallbackSlipDoc != null && (string.IsNullOrEmpty(refPayment.ManualSlipUrl) || refPayment.ManualSlipUrl.StartsWith("ref-") || refPayment.ManualSlipUrl.StartsWith("slip-")))
                             {
-                                existingPayment.ManualSlipUrl = $"/api/verification/documents/{fallbackSlipDoc.Id}/content";
+                                refPayment.ManualSlipUrl = $"/api/verification/documents/{fallbackSlipDoc.Id}/content";
                             }
                             await _context.SaveChangesAsync();
                             stagePaymentProvided = true;

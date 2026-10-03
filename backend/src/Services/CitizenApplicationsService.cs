@@ -43,7 +43,8 @@ namespace Government_Service_Navigator.Backend.Services
 
         private async Task<List<MyApplicationDto>> BuildAsync(string nic, CancellationToken cancellationToken)
         {
-            var tasks = await _verificationService.GetTasksForCitizenAsync(nic);
+            var normalizedNic = Validation.SriLankaNic.Normalize(nic);
+            var tasks = await _verificationService.GetTasksForCitizenAsync(normalizedNic);
             if (tasks.Count == 0) return new List<MyApplicationDto>();
 
             var appIds = tasks.Select(t => t.ApplicationId).Distinct().ToList();
@@ -51,7 +52,7 @@ namespace Government_Service_Navigator.Backend.Services
             // Service name/department, stage metadata and the procedure's latest fee for each submission
             var services = await _context.ApplicationSubmissions
                 .AsNoTracking()
-                .Where(s => appIds.Contains(s.Id) && s.CitizenNic == nic)
+                .Where(s => appIds.Contains(s.Id) && (s.CitizenNic == normalizedNic || EF.Functions.ILike(s.CitizenNic, normalizedNic)))
                 .Select(s => new
                 {
                     s.Id,
@@ -107,11 +108,12 @@ namespace Government_Service_Navigator.Backend.Services
                 .GroupBy(p => p.ApplicationId)
                 .ToDictionary(g => g.Key, g => g.OrderByDescending(p => p.Id).First());
 
-            // Latest payment per application (real-time paymentStatus and isPaymentVerified)
+            // Prioritize verified/paid payments over pending/failed, so an audited slip is never shadowed by a duplicate
             var payments = await _context.Payments
                 .AsNoTracking()
                 .Where(p => appIds.Contains(p.ApplicationId))
-                .OrderByDescending(p => p.Id)
+                .OrderByDescending(p => p.Status == "Paid" || p.Status == "Verified" ? 2 : (p.Status == "PendingVerification" ? 1 : 0))
+                .ThenByDescending(p => p.Id)
                 .Select(p => new { p.ApplicationId, p.Status, p.Method, p.Amount })
                 .ToListAsync(cancellationToken);
             var paymentByApp = payments
@@ -179,7 +181,13 @@ namespace Government_Service_Navigator.Backend.Services
                 bool isPayVerified;
                 string paymentStatus;
 
-                if (isStagePaymentRequired)
+                bool anyPaid = payments.Any(p => p.ApplicationId == t.ApplicationId && (p.Status == "Paid" || p.Status == "Verified"));
+                if (anyPaid)
+                {
+                    paymentStatus = "Paid";
+                    isPayVerified = true;
+                }
+                else if (isStagePaymentRequired)
                 {
                     if (pay != null)
                     {
@@ -205,6 +213,10 @@ namespace Government_Service_Navigator.Backend.Services
                 {
                     effectiveStatus = s!.StageStatus == "StageApproved" ? "StageApproved" : "Draft";
                 }
+                else if (t.Status == "Approved")
+                {
+                    effectiveStatus = (currentStageNum < (s?.MaxStages ?? 1)) ? "StageApproved" : "Approved";
+                }
                 else if ((s?.StageStatus == "UnderVerification" || s?.StageStatus == "PendingReview") && effectiveStatus == "Approved")
                 {
                     effectiveStatus = "Pending";
@@ -216,6 +228,13 @@ namespace Government_Service_Navigator.Backend.Services
                     if (string.IsNullOrEmpty(resolvedStageStatus) || resolvedStageStatus == "UnderVerification" || resolvedStageStatus == "PendingReview")
                     {
                         resolvedStageStatus = "Draft";
+                    }
+                }
+                else if (t.Status == "Approved")
+                {
+                    if (string.IsNullOrEmpty(resolvedStageStatus) || resolvedStageStatus == "UnderVerification" || resolvedStageStatus == "PendingReview")
+                    {
+                        resolvedStageStatus = (currentStageNum < (s?.MaxStages ?? 1)) ? "StageApproved" : "Completed";
                     }
                 }
                 else if (string.IsNullOrEmpty(resolvedStageStatus))

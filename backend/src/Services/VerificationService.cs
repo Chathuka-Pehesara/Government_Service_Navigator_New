@@ -425,9 +425,10 @@ namespace Government_Service_Navigator.Backend.Services
         // Read-only: the "Approved without a review" repair runs in DataRepairService.
         public async Task<List<VerificationTask>> GetTasksForCitizenAsync(string citizenNic)
         {
+            var normalized = Validation.SriLankaNic.Normalize(citizenNic);
             return await _context.VerificationTasks
                 .AsNoTracking()
-                .Where(t => t.CitizenNic == citizenNic)
+                .Where(t => t.CitizenNic == normalized || EF.Functions.ILike(t.CitizenNic, normalized))
                 .OrderByDescending(t => t.CreatedDate)
                 .ToListAsync();
         }

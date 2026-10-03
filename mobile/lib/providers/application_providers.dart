@@ -19,7 +19,7 @@ Future<List<ApplicationItemModel>> myApplications(Ref ref) async {
   final token = ref.watch(authTokenProvider);
   if (token.isEmpty) return const [];
 
-  final timer = Timer.periodic(const Duration(seconds: 30), (_) {
+  final timer = Timer.periodic(const Duration(seconds: 12), (_) {
     if (WidgetsBinding.instance.lifecycleState == AppLifecycleState.resumed) {
       ref.invalidateSelf();
     }

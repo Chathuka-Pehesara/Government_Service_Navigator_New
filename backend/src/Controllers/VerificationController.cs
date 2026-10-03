@@ -120,10 +120,10 @@ namespace Government_Service_Navigator.Backend.Controllers
         [HttpGet("my-applications")]
         public async Task<IActionResult> GetMyApplications(CancellationToken cancellationToken)
         {
-            var nic = User.FindFirstValue("nicNumber");
+            var nic = User.FindFirstValue("nicNumber") ?? User.FindFirst("nic")?.Value;
             if (string.IsNullOrWhiteSpace(nic)) return Ok(Array.Empty<object>());
 
-            return Ok(await _citizenApplications.GetMyApplicationsAsync(nic, cancellationToken));
+            return Ok(await _citizenApplications.GetMyApplicationsAsync(Validation.SriLankaNic.Normalize(nic), cancellationToken));
         }
 
         // Department the caller's queue is limited to; null for system admins and unscoped staff
@@ -213,7 +213,7 @@ namespace Government_Service_Navigator.Backend.Controllers
                 .FirstOrDefaultAsync();
 
             // Load active template for the current stage to inspect required file & payment fields
-            string[] paymentKeywords = ["slip", "deposit", "payment", "receipt", "transfer", "bank slip", "bank deposit"];
+            string[] paymentKeywords = ["bank slip", "deposit slip", "payment slip", "transfer slip", "bank deposit", "bank transfer", "remittance slip", "challan"];
             HashSet<string> stageFileLabels = new(StringComparer.OrdinalIgnoreCase);
             HashSet<string> stagePaymentLabels = new(StringComparer.OrdinalIgnoreCase);
             decimal stageFeeAmount = 0m;
@@ -228,9 +228,9 @@ namespace Government_Service_Navigator.Backend.Controllers
                 var stageTemplate = await _context.Templates
                     .Include(t => t.Fields)
                     .Where(t => t.ServiceProcedureId == submission.ServiceProcedureId
-                                && t.StageOrder == activeReviewStage
-                                && t.Status == "Active")
-                    .OrderByDescending(t => t.CreatedAt)
+                                && t.StageOrder == activeReviewStage)
+                    .OrderByDescending(t => t.Status == "Active" ? 1 : 0)
+                    .ThenByDescending(t => t.CreatedAt)
                     .FirstOrDefaultAsync();
 
                 if (stageTemplate != null)
@@ -238,11 +238,7 @@ namespace Government_Service_Navigator.Backend.Controllers
                     foreach (var f in stageTemplate.Fields)
                     {
                         var clean = f.Label.Trim().TrimEnd(':');
-                        if (f.Type == "file" || f.Type == "document" || f.Type == "documentUpload")
-                        {
-                            stageFileLabels.Add(clean);
-                        }
-                        else if (f.Type == "payment")
+                        if (string.Equals(f.Type, "payment", StringComparison.OrdinalIgnoreCase))
                         {
                             stageHasPaymentField = true;
                             stagePaymentLabels.Add(clean);
@@ -258,37 +254,55 @@ namespace Government_Service_Navigator.Backend.Controllers
                                 catch { }
                             }
                         }
+                        else if (string.Equals(f.Type, "file", StringComparison.OrdinalIgnoreCase)
+                                 || string.Equals(f.Type, "document", StringComparison.OrdinalIgnoreCase)
+                                 || string.Equals(f.Type, "documentUpload", StringComparison.OrdinalIgnoreCase))
+                        {
+                            // Only file/document fields configured on this stage template (required or optional) are stage documents
+                            stageFileLabels.Add(clean);
+                        }
                     }
                 }
             }
+
+            static string NormalizeDocLabel(string val) =>
+                new string(val.Where(char.IsLetterOrDigit).ToArray()).ToLowerInvariant();
 
             // Tag each document: "stage" | "payment" | "other"
             var documents = allDocuments.Select(d =>
             {
                 string category;
                 var label = d.FieldLabel?.Trim().TrimEnd(':') ?? "";
+                var normLabel = NormalizeDocLabel(label);
 
-                // 1. Payment slip check:
-                // Matches payment.ManualSlipUrl (contains document GUID), matches template payment field labels,
-                // or contains payment keywords in label or filename.
-                bool isPaymentSlip = (payment != null && !string.IsNullOrEmpty(payment.ManualSlipUrl) && payment.ManualSlipUrl.Contains(d.Id.ToString(), StringComparison.OrdinalIgnoreCase))
-                    || stagePaymentLabels.Contains(label)
-                    || paymentKeywords.Any(k => (!string.IsNullOrEmpty(label) && label.Contains(k, StringComparison.OrdinalIgnoreCase)) || d.FileName.Contains(k, StringComparison.OrdinalIgnoreCase));
+                // 1. Stage document check:
+                // Only matches if it corresponds to an evidentiary file field configured on THIS current stage template.
+                bool isStageDoc = !string.IsNullOrEmpty(normLabel) && stageFileLabels.Any(s =>
+                    string.Equals(NormalizeDocLabel(s), normLabel, StringComparison.OrdinalIgnoreCase)
+                );
 
-                if (isPaymentSlip)
+                if (!isStageDoc && stageFileLabels.Count == 0 && (submission?.MaxStages <= 1))
                 {
-                    category = "payment";
+                    isStageDoc = true;
                 }
-                // 2. Stage document check:
-                // If single-stage application, all non-payment documents belong to this stage.
-                // If no file template fields defined, treat as stage-relevant.
-                // Or if the label matches (or fuzzy matches) a file field for this active stage.
-                else if ((submission?.MaxStages <= 1)
-                    || stageFileLabels.Count == 0
-                    || (!string.IsNullOrEmpty(label) && stageFileLabels.Contains(label))
-                    || (!string.IsNullOrEmpty(label) && stageFileLabels.Any(s => s.Contains(label, StringComparison.OrdinalIgnoreCase) || label.Contains(s, StringComparison.OrdinalIgnoreCase))))
+
+                // 2. Payment slip check:
+                // Only consider as payment slip if this current stage actually requires a statutory payment,
+                // and it matches the specific slip the citizen uploaded for payment (or the stage payment field label).
+                bool isPaymentSlip = false;
+                if (!isStageDoc && stageHasPaymentField && stageFeeAmount > 0)
+                {
+                    isPaymentSlip = (payment != null && !string.IsNullOrEmpty(payment.ManualSlipUrl) && payment.ManualSlipUrl.Contains(d.Id.ToString(), StringComparison.OrdinalIgnoreCase))
+                        || (!string.IsNullOrEmpty(normLabel) && stagePaymentLabels.Any(pl => string.Equals(NormalizeDocLabel(pl), normLabel, StringComparison.OrdinalIgnoreCase)));
+                }
+
+                if (isStageDoc)
                 {
                     category = "stage";
+                }
+                else if (isPaymentSlip)
+                {
+                    category = "payment";
                 }
                 else
                 {
@@ -330,10 +344,9 @@ namespace Government_Service_Navigator.Backend.Controllers
                     };
                 }
             }
-            else if (payment != null)
+            else if ((submission?.MaxStages <= 1) && payment != null)
             {
-                // Template fee could not be read (template not found, fee=0, or multi-stage) but a real
-                // payment record exists — always surface it so the officer sees the actual paid amount.
+                // Template fee could not be read (single-stage) but a real payment record exists
                 paymentInfo = new
                 {
                     id = payment.Id,
@@ -344,6 +357,21 @@ namespace Government_Service_Navigator.Backend.Controllers
                     method = payment.Method,
                     slipUrl = payment.ManualSlipUrl,
                     paidDate = payment.PaidDate
+                };
+            }
+            else
+            {
+                // Stage does not require a fee payment
+                paymentInfo = new
+                {
+                    id = 0,
+                    hasPayment = false,
+                    amount = 0m,
+                    status = "None",
+                    isVerified = true,
+                    method = (string?)null,
+                    slipUrl = (string?)null,
+                    paidDate = (DateTime?)null
                 };
             }
 
@@ -524,7 +552,9 @@ namespace Government_Service_Navigator.Backend.Controllers
                 }
                 else if (string.Equals(request.Status, "Approved", StringComparison.OrdinalIgnoreCase))
                 {
-                    sub.StageStatus = (task.CurrentStage < task.MaxStages) ? "StageApproved" : "Completed";
+                    int currentStage = sub.CurrentStage > 0 ? sub.CurrentStage : (task.CurrentStage > 0 ? task.CurrentStage : 1);
+                    int maxStages = sub.MaxStages > 0 ? sub.MaxStages : (task.MaxStages > 0 ? task.MaxStages : 1);
+                    sub.StageStatus = (currentStage < maxStages) ? "StageApproved" : "Completed";
                 }
                 await _context.SaveChangesAsync();
             }

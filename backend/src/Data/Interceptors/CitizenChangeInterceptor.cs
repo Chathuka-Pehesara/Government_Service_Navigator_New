@@ -185,12 +185,12 @@ namespace Government_Service_Navigator.Backend.Data.Interceptors
                 switch (entity)
                 {
                     case VerificationTask t:
-                        if (!string.IsNullOrEmpty(t.CitizenNic)) nics.Add(t.CitizenNic);
+                        if (!string.IsNullOrEmpty(t.CitizenNic)) nics.Add(Validation.SriLankaNic.Normalize(t.CitizenNic));
                         appIds.Add(t.ApplicationId);
                         officerQueueChanged = true;
                         break;
                     case ApplicationSubmission s:
-                        if (!string.IsNullOrEmpty(s.CitizenNic)) nics.Add(s.CitizenNic);
+                        if (!string.IsNullOrEmpty(s.CitizenNic)) nics.Add(Validation.SriLankaNic.Normalize(s.CitizenNic));
                         officerQueueChanged = true;
                         break;
                     case Payment p:
@@ -198,7 +198,7 @@ namespace Government_Service_Navigator.Backend.Data.Interceptors
                         officerQueueChanged = true;
                         break;
                     case CitizenNotification n:
-                        if (!string.IsNullOrEmpty(n.CitizenNic)) nics.Add(n.CitizenNic);
+                        if (!string.IsNullOrEmpty(n.CitizenNic)) nics.Add(Validation.SriLankaNic.Normalize(n.CitizenNic));
                         break;
                     case InstallmentPlan plan:
                         paymentIds.Add(plan.PaymentId);
@@ -240,10 +240,17 @@ namespace Government_Service_Navigator.Backend.Data.Interceptors
                 appIds.Remove(0);
                 if (appIds.Count > 0)
                 {
-                    nicByApp = await db.ApplicationSubmissions.AsNoTracking()
+                    var subNics = await db.ApplicationSubmissions.AsNoTracking()
                         .Where(s => appIds.Contains(s.Id) && s.CitizenNic != "")
-                        .ToDictionaryAsync(s => s.Id, s => s.CitizenNic, cancellationToken);
-                    nics.UnionWith(nicByApp.Values);
+                        .Select(s => new { s.Id, s.CitizenNic })
+                        .ToListAsync(cancellationToken);
+
+                    foreach (var s in subNics)
+                    {
+                        var norm = Validation.SriLankaNic.Normalize(s.CitizenNic);
+                        nicByApp[s.Id] = norm;
+                        nics.Add(norm);
+                    }
                 }
             }
 

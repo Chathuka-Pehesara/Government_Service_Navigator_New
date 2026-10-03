@@ -31,7 +31,7 @@ class RealtimeConnection with WidgetsBindingObserver {
     WidgetsBinding.instance.addObserver(this);
   }
 
-  static const _retryDelay = Duration(seconds: 30);
+  static const _retryDelay = Duration(seconds: 10);
 
   final Ref _ref;
   final String _token;

@@ -82,6 +82,17 @@ namespace Government_Service_Navigator.Backend.Services
                 payment.Status = "Paid";
                 payment.PaidDate = DateTime.UtcNow;
                 await ApplyPaidToSubmissionAsync(payment);
+
+                if (payment.ApplicationId > 0)
+                {
+                    var duplicatePending = await _context.Payments
+                        .Where(p => p.ApplicationId == payment.ApplicationId && p.Id != payment.Id && p.Status == "PendingVerification")
+                        .ToListAsync();
+                    if (duplicatePending.Count > 0)
+                    {
+                        _context.Payments.RemoveRange(duplicatePending);
+                    }
+                }
             }
             else
             {
@@ -128,6 +139,17 @@ namespace Government_Service_Navigator.Backend.Services
             {
                 payment.PaidDate ??= DateTime.UtcNow;
                 await ApplyPaidToSubmissionAsync(payment);
+
+                if (payment.ApplicationId > 0)
+                {
+                    var duplicatePending = await _context.Payments
+                        .Where(p => p.ApplicationId == payment.ApplicationId && p.Id != payment.Id && p.Status == "PendingVerification")
+                        .ToListAsync();
+                    if (duplicatePending.Count > 0)
+                    {
+                        _context.Payments.RemoveRange(duplicatePending);
+                    }
+                }
             }
             else if (normalized == "PendingVerification")
             {

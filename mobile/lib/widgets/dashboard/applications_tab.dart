@@ -94,6 +94,9 @@ class _ApplicationsTabState extends ConsumerState<ApplicationsTab> {
       case 'draft':
         return const Color(0xFFD97706);
       case 'approved':
+      case 'stage approved':
+      case 'stageapproved':
+      case 'completed':
         return AppColors.success;
       case 'revised':
       case 'revision requested':
@@ -113,6 +116,11 @@ class _ApplicationsTabState extends ConsumerState<ApplicationsTab> {
         return 'Draft Saved';
       case 'approved':
         return 'Verified';
+      case 'stage approved':
+      case 'stageapproved':
+        return 'Stage Approved';
+      case 'completed':
+        return 'Completed';
       case 'revised':
       case 'revision requested':
         return 'Action Required';
@@ -130,6 +138,11 @@ class _ApplicationsTabState extends ConsumerState<ApplicationsTab> {
       case 'draft':
         return CupertinoIcons.pencil_circle_fill;
       case 'approved':
+        return CupertinoIcons.checkmark_seal_fill;
+      case 'stage approved':
+      case 'stageapproved':
+        return CupertinoIcons.checkmark_circle_fill;
+      case 'completed':
         return CupertinoIcons.checkmark_seal_fill;
       case 'revised':
       case 'revision requested':
@@ -178,10 +191,13 @@ class _ApplicationsTabState extends ConsumerState<ApplicationsTab> {
           ),
         ],
       ),
-      body: SingleChildScrollView(
-        physics: const BouncingScrollPhysics(),
-        child: Column(
-          children: [
+      body: RefreshIndicator(
+        onRefresh: _loadApplications,
+        color: AppColors.primary,
+        child: SingleChildScrollView(
+          physics: const AlwaysScrollableScrollPhysics(parent: BouncingScrollPhysics()),
+          child: Column(
+            children: [
             // 1. Search Bar & Status Chips
             Container(
               color: AppColors.cardBg,
@@ -252,8 +268,9 @@ class _ApplicationsTabState extends ConsumerState<ApplicationsTab> {
           ],
         ),
       ),
-    );
-  }
+    ),
+  );
+}
 
   void _showRaiseConcernDialog(ApplicationItemModel app) {
     final subjectController = TextEditingController(text: 'Review Clarification: ${app.referenceNumber}');
@@ -647,19 +664,24 @@ class _ApplicationsTabState extends ConsumerState<ApplicationsTab> {
     final bool isStageUnderReview = !isDraft && (app.stageStatus == 'UnderVerification' ||
         app.stageStatus == 'PendingReview' ||
         app.stageStatus == 'AwaitingFeePayment' ||
-        (app.status.toLowerCase() == 'pending' && app.stageStatus != 'StageApproved'));
+        (app.status.toLowerCase() == 'pending' &&
+            app.stageStatus != 'StageApproved' &&
+            app.stageStatus != 'Completed'));
 
     final effectiveCardStatus = isDraft
         ? 'Draft'
         : (isStageUnderReview
             ? (app.stageStatus == 'AwaitingFeePayment' ? 'Awaiting Fee' : 'In Review')
-            : app.status);
+            : (app.stageStatus == 'StageApproved'
+                ? 'Stage Approved'
+                : (app.stageStatus == 'Completed' ? 'Completed' : app.status)));
 
     final statusColor = _getStatusColor(effectiveCardStatus);
     final reviews = app.verificationTask?.reviews ?? [];
     final latestReview = reviews.isNotEmpty ? reviews.last : null;
 
     final bool isStageOfficerApproved = app.stageStatus == 'StageApproved' ||
+        app.stageStatus == 'Completed' ||
         (app.status.toLowerCase() == 'approved' &&
             app.stageStatus != 'UnderVerification' &&
             app.stageStatus != 'PendingReview');

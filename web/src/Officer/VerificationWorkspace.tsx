@@ -142,8 +142,11 @@ export default function VerificationWorkspace() {
       const paymentDocs = uploaded.filter(d => d.category === 'payment');
 
       // Pick at most ONE active payment slip (matching detail.payment.slipUrl, or newest upload)
-      const activeSlip = paymentDocs.find(d => detail?.payment?.slipUrl && detail.payment.slipUrl.includes(d.id))
-        ?? (paymentDocs.length > 0 ? paymentDocs[paymentDocs.length - 1] : null);
+      // Only include payment slip if this stage actually requires a statutory payment
+      const activeSlip = detail?.payment?.hasPayment
+        ? (paymentDocs.find(d => detail?.payment?.slipUrl && detail.payment.slipUrl.includes(d.id))
+          ?? (paymentDocs.length > 0 ? paymentDocs[paymentDocs.length - 1] : null))
+        : null;
 
       const relevant = activeSlip ? [...stageDocs, activeSlip] : stageDocs;
       const order: Record<string, number> = { stage: 0, payment: 1 };
@@ -292,7 +295,7 @@ export default function VerificationWorkspace() {
   };
 
   const handleDecision = async (status: string) => {
-    if (status === "Approved" && detail?.payment && !detail.payment.isVerified) {
+    if (status === "Approved" && detail?.payment?.hasPayment && !detail.payment.isVerified) {
       alert("Cannot complete stage as verified: Statutory payment has not been verified by the Department Finance Officer.");
       return;
     }
@@ -303,7 +306,7 @@ export default function VerificationWorkspace() {
   };
 
   const submitDecision = async (status: string) => {
-    if (status === "Approved" && detail?.payment && !detail.payment.isVerified) {
+    if (status === "Approved" && detail?.payment?.hasPayment && !detail.payment.isVerified) {
       alert("Cannot complete stage as verified: Statutory payment has not been verified by the Department Finance Officer.");
       return;
     }
@@ -565,7 +568,7 @@ export default function VerificationWorkspace() {
                 )}
 
                 {/* Statutory Payment Status Banner (Synchronized with Finance Officer Audit) */}
-                {detail?.payment && (
+                {detail?.payment && detail.payment.hasPayment && (
                   <div
                     style={{
                       backgroundColor: detail.payment.isVerified
@@ -802,7 +805,7 @@ export default function VerificationWorkspace() {
                            size="md"
                            renderIcon={Checkmark} 
                            onClick={() => handleDecision("Approved")}
-                           disabled={isSubmitting || (detail?.payment != null && !detail.payment.isVerified)}
+                           disabled={isSubmitting || (Boolean(detail?.payment?.hasPayment) && !detail?.payment?.isVerified)}
                            style={{ flex: '1 1 auto', minWidth: '160px', justifyContent: 'center' }}
                         >
                            {(detail?.task.maxStages ?? 1) > (detail?.task.currentStage ?? 1)
@@ -831,7 +834,7 @@ export default function VerificationWorkspace() {
                         </Button>
                      </div>
 
-                     {detail?.payment != null && !detail.payment.isVerified && (
+                     {Boolean(detail?.payment?.hasPayment) && !detail?.payment?.isVerified && (
                        <div
                          style={{
                            marginBottom: '1.5rem',
@@ -848,7 +851,7 @@ export default function VerificationWorkspace() {
                        >
                          <Warning size={16} />
                          <span>
-                           <strong>Stage Approval Locked:</strong> Statutory fee of LKR {detail.payment.amount?.toLocaleString()} must be audited and verified by the Department Finance Officer before this stage can be approved.
+                           <strong>Stage Approval Locked:</strong> Statutory fee of LKR {detail?.payment?.amount?.toLocaleString()} must be audited and verified by the Department Finance Officer before this stage can be approved.
                          </span>
                        </div>
                      )}

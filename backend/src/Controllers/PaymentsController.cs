@@ -119,6 +119,34 @@ namespace Government_Service_Navigator.Backend.Controllers
                 .OrderByDescending(p => p.CreatedDate)
                 .ToListAsync();
 
+            // Automatic deduplication: If an application has duplicate pending payments,
+            // retain the authoritative payment and purge redundant duplicates.
+            var duplicateGroups = pending
+                .Where(p => p.ApplicationId > 0 && p.Status == "PendingVerification")
+                .GroupBy(p => new { p.ApplicationId, p.Amount })
+                .Where(g => g.Count() > 1)
+                .ToList();
+
+            if (duplicateGroups.Any())
+            {
+                var toRemove = new List<Payment>();
+                foreach (var group in duplicateGroups)
+                {
+                    var sorted = group.OrderBy(p => string.IsNullOrEmpty(p.StripePaymentIntentId) ? 1 : 0)
+                                      .ThenBy(p => p.Id)
+                                      .ToList();
+                    var duplicates = sorted.Skip(1).ToList();
+                    toRemove.AddRange(duplicates);
+                }
+
+                if (toRemove.Count > 0)
+                {
+                    _context.Payments.RemoveRange(toRemove);
+                    await _context.SaveChangesAsync();
+                    pending = pending.Except(toRemove).ToList();
+                }
+            }
+
             var appIds = pending.Select(p => p.ApplicationId).Distinct().ToList();
             var submissions = await _context.ApplicationSubmissions
                 .Include(s => s.ServiceProcedure)
@@ -247,7 +275,9 @@ namespace Government_Service_Navigator.Backend.Controllers
                     slipUploadedAt = slipUploadedAt ?? p.CreatedDate,
                     referenceNumberOrId = !string.IsNullOrEmpty(p.StripePaymentIntentId)
                         ? p.StripePaymentIntentId
-                        : (!string.IsNullOrEmpty(effectiveSlipUrl) ? effectiveSlipUrl.Split('/').LastOrDefault() : "N/A"),
+                        : (!string.IsNullOrEmpty(effectiveSlipUrl) && !effectiveSlipUrl.EndsWith("/content", StringComparison.OrdinalIgnoreCase)
+                            ? effectiveSlipUrl.Split('/').LastOrDefault()
+                            : (p.ApplicationId > 0 ? $"PAY-APP-{p.ApplicationId}" : $"PAY-{p.Id}")),
                     submittedAt = p.CreatedDate,
                     createdDate = p.CreatedDate,
                     paidDate = p.PaidDate
@@ -300,6 +330,34 @@ namespace Government_Service_Navigator.Backend.Controllers
             var payments = await query
                 .OrderByDescending(p => p.CreatedDate)
                 .ToListAsync();
+
+            // Automatic deduplication: If an application has duplicate pending payments for the exact same amount,
+            // retain the authoritative payment (with formal reference or slip) and purge redundant duplicates.
+            var duplicateGroups = payments
+                .Where(p => p.ApplicationId > 0 && p.Status == "PendingVerification")
+                .GroupBy(p => new { p.ApplicationId, p.Amount })
+                .Where(g => g.Count() > 1)
+                .ToList();
+
+            if (duplicateGroups.Any())
+            {
+                var toRemove = new List<Payment>();
+                foreach (var group in duplicateGroups)
+                {
+                    var sorted = group.OrderBy(p => string.IsNullOrEmpty(p.StripePaymentIntentId) ? 1 : 0)
+                                      .ThenBy(p => p.Id)
+                                      .ToList();
+                    var duplicates = sorted.Skip(1).ToList();
+                    toRemove.AddRange(duplicates);
+                }
+
+                if (toRemove.Count > 0)
+                {
+                    _context.Payments.RemoveRange(toRemove);
+                    await _context.SaveChangesAsync();
+                    payments = payments.Except(toRemove).ToList();
+                }
+            }
 
             var appIds = payments.Select(p => p.ApplicationId).Distinct().ToList();
             var submissions = await _context.ApplicationSubmissions
@@ -429,7 +487,9 @@ namespace Government_Service_Navigator.Backend.Controllers
                     slipUploadedAt = slipUploadedAt ?? p.CreatedDate,
                     referenceNumberOrId = !string.IsNullOrEmpty(p.StripePaymentIntentId)
                         ? p.StripePaymentIntentId
-                        : (!string.IsNullOrEmpty(effectiveSlipUrl) ? effectiveSlipUrl.Split('/').LastOrDefault() : "N/A"),
+                        : (!string.IsNullOrEmpty(effectiveSlipUrl) && !effectiveSlipUrl.EndsWith("/content", StringComparison.OrdinalIgnoreCase)
+                            ? effectiveSlipUrl.Split('/').LastOrDefault()
+                            : (p.ApplicationId > 0 ? $"PAY-APP-{p.ApplicationId}" : $"PAY-{p.Id}")),
                     submittedAt = p.CreatedDate,
                     createdDate = p.CreatedDate,
                     paidDate = p.PaidDate
