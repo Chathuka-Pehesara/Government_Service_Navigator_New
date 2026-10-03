@@ -75,5 +75,14 @@ namespace Government_Service_Navigator.Backend.Services
                 IsPaymentVerified = payment?.Status == "Paid" || payment?.Status == "Verified"
             };
         }
+
+        public async Task<List<string>> GetAvailableServiceNamesAsync(CancellationToken cancellationToken = default)
+        {
+            return await _context.ServiceProcedures
+                .Where(s => s.Status == "Active")
+                .Select(s => s.Name)
+                .Distinct()
+                .ToListAsync(cancellationToken);
+        }
     }
 }

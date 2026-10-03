@@ -226,6 +226,9 @@ var groqApiKey = Environment.GetEnvironmentVariable("GROQ_API_KEY") ?? builder.C
 var groqModel = Environment.GetEnvironmentVariable("GROQ_MODEL") ?? builder.Configuration["Groq:Model"] ?? "openai/gpt-oss-120b";
 builder.Services.AddSingleton<ILlmService>(new GroqLlmService(groqApiKey, groqModel));
 
+// Agent 1: Intake & Planning Tools
+builder.Services.AddScoped<Government_Service_Navigator.AgenticAi.Tools.SearchServiceCatalog.ISearchServiceCatalogTool, Government_Service_Navigator.AgenticAi.Tools.SearchServiceCatalog.SearchServiceCatalogTool>();
+builder.Services.AddScoped<Government_Service_Navigator.AgenticAi.Tools.RecommendServices.IRecommendServicesTool, Government_Service_Navigator.AgenticAi.Tools.RecommendServices.RecommendServicesTool>();
 builder.Services.AddScoped<IIntakePlanningAgent, IntakePlanningAgent>();
 builder.Services.AddScoped<IFeeScheduleRepository, FeeScheduleRepository>();
 builder.Services.AddScoped<IApplicationTemplateRepository, ApplicationTemplateRepository>();
@@ -246,6 +249,12 @@ builder.Services.AddSingleton(new ValidationSafetyConfig
     MinimumLegalAge = 16,
     EnableAdversarialDefense = true
 });
+
+// Master Supervisor Delegate Tools (Agent 1, Agent 2, Agent 3, Agent 4)
+builder.Services.AddScoped<Government_Service_Navigator.AgenticAi.Orchestration.Supervisor.Tools.IIntakeSupervisorTool, Government_Service_Navigator.AgenticAi.Orchestration.Supervisor.Tools.IntakeSupervisorTool>();
+builder.Services.AddScoped<Government_Service_Navigator.AgenticAi.Orchestration.Supervisor.Tools.IEligibilitySupervisorTool, Government_Service_Navigator.AgenticAi.Orchestration.Supervisor.Tools.EligibilitySupervisorTool>();
+builder.Services.AddScoped<Government_Service_Navigator.AgenticAi.Orchestration.Supervisor.Tools.IAdministrativeActionTool, Government_Service_Navigator.AgenticAi.Orchestration.Supervisor.Tools.AdministrativeActionTool>();
+builder.Services.AddScoped<Government_Service_Navigator.AgenticAi.Orchestration.Supervisor.Tools.ISafetyAuditTool, Government_Service_Navigator.AgenticAi.Orchestration.Supervisor.Tools.SafetyAuditTool>();
 
 builder.Services.AddScoped<IApplicationContextProvider, ApplicationContextProviderService>();
 builder.Services.AddScoped<IMasterSupervisorAgent, MasterSupervisorAgent>();
