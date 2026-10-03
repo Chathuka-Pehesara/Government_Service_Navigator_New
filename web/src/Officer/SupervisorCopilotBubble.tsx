@@ -35,18 +35,53 @@ interface Message {
 }
 
 function renderInlineFormatting(text: string, isOfficer: boolean) {
-  const parts = text.split("**");
-  return parts.map((part, i) => (
-    <span
-      key={i}
-      style={{
-        fontWeight: i % 2 === 1 ? 700 : 400,
-        color: i % 2 === 1 ? (isOfficer ? "#ffffff" : "#0f172a") : undefined,
-      }}
-    >
-      {part}
-    </span>
-  ));
+  // Support <br> or <br/>
+  const htmlParts = text.split(/<br\s*\/?>/i);
+  return htmlParts.map((htmlPart, hIdx) => {
+    // Parse code tokens `code` and bold **bold**
+    const parts = htmlPart.split(/(`[^`]+`|\*\*[^*]+\*\*)/g);
+    return (
+      <span key={hIdx}>
+        {hIdx > 0 && <br />}
+        {parts.map((part, i) => {
+          if (!part) return null;
+          if (part.startsWith("`") && part.endsWith("`") && part.length > 2) {
+            return (
+              <code
+                key={i}
+                style={{
+                  backgroundColor: isOfficer ? "rgba(255,255,255,0.2)" : "#f1f5f9",
+                  color: isOfficer ? "#ffffff" : "#0f172a",
+                  padding: "1px 4px",
+                  borderRadius: "3px",
+                  fontSize: "0.72rem",
+                  fontFamily: "monospace",
+                  border: isOfficer ? "none" : "1px solid #cbd5e1",
+                  margin: "0 1px",
+                }}
+              >
+                {part.slice(1, -1)}
+              </code>
+            );
+          }
+          if (part.startsWith("**") && part.endsWith("**") && part.length > 4) {
+            return (
+              <strong
+                key={i}
+                style={{
+                  fontWeight: 700,
+                  color: isOfficer ? "#ffffff" : "#0f172a",
+                }}
+              >
+                {part.slice(2, -2)}
+              </strong>
+            );
+          }
+          return <span key={i}>{part}</span>;
+        })}
+      </span>
+    );
+  });
 }
 
 function renderFormattedMessageContent(content: string, isOfficer: boolean) {
@@ -56,11 +91,91 @@ function renderFormattedMessageContent(content: string, isOfficer: boolean) {
 
   const lines = content.split("\n");
   const elements: React.ReactNode[] = [];
+  let i = 0;
 
-  for (let i = 0; i < lines.length; i++) {
+  while (i < lines.length) {
     const line = lines[i].trim();
+
     if (!line) {
-      elements.push(<div key={`empty-${i}`} style={{ height: "6px" }} />);
+      elements.push(<div key={`empty-${i}`} style={{ height: "4px" }} />);
+      i++;
+      continue;
+    }
+
+    // Dividers: --- or ___
+    if (line === "---" || line === "___" || line === "***") {
+      elements.push(
+        <hr
+          key={`hr-${i}`}
+          style={{
+            border: "none",
+            borderTop: "1px solid #e0e0e0",
+            margin: "8px 0",
+          }}
+        />
+      );
+      i++;
+      continue;
+    }
+
+    // Markdown Table Detection: line starts and ends with |
+    if (line.startsWith("|") && line.endsWith("|")) {
+      const tableLines: string[] = [];
+      while (i < lines.length && lines[i].trim().startsWith("|") && lines[i].trim().endsWith("|")) {
+        tableLines.push(lines[i].trim());
+        i++;
+      }
+
+      if (tableLines.length >= 2) {
+        const rawHeaders = tableLines[0].split("|").slice(1, -1).map(h => h.trim());
+        // Skip separator row (second line)
+        const startIndex = tableLines[1].replace(/[\s\-\|:]/g, "").length === 0 ? 2 : 1;
+        const rawRows = tableLines.slice(startIndex).map(r => r.split("|").slice(1, -1).map(c => c.trim()));
+
+        elements.push(
+          <div key={`table-${i}`} style={{ overflowX: "auto", margin: "6px 0", borderRadius: "4px", border: "1px solid #e0e0e0" }}>
+            <table style={{ width: "100%", borderCollapse: "collapse", fontSize: "0.72rem", backgroundColor: "#ffffff" }}>
+              <thead>
+                <tr style={{ backgroundColor: "#f4f4f4", borderBottom: "2px solid #e0e0e0" }}>
+                  {rawHeaders.map((h, hi) => (
+                    <th key={hi} style={{ padding: "5px 7px", textAlign: "left", fontWeight: 700, color: "#161616", fontSize: "0.7rem" }}>
+                      {renderInlineFormatting(h, isOfficer)}
+                    </th>
+                  ))}
+                </tr>
+              </thead>
+              <tbody>
+                {rawRows.map((row, ri) => (
+                  <tr key={ri} style={{ borderBottom: "1px solid #e8e8e8", backgroundColor: ri % 2 === 1 ? "#fafafa" : "#ffffff" }}>
+                    {row.map((cell, ci) => (
+                      <td key={ci} style={{ padding: "5px 7px", color: "#393939", verticalAlign: "top", fontSize: "0.72rem", lineHeight: "1.4" }}>
+                        {renderInlineFormatting(cell, isOfficer)}
+                      </td>
+                    ))}
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        );
+        continue;
+      }
+    }
+
+    // Numbered Section Header: 1. Section Title
+    const secMatch = line.match(/^(\d+)\.\s+([A-Za-z].*)$/);
+    if (secMatch) {
+      elements.push(
+        <div key={`sec-${i}`} style={{ display: "flex", alignItems: "center", gap: "6px", marginTop: "10px", marginBottom: "4px" }}>
+          <span style={{ backgroundColor: "#0f62fe", color: "#ffffff", borderRadius: "3px", padding: "1px 5px", fontSize: "0.6875rem", fontWeight: 700 }}>
+            § {secMatch[1]}
+          </span>
+          <span style={{ fontWeight: 700, fontSize: "0.8125rem", color: "#0f172a" }}>
+            {secMatch[2]}
+          </span>
+        </div>
+      );
+      i++;
       continue;
     }
 
@@ -72,9 +187,9 @@ function renderFormattedMessageContent(content: string, isOfficer: boolean) {
           key={`heading-${i}`}
           style={{
             fontWeight: 700,
-            fontSize: "0.875rem",
+            fontSize: "0.85rem",
             color: "#0f172a",
-            marginTop: "6px",
+            marginTop: "8px",
             marginBottom: "3px",
             display: "flex",
             alignItems: "center",
@@ -85,38 +200,11 @@ function renderFormattedMessageContent(content: string, isOfficer: boolean) {
           {heading}
         </div>
       );
+      i++;
       continue;
     }
 
-    // Numbered Item: 1. Item
-    const numMatch = line.match(/^(\d+)\.\s+(.*)$/);
-    if (numMatch) {
-      elements.push(
-        <div key={`num-${i}`} style={{ display: "flex", alignItems: "flex-start", gap: "6px", margin: "2px 0 2px 4px" }}>
-          <span
-            style={{
-              minWidth: "16px",
-              height: "16px",
-              borderRadius: "50%",
-              backgroundColor: "#edf5ff",
-              color: "#0043ce",
-              fontSize: "0.625rem",
-              fontWeight: 700,
-              display: "inline-flex",
-              alignItems: "center",
-              justifyContent: "center",
-              marginTop: "2px",
-            }}
-          >
-            {numMatch[1]}
-          </span>
-          <div style={{ flex: 1 }}>{renderInlineFormatting(numMatch[2], isOfficer)}</div>
-        </div>
-      );
-      continue;
-    }
-
-    // Bullet Point: - Item or * Item
+    // Bullet Point: - Item or * Item or • Item
     if (line.startsWith("- ") || line.startsWith("* ") || line.startsWith("• ")) {
       const bullet = line.substring(2).trim();
       elements.push(
@@ -125,6 +213,7 @@ function renderFormattedMessageContent(content: string, isOfficer: boolean) {
           <div style={{ flex: 1 }}>{renderInlineFormatting(bullet, isOfficer)}</div>
         </div>
       );
+      i++;
       continue;
     }
 
@@ -147,6 +236,7 @@ function renderFormattedMessageContent(content: string, isOfficer: boolean) {
           {renderInlineFormatting(text, isOfficer)}
         </div>
       );
+      i++;
       continue;
     }
 
@@ -156,6 +246,7 @@ function renderFormattedMessageContent(content: string, isOfficer: boolean) {
         {renderInlineFormatting(line, isOfficer)}
       </div>
     );
+    i++;
   }
 
   return <div style={{ display: "flex", flexDirection: "column" }}>{elements}</div>;

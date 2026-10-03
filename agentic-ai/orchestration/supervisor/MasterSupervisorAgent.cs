@@ -338,17 +338,16 @@ namespace Government_Service_Navigator.AgenticAi.Orchestration
             // 4. Determine Recommended Officer/Citizen Action
             if (isWeb)
             {
-                if (agent2Result?.MissingDocuments.Count > 0)
-                {
-                    recommendation = new SupervisorRecommendation
-                    {
-                        ActionType = "RequestRevision",
-                        Title = "Request Evidentiary Revision",
-                        Rationale = $"Advise citizen to re-submit correct document for: {string.Join(", ", agent2Result.MissingDocuments)}.",
-                        RiskLevel = "Medium"
-                    };
-                }
-                else if (duplicateResult?.IsDuplicate == true)
+                bool hasMissingDocs = agent2Result?.MissingDocuments.Count > 0;
+                bool hasIneligibility = agent2Result != null && (!agent2Result.IsEligible || agent2Result.MissingCriteria.Count > 0);
+                bool hasAgent4Issues = trace.Any(t => t.AgentId == "agent-4" && (t.Status == "AttentionRequired" || t.Summary.Contains("SCHEMA", StringComparison.OrdinalIgnoreCase) || t.Summary.Contains("DOC-", StringComparison.OrdinalIgnoreCase)));
+                bool isExplicitlyNonCompliant = answer.Contains("Non-compliant", StringComparison.OrdinalIgnoreCase)
+                                                || answer.Contains("fails initial statutory compliance", StringComparison.OrdinalIgnoreCase)
+                                                || answer.Contains("Conflict Identified", StringComparison.OrdinalIgnoreCase)
+                                                || answer.Contains("Deficiency", StringComparison.OrdinalIgnoreCase)
+                                                || answer.Contains("Deficiencies", StringComparison.OrdinalIgnoreCase);
+
+                if (duplicateResult?.IsDuplicate == true)
                 {
                     recommendation = new SupervisorRecommendation
                     {
@@ -356,6 +355,23 @@ namespace Government_Service_Navigator.AgenticAi.Orchestration
                         Title = "Investigate Duplicate Submission",
                         Rationale = $"Collision detected with existing application {duplicateResult.ExistingReference}.",
                         RiskLevel = "High"
+                    };
+                }
+                else if (hasMissingDocs || hasIneligibility || hasAgent4Issues || isExplicitlyNonCompliant)
+                {
+                    var issues = new List<string>();
+                    if (hasAgent4Issues) issues.Add("Identity document absent or age anomaly detected");
+                    if (hasMissingDocs) issues.Add($"Missing: {string.Join(", ", agent2Result!.MissingDocuments)}");
+                    if (hasIneligibility) issues.Add($"Criteria: {string.Join(", ", agent2Result!.MissingCriteria)}");
+
+                    recommendation = new SupervisorRecommendation
+                    {
+                        ActionType = "RequestRevision",
+                        Title = "Request Evidentiary Revision",
+                        Rationale = issues.Any()
+                            ? string.Join("; ", issues) + "."
+                            : "Application fails statutory compliance. Advise citizen to submit verified identity document and date of birth proof.",
+                        RiskLevel = "Medium"
                     };
                 }
                 else
@@ -462,10 +478,12 @@ namespace Government_Service_Navigator.AgenticAi.Orchestration
                     "You are the GovNavigator Master Supervisor Agent — the official statutory AI co-pilot for Sri Lanka Government Verification Officers.\n" +
                     "Your role is to advise the human officer on application compliance, evidentiary audits, gazette provisions, and fraud safety.\n\n" +
                     "GOVERNMENT AUDIT LANGUAGE DIRECTIVES:\n" +
-                    "- Maintain an authoritative, formal, legalistic, and objective administrative tone.\n" +
+                    "- Maintain an authoritative, formal, and objective administrative advisory tone.\n" +
                     "- Use official statutory terminology: 'Evidentiary Proof', 'Gazette Compliance', 'Statutory Tariff', 'Case Dossier', 'Administrative Determination', 'Integrity Audit'.\n" +
                     "- Always highlight which sub-agents (Agent 1, Agent 2, Agent 3, Agent 4) were consulted.\n" +
-                    "- Clearly distinguish between deterministic verification (schema, fee math, database queries) and cognitive AI assessment (semantic photo/document interpretation).\n" +
+                    "- Clearly distinguish between deterministic verification (schema checks, fee math, database queries) and cognitive AI assessment.\n" +
+                    "- DETERMINATION INTEGRITY MANDATE: If any sub-agent reports missing documents, schema errors, or anomalies, your determination MUST conclude NON-COMPLIANT (Request Evidentiary Revision) or REJECT. You must NEVER approve a case with missing documents or schema errors.\n" +
+                    "- PRESENTATION GUIDELINES: Format your briefing with clear section headers and concise bullet points. When providing structured tables, keep column widths compact so they fit comfortably in the officer sidebar.\n" +
                     "- Ground recommendations strictly on the provided case data. Do NOT invent policies or facts.";
             }
             else
