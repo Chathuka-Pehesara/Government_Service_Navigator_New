@@ -2,6 +2,7 @@ import 'package:flutter/cupertino.dart';
 import 'package:flutter/material.dart';
 import '../services/supervisor_agent_service.dart';
 import '../theme/app_colors.dart';
+import 'agent2_statutory_auditor_screen.dart';
 import 'booking_options_screen.dart';
 
 class ChatMessageItem {
@@ -56,12 +57,19 @@ class _CitizenAssistantChatScreenState extends State<CitizenAssistantChatScreen>
             : 'Hello! I am your official GovNavigator Service Guide.\n\nDescribe what you need in simple words (e.g., "I need to renew my passport urgently" or "What documents do I need for driving license?"), and our 4 specialized guides will assist you.',
         isUser: false,
         timestamp: DateTime.now(),
-        followups: [
-          'What documents do I need to bring?',
-          'How much is the total statutory fee?',
-          'Can I book a counter appointment?',
-          'What happens after I submit?',
-        ],
+        followups: widget.serviceName != null
+            ? [
+                'What documents do I need to bring?',
+                'How much is the total statutory fee?',
+                'Can I book a counter appointment?',
+                'What happens after I submit?',
+              ]
+            : [
+                'What documents for Passport Renewal?',
+                'How do I apply for National Identity Card?',
+                'What are the fees for Driving License?',
+                'How do I get a Birth Certificate?',
+              ],
       ),
     );
   }
@@ -111,6 +119,7 @@ class _CitizenAssistantChatScreenState extends State<CitizenAssistantChatScreen>
         query: text,
         applicationId: widget.applicationId,
         serviceProcedureId: widget.serviceProcedureId,
+        serviceName: widget.serviceName,
         stage: widget.stage,
         history: history,
       );
@@ -128,9 +137,10 @@ class _CitizenAssistantChatScreenState extends State<CitizenAssistantChatScreen>
       });
       _scrollToBottom();
     } catch (e) {
+      debugPrint('SupervisorAgentService error: $e');
       setState(() {
         _messages.add(ChatMessageItem(
-          text: 'I apologize, but I am temporarily unable to reach the public service registry. Please check your internet connection or try again shortly.',
+          text: 'I apologize, but I am temporarily unable to reach the public service registry. Please check your internet connection or try again shortly.\n(Details: $e)',
           isUser: false,
           timestamp: DateTime.now(),
         ));
@@ -358,81 +368,10 @@ class _CitizenAssistantChatScreenState extends State<CitizenAssistantChatScreen>
                   child: Column(
                     crossAxisAlignment: CrossAxisAlignment.start,
                     children: [
-                      Text(
-                        msg.text,
-                        style: TextStyle(
-                          fontSize: 13.5,
-                          height: 1.4,
-                          color: isUser ? Colors.white : AppColors.dark,
-                        ),
-                      ),
+                      _buildFormattedText(msg.text, isUser),
                       if (msg.recommendation != null) ...[
-                        const SizedBox(height: 8),
-                        Container(
-                          padding: const EdgeInsets.all(10),
-                          decoration: BoxDecoration(
-                            color: const Color(0xFFF0FDF4),
-                            borderRadius: BorderRadius.circular(8),
-                            border: Border.all(color: const Color(0xFF86EFAC)),
-                          ),
-                          child: Column(
-                            crossAxisAlignment: CrossAxisAlignment.start,
-                            children: [
-                              Row(
-                                children: [
-                                  const Icon(CupertinoIcons.checkmark_circle_fill, color: Colors.green, size: 16),
-                                  const SizedBox(width: 6),
-                                  Expanded(
-                                    child: Text(
-                                      msg.recommendation!.title,
-                                      style: const TextStyle(
-                                        fontSize: 12,
-                                        fontWeight: FontWeight.w600,
-                                        color: Color(0xFF166534),
-                                      ),
-                                    ),
-                                  ),
-                                ],
-                              ),
-                              if (msg.recommendation!.rationale.isNotEmpty) ...[
-                                const SizedBox(height: 4),
-                                Text(
-                                  msg.recommendation!.rationale,
-                                  style: const TextStyle(fontSize: 11, color: Color(0xFF15803D)),
-                                ),
-                              ],
-                              if (msg.recommendation!.actionType == 'BookAppointment' && widget.applicationId != null) ...[
-                                const SizedBox(height: 8),
-                                SizedBox(
-                                  width: double.infinity,
-                                  height: 32,
-                                  child: ElevatedButton.icon(
-                                    style: ElevatedButton.styleFrom(
-                                      backgroundColor: AppColors.primary,
-                                      foregroundColor: Colors.white,
-                                      elevation: 0,
-                                      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(6)),
-                                      padding: const EdgeInsets.symmetric(horizontal: 10),
-                                    ),
-                                    icon: const Icon(CupertinoIcons.calendar, size: 14),
-                                    label: const Text('Book Counter Appointment', style: TextStyle(fontSize: 11, fontWeight: FontWeight.w600)),
-                                    onPressed: () {
-                                      Navigator.push(
-                                        context,
-                                        MaterialPageRoute(
-                                          builder: (context) => BookingOptionsScreen(
-                                            applicationId: widget.applicationId.toString(),
-                                            serviceName: widget.serviceName ?? 'Government Service',
-                                          ),
-                                        ),
-                                      );
-                                    },
-                                  ),
-                                ),
-                              ],
-                            ],
-                          ),
-                        ),
+                        const SizedBox(height: 10),
+                        _buildRecommendationCard(msg.recommendation!),
                       ],
                     ],
                   ),
@@ -476,6 +415,240 @@ class _CitizenAssistantChatScreenState extends State<CitizenAssistantChatScreen>
           ],
         ],
       ),
+    );
+  }
+
+  Widget _buildRecommendationCard(SupervisorRecommendationModel rec) {
+    Color bgColor;
+    Color borderColor;
+    Color textColor;
+    IconData icon;
+
+    if (rec.actionType == 'ExploreCatalog') {
+      bgColor = const Color(0xFFF0F9FF);
+      borderColor = const Color(0xFFBAE6FD);
+      textColor = const Color(0xFF0369A1);
+      icon = CupertinoIcons.info_circle_fill;
+    } else if (rec.actionType == 'UploadDocument' || rec.actionType == 'RequestRevision') {
+      bgColor = const Color(0xFFFFFBEB);
+      borderColor = const Color(0xFFFDE68A);
+      textColor = const Color(0xFFB45309);
+      icon = CupertinoIcons.exclamationmark_circle_fill;
+    } else {
+      bgColor = const Color(0xFFF0FDF4);
+      borderColor = const Color(0xFF86EFAC);
+      textColor = const Color(0xFF166534);
+      icon = CupertinoIcons.checkmark_circle_fill;
+    }
+
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
+      decoration: BoxDecoration(
+        color: bgColor,
+        borderRadius: BorderRadius.circular(8),
+        border: Border.all(color: borderColor),
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Row(
+            children: [
+              Icon(icon, color: textColor, size: 16),
+              const SizedBox(width: 8),
+              Expanded(
+                child: Text(
+                  rec.title,
+                  style: TextStyle(
+                    fontSize: 12.5,
+                    fontWeight: FontWeight.w600,
+                    color: textColor,
+                  ),
+                ),
+              ),
+            ],
+          ),
+          if (rec.rationale.isNotEmpty) ...[
+            const SizedBox(height: 4),
+            Padding(
+              padding: const EdgeInsets.only(left: 24.0),
+              child: Text(
+                rec.rationale,
+                style: TextStyle(
+                  fontSize: 11.5,
+                  height: 1.35,
+                  color: textColor.withValues(alpha: 0.9),
+                ),
+              ),
+            ),
+          ],
+          if ((rec.actionType == 'UploadDocument' || rec.actionType == 'RequestRevision') && (widget.serviceProcedureId != null || widget.serviceName != null)) ...[
+            const SizedBox(height: 8),
+            SizedBox(
+              width: double.infinity,
+              height: 34,
+              child: ElevatedButton.icon(
+                style: ElevatedButton.styleFrom(
+                  backgroundColor: const Color(0xFFD97706),
+                  foregroundColor: Colors.white,
+                  elevation: 0,
+                  shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(6)),
+                  padding: const EdgeInsets.symmetric(horizontal: 10),
+                ),
+                icon: const Icon(CupertinoIcons.doc_checkmark_fill, size: 14),
+                label: const Text(
+                  'Upload & Audit Documents (Agent 2)',
+                  style: TextStyle(fontSize: 11.5, fontWeight: FontWeight.w600),
+                ),
+                onPressed: () {
+                  Navigator.push(
+                    context,
+                    MaterialPageRoute(
+                      builder: (context) => Agent2StatutoryAuditorScreen(
+                        serviceId: widget.serviceProcedureId ?? 24,
+                        serviceName: widget.serviceName ?? 'National Identity Card (NIC) Issuance & Replacement',
+                      ),
+                    ),
+                  );
+                },
+              ),
+            ),
+          ],
+          if (rec.actionType == 'BookAppointment' && widget.applicationId != null) ...[
+            const SizedBox(height: 8),
+            SizedBox(
+              width: double.infinity,
+              height: 32,
+              child: ElevatedButton.icon(
+                style: ElevatedButton.styleFrom(
+                  backgroundColor: AppColors.primary,
+                  foregroundColor: Colors.white,
+                  elevation: 0,
+                  shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(6)),
+                  padding: const EdgeInsets.symmetric(horizontal: 10),
+                ),
+                icon: const Icon(CupertinoIcons.calendar, size: 14),
+                label: const Text(
+                  'Book Counter Appointment',
+                  style: TextStyle(fontSize: 11, fontWeight: FontWeight.w600),
+                ),
+                onPressed: () {
+                  Navigator.push(
+                    context,
+                    MaterialPageRoute(
+                      builder: (context) => BookingOptionsScreen(
+                        applicationId: widget.applicationId.toString(),
+                        serviceName: widget.serviceName ?? 'Government Service',
+                      ),
+                    ),
+                  );
+                },
+              ),
+            ),
+          ],
+        ],
+      ),
+    );
+  }
+
+  Widget _buildFormattedText(String text, bool isUser) {
+    if (isUser) {
+      return Text(
+        text,
+        style: const TextStyle(fontSize: 13.5, height: 1.4, color: Colors.white),
+      );
+    }
+
+    final lines = text.split('\n');
+    final widgets = <Widget>[];
+
+    for (int i = 0; i < lines.length; i++) {
+      final line = lines[i].trim();
+      if (line.isEmpty) {
+        widgets.add(const SizedBox(height: 6));
+        continue;
+      }
+
+      // Heading: ### Heading or ## Heading or # Heading
+      if (line.startsWith('### ') || line.startsWith('## ') || line.startsWith('# ')) {
+        final headingText = line.replaceFirst(RegExp(r'^#+\s*'), '').trim();
+        widgets.add(
+          Padding(
+            padding: const EdgeInsets.only(top: 4, bottom: 6),
+            child: Text(
+              headingText,
+              style: const TextStyle(
+                fontSize: 14.5,
+                fontWeight: FontWeight.w700,
+                color: Color(0xFF0F172A),
+                letterSpacing: -0.2,
+              ),
+            ),
+          ),
+        );
+        continue;
+      }
+
+      // Bullet points: - item, * item, • item
+      if (line.startsWith('- ') || line.startsWith('* ') || line.startsWith('• ')) {
+        final bulletText = line.substring(2).trim();
+        widgets.add(
+          Padding(
+            padding: const EdgeInsets.only(left: 4, bottom: 4),
+            child: Row(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                const Padding(
+                  padding: EdgeInsets.only(top: 6, right: 8),
+                  child: Icon(Icons.circle, size: 5, color: AppColors.primary),
+                ),
+                Expanded(
+                  child: _buildRichInline(bulletText, false),
+                ),
+              ],
+            ),
+          ),
+        );
+        continue;
+      }
+
+      // Standard paragraph line with inline markdown bold (**text**)
+      widgets.add(
+        Padding(
+          padding: const EdgeInsets.only(bottom: 3),
+          child: _buildRichInline(line, false),
+        ),
+      );
+    }
+
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: widgets,
+    );
+  }
+
+  Widget _buildRichInline(String text, bool isUser) {
+    final spans = <TextSpan>[];
+    final parts = text.split('**');
+    for (int i = 0; i < parts.length; i++) {
+      if (parts[i].isEmpty) continue;
+      final isBold = i % 2 == 1;
+      spans.add(
+        TextSpan(
+          text: parts[i],
+          style: TextStyle(
+            fontSize: 13.5,
+            height: 1.45,
+            fontWeight: isBold ? FontWeight.w700 : FontWeight.w400,
+            color: isUser
+                ? Colors.white
+                : (isBold ? const Color(0xFF0F172A) : const Color(0xFF334155)),
+          ),
+        ),
+      );
+    }
+
+    return Text.rich(
+      TextSpan(children: spans),
     );
   }
 }

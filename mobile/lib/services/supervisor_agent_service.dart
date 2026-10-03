@@ -90,32 +90,59 @@ class SupervisorResponseModel {
 }
 
 class SupervisorAgentService {
-  static String get _chatUrl => '${AppConfig.baseUrl}/orchestrator/chat';
+  static List<String> get _candidateUrls {
+    final primary = '${AppConfig.baseUrl}/orchestrator/chat';
+    final list = <String>[primary];
+    const local1 = 'http://localhost:5119/api/orchestrator/chat';
+    const local2 = 'http://127.0.0.1:5119/api/orchestrator/chat';
+    const emulator = 'http://10.0.2.2:5119/api/orchestrator/chat';
+
+    if (!list.contains(local1)) list.add(local1);
+    if (!list.contains(local2)) list.add(local2);
+    if (!list.contains(emulator)) list.add(emulator);
+    return list;
+  }
 
   static Future<SupervisorResponseModel> ask({
     required String query,
     int? applicationId,
     int? serviceProcedureId,
+    String? serviceName,
     int? stage,
     List<Map<String, String>>? history,
   }) async {
-    final response = await http.post(
-      Uri.parse(_chatUrl),
-      headers: {'Content-Type': 'application/json'},
-      body: jsonEncode({
-        'query': query,
-        'applicationId': applicationId,
-        'serviceProcedureId': serviceProcedureId,
-        'stage': stage,
-        'platformContext': 'mobile',
-        'history': history,
-      }),
-    );
+    final payload = jsonEncode({
+      'query': query,
+      'applicationId': applicationId,
+      'serviceProcedureId': serviceProcedureId,
+      'serviceName': serviceName,
+      'stage': stage,
+      'platformContext': 'mobile',
+      'history': history,
+    });
 
-    if (response.statusCode == 200) {
-      final Map<String, dynamic> data = jsonDecode(response.body);
-      return SupervisorResponseModel.fromJson(data);
+    String lastError = 'No endpoints reachable';
+    for (final url in _candidateUrls) {
+      try {
+        final response = await http
+            .post(
+              Uri.parse(url),
+              headers: {'Content-Type': 'application/json'},
+              body: payload,
+            )
+            .timeout(const Duration(seconds: 25));
+
+        if (response.statusCode == 200) {
+          final Map<String, dynamic> data = jsonDecode(response.body);
+          return SupervisorResponseModel.fromJson(data);
+        } else {
+          lastError = 'Endpoint $url returned HTTP ${response.statusCode}';
+        }
+      } catch (err) {
+        lastError = 'Endpoint $url connection error: $err';
+      }
     }
-    throw Exception('Failed to reach AI assistant: ${response.statusCode}');
+
+    throw Exception(lastError);
   }
 }

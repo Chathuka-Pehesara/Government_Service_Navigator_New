@@ -7,7 +7,6 @@ import '../../providers/catalog_providers.dart';
 import '../../models/verification_models.dart';
 import '../../screens/procedure_detail_screen.dart';
 import '../../screens/service_discovery_screen.dart';
-import '../../screens/agent2_statutory_auditor_screen.dart';
 import '../../screens/citizen_assistant_chat_screen.dart';
 
 
@@ -281,67 +280,30 @@ class _HomeDashboardTabState extends ConsumerState<HomeDashboardTab> {
             ),
           ),
           const SizedBox(height: 16),
-          Row(
-            children: [
-              Expanded(
-                child: SizedBox(
-                  height: 44,
-                  child: ElevatedButton(
-                    style: ElevatedButton.styleFrom(
-                      backgroundColor: Colors.white,
-                      foregroundColor: AppColors.primary,
-                      elevation: 0,
-                      shape: RoundedRectangleBorder(
-                        borderRadius: BorderRadius.circular(12),
-                      ),
-                    ),
-                    onPressed: () {
-                      Navigator.push(
-                        context,
-                        MaterialPageRoute(builder: (context) => const CitizenAssistantChatScreen()),
-                      );
-                    },
-                    child: const Text(
-                      'Ask AI Assistant',
-                      style: TextStyle(fontWeight: FontWeight.w600, fontSize: 14),
-                    ),
-                  ),
+          SizedBox(
+            width: double.infinity,
+            height: 46,
+            child: ElevatedButton.icon(
+              style: ElevatedButton.styleFrom(
+                backgroundColor: Colors.white,
+                foregroundColor: AppColors.primary,
+                elevation: 0,
+                shape: RoundedRectangleBorder(
+                  borderRadius: BorderRadius.circular(12),
                 ),
               ),
-              const SizedBox(width: 10),
-              Expanded(
-                child: SizedBox(
-                  height: 44,
-                  child: ElevatedButton.icon(
-                    style: ElevatedButton.styleFrom(
-                      backgroundColor: Colors.white.withValues(alpha: 0.18),
-                      foregroundColor: Colors.white,
-                      elevation: 0,
-                      side: const BorderSide(color: Colors.white, width: 1.2),
-                      shape: RoundedRectangleBorder(
-                        borderRadius: BorderRadius.circular(12),
-                      ),
-                    ),
-                    icon: const Icon(Icons.policy_outlined, size: 16),
-                    onPressed: () {
-                      Navigator.push(
-                        context,
-                        MaterialPageRoute(
-                          builder: (context) => const Agent2StatutoryAuditorScreen(
-                            serviceId: 24,
-                            serviceName: 'National Identity Card (NIC) Issuance & Replacement',
-                          ),
-                        ),
-                      );
-                    },
-                    label: const Text(
-                      'Statutory Audit',
-                      style: TextStyle(fontWeight: FontWeight.w600, fontSize: 13),
-                    ),
-                  ),
-                ),
+              icon: const Icon(CupertinoIcons.sparkles, size: 18),
+              onPressed: () {
+                Navigator.push(
+                  context,
+                  MaterialPageRoute(builder: (context) => const CitizenAssistantChatScreen()),
+                );
+              },
+              label: const Text(
+                'Ask GovNavigator AI Guide',
+                style: TextStyle(fontWeight: FontWeight.w600, fontSize: 14),
               ),
-            ],
+            ),
           ),
         ],
       ),
