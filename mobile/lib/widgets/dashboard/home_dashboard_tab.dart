@@ -6,9 +6,9 @@ import '../../providers/application_providers.dart';
 import '../../providers/catalog_providers.dart';
 import '../../models/verification_models.dart';
 import '../../screens/procedure_detail_screen.dart';
-import '../../screens/describe_need_screen.dart';
 import '../../screens/service_discovery_screen.dart';
 import '../../screens/agent2_statutory_auditor_screen.dart';
+import '../../screens/citizen_assistant_chat_screen.dart';
 
 
 class HomeDashboardTab extends ConsumerStatefulWidget {
@@ -298,11 +298,11 @@ class _HomeDashboardTabState extends ConsumerState<HomeDashboardTab> {
                     onPressed: () {
                       Navigator.push(
                         context,
-                        MaterialPageRoute(builder: (context) => const DescribeNeedScreen()),
+                        MaterialPageRoute(builder: (context) => const CitizenAssistantChatScreen()),
                       );
                     },
                     child: const Text(
-                      'Ask Navigator',
+                      'Ask AI Assistant',
                       style: TextStyle(fontWeight: FontWeight.w600, fontSize: 14),
                     ),
                   ),

@@ -247,6 +247,8 @@ builder.Services.AddSingleton(new ValidationSafetyConfig
     EnableAdversarialDefense = true
 });
 
+builder.Services.AddScoped<IApplicationContextProvider, ApplicationContextProviderService>();
+builder.Services.AddScoped<IMasterSupervisorAgent, MasterSupervisorAgent>();
 builder.Services.AddScoped<IApplicationDraftingService, ApplicationDraftingService>();
 builder.Services.AddSingleton<IEmbeddingService, LocalEmbeddingService>();
 builder.Services.AddHostedService<InstallmentMonitorService>();

@@ -158,3 +158,50 @@ export function draftDecisionOrder(payload: {
     body: JSON.stringify(payload)
   });
 }
+
+// ── Master Supervisor Orchestrator Copilot Types ────────────────────────────
+export interface AgentExecutionTraceItem {
+  agentId: string;
+  agentName: string;
+  action: string;
+  status: "Completed" | "AttentionRequired" | "Failed" | "Bypassed";
+  isDeterministic: boolean;
+  latencyMs: number;
+  summary: string;
+  detailsJson?: string;
+  timestamp: string;
+}
+
+export interface SupervisorRecommendation {
+  actionType: string;
+  title: string;
+  rationale: string;
+  riskLevel: string;
+}
+
+export interface SupervisorChatResponse {
+  answer: string;
+  tone: string;
+  collaborationTrace: AgentExecutionTraceItem[];
+  recommendation?: SupervisorRecommendation;
+  suggestedFollowups: string[];
+  timestamp: string;
+}
+
+export interface SupervisorChatRequest {
+  query: string;
+  applicationId?: number;
+  serviceProcedureId?: number;
+  stage?: number;
+  platformContext?: "web" | "mobile";
+  history?: { role: string; content: string }[];
+}
+
+export function askSupervisorAgent(req: SupervisorChatRequest): Promise<SupervisorChatResponse> {
+  return apiFetch<SupervisorChatResponse>("/api/Orchestrator/chat", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(req),
+  });
+}
+

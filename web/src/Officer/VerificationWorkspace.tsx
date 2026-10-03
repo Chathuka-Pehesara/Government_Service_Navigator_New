@@ -20,6 +20,7 @@ import {
 import { Checkmark, Close, Document, ChevronLeft, ArrowRight, Warning, Money, TrashCan, Security, Task, CheckmarkFilled, WarningAltFilled } from "@carbon/icons-react";
 import AgentDraftPanel from "./AgentDraftPanel";
 import DocumentPreview from "./DocumentPreview";
+import SupervisorCopilotBubble from "./SupervisorCopilotBubble";
 import { getAgentDraft, generateAgentDraft, type AgentDraftView } from "./agentDraftApi";
 import { API_BASE_URL, ApiError } from "../utils/api";
 import { v } from "../utils/validation";
@@ -992,6 +993,15 @@ export default function VerificationWorkspace() {
                 enableCounter
               />
             </Modal>
+            <SupervisorCopilotBubble
+              applicationId={detail?.task.applicationId}
+              serviceName={detail?.task.serviceName ?? "Government Service"}
+              currentStage={detail?.task.currentStage ?? 1}
+              maxStages={detail?.task.maxStages ?? 1}
+              citizenName={detail?.task.citizenName ?? ""}
+              citizenNic={detail?.task.citizenNic ?? ""}
+              departmentName={detail?.task.department ?? "Government Department"}
+            />
           </main>
     </>
   );
