@@ -31,6 +31,7 @@ namespace Government_Service_Navigator.AgenticAi.Orchestration
         public string Query { get; set; } = string.Empty;
         public int? ApplicationId { get; set; }
         public int? ServiceProcedureId { get; set; }
+        public string? ServiceName { get; set; }
         public int? Stage { get; set; }
         public string PlatformContext { get; set; } = "web"; // "web" (Statutory/Official) | "mobile" (Citizen/User-Friendly)
         public List<SupervisorChatMessage>? History { get; set; }

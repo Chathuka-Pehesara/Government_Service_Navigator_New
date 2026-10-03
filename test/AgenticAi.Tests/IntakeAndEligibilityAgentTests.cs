@@ -120,6 +120,82 @@ namespace Government_Service_Navigator.AgenticAi.Tests
         }
 
         [Fact]
+        public async Task Intake_WhenVectorDbEmpty_ReturnsServiceNotFound_EvenIfLlmConfigured()
+        {
+            // Vector DB has 0 policy chunks
+            _retriever.Chunks.Clear();
+
+            var stubLlm = new StubLlmService
+            {
+                ResponseToReturn = """
+                {
+                    "recommendedService": "Duplicate Driving Licence",
+                    "requiredDocuments": ["National Identity Card", "Police Report"],
+                    "stepByStepPlan": ["Step 1: Report loss at police station", "Step 2: Submit application"]
+                }
+                """
+            };
+
+            var agent = new IntakePlanningAgent(_retriever, new StubEmbeddingService(), stubLlm);
+            var plan = await agent.GeneratePlanAsync(new IntakePlanRequest("I lost my driving license and need duplicate"));
+
+            Assert.Equal("Service Not Found", plan.RecommendedService);
+            Assert.Empty(plan.RequiredDocuments);
+            Assert.Contains("No official statutory policy", plan.StepByStepPlan[0]);
+        }
+
+        [Fact]
+        public async Task Intake_WhenVectorDbHasNoMatchingPolicy_RejectsLlmHallucination()
+        {
+            // Vector DB only has Passport chunks, but user asks about driving license
+            _retriever.Chunks.Clear();
+            _retriever.Chunks.Add(PassportChunk);
+
+            var stubLlm = new StubLlmService
+            {
+                ResponseToReturn = """
+                {
+                    "recommendedService": "Duplicate Driving Licence",
+                    "requiredDocuments": ["National Identity Card", "Police Report"],
+                    "stepByStepPlan": ["Step 1: Report loss", "Step 2: Submit form"]
+                }
+                """
+            };
+
+            var agent = new IntakePlanningAgent(_retriever, new StubEmbeddingService(), stubLlm);
+            var plan = await agent.GeneratePlanAsync(new IntakePlanRequest("I lost my driving license and need duplicate"));
+
+            Assert.Equal("Service Not Found", plan.RecommendedService);
+            Assert.Empty(plan.RequiredDocuments);
+            Assert.Contains("No official statutory policy", plan.StepByStepPlan[0]);
+        }
+
+        [Fact]
+        public async Task Intake_WhenLlmInventedServiceNotSubstantiatedInChunks_RejectsHallucination()
+        {
+            _retriever.Chunks.Clear();
+            _retriever.Chunks.Add(PassportChunk);
+
+            var stubLlm = new StubLlmService
+            {
+                ResponseToReturn = """
+                {
+                    "recommendedService": "Immigration VIP Express Card",
+                    "requiredDocuments": ["Gold Passport"],
+                    "stepByStepPlan": ["Pay VIP fee"]
+                }
+                """
+            };
+
+            var agent = new IntakePlanningAgent(_retriever, new StubEmbeddingService(), stubLlm);
+            var plan = await agent.GeneratePlanAsync(new IntakePlanRequest("I need passport renewal"));
+
+            // PassportChunk has "Passport Renewal & Application", NOT "Immigration VIP Express Card"
+            Assert.Equal("Service Not Found", plan.RecommendedService);
+            Assert.Empty(plan.RequiredDocuments);
+        }
+
+        [Fact]
         public async Task Eligibility_UsesCatalogDocuments_FlagsUnmatchedOnes_WithoutBlocking()
         {
             _retriever.Chunks.AddRange(new[] { VehicleChunk, PassportChunk });
