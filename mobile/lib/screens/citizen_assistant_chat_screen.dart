@@ -496,7 +496,7 @@ class _CitizenAssistantChatScreenState extends State<CitizenAssistantChatScreen>
                 ),
                 icon: const Icon(CupertinoIcons.doc_checkmark_fill, size: 14),
                 label: const Text(
-                  'Upload & Audit Documents (Agent 2)',
+                  'Verify Supporting Documents',
                   style: TextStyle(fontSize: 11.5, fontWeight: FontWeight.w600),
                 ),
                 onPressed: () {
