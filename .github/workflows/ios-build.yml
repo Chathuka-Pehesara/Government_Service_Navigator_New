@@ -17,9 +17,13 @@ concurrency:
   group: ios-build-${{ github.ref }}
   cancel-in-progress: true
 
+env:
+  # Citizen builds talk to the hosted backend, never localhost.
+  API_URL: https://gsn-api-dpa2agb6c5h7gyar.southeastasia-01.azurewebsites.net
+
 jobs:
   build:
-    name: Build iOS App
+    name: Build LankaServe iOS App
     runs-on: macos-latest
     defaults:
       run:
@@ -47,41 +51,43 @@ jobs:
       - name: Precache iOS artifacts
         run: flutter precache --ios
 
-      # Generates Generated.xcconfig (and ios/Podfile only when a plugin still
-      # needs CocoaPods) so the workspace can be built with xcodebuild.
-      - name: Configure iOS project
-        run: flutter build ios --config-only --simulator --debug
-
-      # Plugins are resolved through Swift Package Manager when they all support
-      # it, in which case Flutter writes no Podfile and there is nothing to install.
-      - name: Install CocoaPods
+      # Release build for real iPhones. It is unsigned, so it must be signed
+      # (Apple Developer account, Sideloadly, AltStore, etc.) before installing.
+      # flutter build runs pod install itself when a Podfile is needed.
+      - name: Build iOS App (device, release)
         run: |
-          if [ -f ios/Podfile ]; then
-            cd ios && pod install
-          else
-            echo "No Podfile generated - plugins use Swift Package Manager, skipping pod install."
-          fi
+          flutter build ios --release --no-codesign \
+            --build-number=${{ github.run_number }} \
+            --dart-define=API_URL=${{ env.API_URL }}
 
-      # Flutter only supports Debug builds on the simulator (Release is AOT for devices).
-      - name: Build iOS App
+      - name: Package unsigned IPA
         run: |
-          cd ios
-          xcodebuild -workspace Runner.xcworkspace \
-            -scheme Runner \
-            -configuration Debug \
-            -sdk iphonesimulator \
-            -destination 'generic/platform=iOS Simulator' \
-            -derivedDataPath ${{ github.workspace }}/derivedData \
-            CODE_SIGNING_ALLOWED=NO \
-            build
+          mkdir -p build/ipa/Payload
+          cp -R build/ios/iphoneos/Runner.app build/ipa/Payload/
+          cd build/ipa
+          zip -qr LankaServe-unsigned.ipa Payload
 
-      - name: Zip the App
-        working-directory: ${{ github.workspace }}/derivedData/Build/Products/Debug-iphonesimulator
-        run: zip -qr Runner.zip Runner.app
+      # Flutter only supports Debug builds on the simulator.
+      - name: Build iOS App (simulator)
+        run: |
+          flutter build ios --simulator --debug \
+            --build-number=${{ github.run_number }} \
+            --dart-define=API_URL=${{ env.API_URL }}
 
-      - name: Upload Artifact
+      - name: Zip the Simulator App
+        working-directory: mobile/build/ios/iphonesimulator
+        run: zip -qr LankaServe-simulator.zip Runner.app
+
+      - name: Upload IPA
+        uses: actions/upload-artifact@v4
+        with:
+          name: ios-ipa-${{ github.run_number }}
+          path: mobile/build/ipa/LankaServe-unsigned.ipa
+          retention-days: 14
+
+      - name: Upload Simulator App
         uses: actions/upload-artifact@v4
         with:
           name: ios-simulator-app-${{ github.run_number }}
-          path: derivedData/Build/Products/Debug-iphonesimulator/Runner.zip
+          path: mobile/build/ios/iphonesimulator/LankaServe-simulator.zip
           retention-days: 14
