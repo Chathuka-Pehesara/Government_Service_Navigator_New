@@ -24,11 +24,15 @@ namespace Government_Service_Navigator.Backend.Services
                 .Distinct()
                 .ToList();
 
-            if (normalizedNics.Count == 0) return;
+            if (normalizedNics.Count > 0)
+            {
+                // Invalidate before notifying, otherwise the phone refetches and gets the old cached copy
+                await _cache.RemoveByTagAsync(normalizedNics.Select(CacheKeys.CitizenTag), cancellationToken);
+                await _hub.Clients.Users(normalizedNics).SendAsync("applicationsChanged", cancellationToken);
+            }
 
-            // Invalidate before notifying, otherwise the phone refetches and gets the old cached copy
-            await _cache.RemoveByTagAsync(normalizedNics.Select(CacheKeys.CitizenTag), cancellationToken);
-            await _hub.Clients.Users(normalizedNics).SendAsync("applicationsChanged", cancellationToken);
+            // Broadcast to All so connected mobile clients immediately refresh without being dropped by claim mismatches
+            await _hub.Clients.All.SendAsync("applicationsChanged", cancellationToken);
         }
 
         public async Task RefundsChangedAsync(IReadOnlyDictionary<string, List<int>> refundIdsByNic, CancellationToken cancellationToken = default)

@@ -533,7 +533,7 @@ namespace Government_Service_Navigator.Backend.Controllers
                             .OrderByDescending(p => p.Id)
                             .FirstOrDefaultAsync();
 
-                        if (payment == null || payment.Status != "Paid")
+                        if (payment == null || (payment.Status != "Paid" && payment.Status != "Verified"))
                         {
                             return BadRequest(new 
                             { 
@@ -732,7 +732,7 @@ namespace Government_Service_Navigator.Backend.Controllers
                     .OrderByDescending(p => p.Id)
                     .FirstOrDefaultAsync();
 
-                if (payment == null || payment.Status != "Paid")
+                if (payment == null || (payment.Status != "Paid" && payment.Status != "Verified"))
                 {
                     return BadRequest(new 
                     { 

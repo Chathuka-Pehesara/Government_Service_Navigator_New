@@ -87,7 +87,8 @@ class RealtimeConnection with WidgetsBindingObserver {
 
   void _scheduleRetry() {
     if (_disposed) return;
-    if (WidgetsBinding.instance.lifecycleState != AppLifecycleState.resumed) return;
+    final state = WidgetsBinding.instance.lifecycleState;
+    if (state != null && state != AppLifecycleState.resumed) return;
     _retryTimer?.cancel();
     _retryTimer = Timer(_retryDelay, start);
   }
