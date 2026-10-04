@@ -3,6 +3,7 @@ import 'package:flutter/material.dart';
 import '../services/supervisor_agent_service.dart';
 import '../theme/app_colors.dart';
 import 'agent2_statutory_auditor_screen.dart';
+import 'application_form_screen.dart';
 import 'booking_options_screen.dart';
 
 class ChatMessageItem {
@@ -46,10 +47,14 @@ class _CitizenAssistantChatScreenState extends State<CitizenAssistantChatScreen>
   final ScrollController _scrollController = ScrollController();
   final List<ChatMessageItem> _messages = [];
   bool _isLoading = false;
+  String? _activeServiceName;
+  int? _activeServiceProcedureId;
 
   @override
   void initState() {
     super.initState();
+    _activeServiceName = widget.serviceName;
+    _activeServiceProcedureId = widget.serviceProcedureId;
     _messages.add(
       ChatMessageItem(
         text: widget.serviceName != null
@@ -118,13 +123,19 @@ class _CitizenAssistantChatScreenState extends State<CitizenAssistantChatScreen>
       final res = await SupervisorAgentService.ask(
         query: text,
         applicationId: widget.applicationId,
-        serviceProcedureId: widget.serviceProcedureId,
-        serviceName: widget.serviceName,
+        serviceProcedureId: _activeServiceProcedureId ?? widget.serviceProcedureId,
+        serviceName: _activeServiceName ?? widget.serviceName,
         stage: widget.stage,
         history: history,
       );
 
       setState(() {
+        if (res.serviceName != null && res.serviceName!.isNotEmpty) {
+          _activeServiceName = res.serviceName;
+        }
+        if (res.serviceProcedureId != null && res.serviceProcedureId! > 0) {
+          _activeServiceProcedureId = res.serviceProcedureId;
+        }
         _messages.add(ChatMessageItem(
           text: res.answer,
           isUser: false,
@@ -429,6 +440,11 @@ class _CitizenAssistantChatScreenState extends State<CitizenAssistantChatScreen>
       borderColor = const Color(0xFFBAE6FD);
       textColor = const Color(0xFF0369A1);
       icon = CupertinoIcons.info_circle_fill;
+    } else if (rec.actionType == 'CheckEligibility' || rec.actionType == 'AuditEligibility' || rec.actionType == 'ReviewEligibility') {
+      bgColor = const Color(0xFFEFF6FF);
+      borderColor = const Color(0xFF93C5FD);
+      textColor = const Color(0xFF1D4ED8);
+      icon = CupertinoIcons.checkmark_shield_fill;
     } else if (rec.actionType == 'UploadDocument' || rec.actionType == 'RequestRevision') {
       bgColor = const Color(0xFFFFFBEB);
       borderColor = const Color(0xFFFDE68A);
@@ -441,111 +457,223 @@ class _CitizenAssistantChatScreenState extends State<CitizenAssistantChatScreen>
       icon = CupertinoIcons.checkmark_circle_fill;
     }
 
-    return Container(
-      padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
-      decoration: BoxDecoration(
-        color: bgColor,
-        borderRadius: BorderRadius.circular(8),
-        border: Border.all(color: borderColor),
-      ),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          Row(
-            children: [
-              Icon(icon, color: textColor, size: 16),
-              const SizedBox(width: 8),
-              Expanded(
-                child: Text(
-                  rec.title,
-                  style: TextStyle(
-                    fontSize: 12.5,
-                    fontWeight: FontWeight.w600,
-                    color: textColor,
-                  ),
-                ),
+    final currentServiceName = _activeServiceName ?? widget.serviceName ?? 'Certificate of Police Clearance';
+    final int currentServiceId = (_activeServiceProcedureId != null && _activeServiceProcedureId! > 0)
+        ? _activeServiceProcedureId!
+        : (widget.serviceProcedureId != null && widget.serviceProcedureId! > 0
+            ? widget.serviceProcedureId!
+            : 37);
+
+    final bool isEligibilityAction = rec.actionType == 'CheckEligibility' ||
+        rec.actionType == 'AuditEligibility' ||
+        rec.actionType == 'ReviewEligibility' ||
+        rec.actionType == 'UploadDocument' ||
+        rec.actionType == 'RequestRevision';
+
+    final bool isBookAppointment = rec.actionType == 'BookAppointment';
+
+    void launchEligibilityCheck() {
+      Navigator.push(
+        context,
+        MaterialPageRoute(
+          builder: (context) => Agent2StatutoryAuditorScreen(
+            serviceId: currentServiceId,
+            serviceName: currentServiceName,
+          ),
+        ),
+      );
+    }
+
+    void launchApplication() {
+      Navigator.push(
+        context,
+        MaterialPageRoute(
+          builder: (context) => ApplicationFormScreen(
+            serviceId: currentServiceId,
+            serviceName: currentServiceName,
+            stageNumber: widget.stage ?? 1,
+            applicationId: widget.applicationId,
+          ),
+        ),
+      );
+    }
+
+    void launchBooking() {
+      Navigator.push(
+        context,
+        MaterialPageRoute(
+          builder: (context) => BookingOptionsScreen(
+            applicationId: widget.applicationId?.toString() ?? '1',
+            serviceName: currentServiceName,
+          ),
+        ),
+      );
+    }
+
+    final VoidCallback primaryCardTap = isEligibilityAction
+        ? launchEligibilityCheck
+        : (isBookAppointment ? launchBooking : launchApplication);
+
+    return Material(
+      color: Colors.transparent,
+      child: InkWell(
+        onTap: primaryCardTap,
+        borderRadius: BorderRadius.circular(10),
+        child: Container(
+          padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 12),
+          decoration: BoxDecoration(
+            color: bgColor,
+            borderRadius: BorderRadius.circular(10),
+            border: Border.all(color: borderColor),
+            boxShadow: [
+              BoxShadow(
+                color: Colors.black.withValues(alpha: 0.03),
+                blurRadius: 6,
+                offset: const Offset(0, 2),
               ),
             ],
           ),
-          if (rec.rationale.isNotEmpty) ...[
-            const SizedBox(height: 4),
-            Padding(
-              padding: const EdgeInsets.only(left: 24.0),
-              child: Text(
-                rec.rationale,
-                style: TextStyle(
-                  fontSize: 11.5,
-                  height: 1.35,
-                  color: textColor.withValues(alpha: 0.9),
-                ),
-              ),
-            ),
-          ],
-          if ((rec.actionType == 'UploadDocument' || rec.actionType == 'RequestRevision') && (widget.serviceProcedureId != null || widget.serviceName != null)) ...[
-            const SizedBox(height: 8),
-            SizedBox(
-              width: double.infinity,
-              height: 34,
-              child: ElevatedButton.icon(
-                style: ElevatedButton.styleFrom(
-                  backgroundColor: const Color(0xFFD97706),
-                  foregroundColor: Colors.white,
-                  elevation: 0,
-                  shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(6)),
-                  padding: const EdgeInsets.symmetric(horizontal: 10),
-                ),
-                icon: const Icon(CupertinoIcons.doc_checkmark_fill, size: 14),
-                label: const Text(
-                  'Verify Supporting Documents',
-                  style: TextStyle(fontSize: 11.5, fontWeight: FontWeight.w600),
-                ),
-                onPressed: () {
-                  Navigator.push(
-                    context,
-                    MaterialPageRoute(
-                      builder: (context) => Agent2StatutoryAuditorScreen(
-                        serviceId: widget.serviceProcedureId ?? 24,
-                        serviceName: widget.serviceName ?? 'National Identity Card (NIC) Issuance & Replacement',
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Row(
+                children: [
+                  Icon(icon, color: textColor, size: 18),
+                  const SizedBox(width: 8),
+                  Expanded(
+                    child: Text(
+                      rec.title,
+                      style: TextStyle(
+                        fontSize: 13,
+                        fontWeight: FontWeight.w700,
+                        color: textColor,
                       ),
                     ),
-                  );
-                },
+                  ),
+                  Icon(CupertinoIcons.chevron_right, size: 14, color: textColor.withValues(alpha: 0.7)),
+                ],
               ),
-            ),
-          ],
-          if (rec.actionType == 'BookAppointment' && widget.applicationId != null) ...[
-            const SizedBox(height: 8),
-            SizedBox(
-              width: double.infinity,
-              height: 32,
-              child: ElevatedButton.icon(
-                style: ElevatedButton.styleFrom(
-                  backgroundColor: AppColors.primary,
-                  foregroundColor: Colors.white,
-                  elevation: 0,
-                  shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(6)),
-                  padding: const EdgeInsets.symmetric(horizontal: 10),
+              if (rec.rationale.isNotEmpty) ...[
+                const SizedBox(height: 6),
+                Padding(
+                  padding: const EdgeInsets.only(left: 26.0),
+                  child: Text(
+                    rec.rationale,
+                    style: TextStyle(
+                      fontSize: 12,
+                      height: 1.4,
+                      color: textColor.withValues(alpha: 0.95),
+                    ),
+                  ),
                 ),
-                icon: const Icon(CupertinoIcons.calendar, size: 14),
-                label: const Text(
-                  'Book Counter Appointment',
-                  style: TextStyle(fontSize: 11, fontWeight: FontWeight.w600),
-                ),
-                onPressed: () {
-                  Navigator.push(
-                    context,
-                    MaterialPageRoute(
-                      builder: (context) => BookingOptionsScreen(
-                        applicationId: widget.applicationId.toString(),
-                        serviceName: widget.serviceName ?? 'Government Service',
+              ],
+
+              // Action: For all pre-application service inquiries, require Launch Eligibility Check UI first
+              if (isBookAppointment) ...[
+                const SizedBox(height: 10),
+                Row(
+                  children: [
+                    Expanded(
+                      child: ElevatedButton.icon(
+                        style: ElevatedButton.styleFrom(
+                          backgroundColor: AppColors.primary,
+                          foregroundColor: Colors.white,
+                          elevation: 0,
+                          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
+                          padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 10),
+                        ),
+                        icon: const Icon(CupertinoIcons.calendar, size: 15),
+                        label: const Text(
+                          'Book Counter Appointment',
+                          style: TextStyle(fontSize: 12, fontWeight: FontWeight.w600),
+                        ),
+                        onPressed: launchBooking,
                       ),
                     ),
-                  );
-                },
-              ),
-            ),
-          ],
-        ],
+                    const SizedBox(width: 8),
+                    OutlinedButton.icon(
+                      style: OutlinedButton.styleFrom(
+                        foregroundColor: const Color(0xFF1D4ED8),
+                        side: const BorderSide(color: Color(0xFF1D4ED8), width: 1.2),
+                        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
+                        padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 10),
+                      ),
+                      icon: const Icon(CupertinoIcons.checkmark_shield, size: 14),
+                      label: const Text(
+                        'Audit',
+                        style: TextStyle(fontSize: 12, fontWeight: FontWeight.w600),
+                      ),
+                      onPressed: launchEligibilityCheck,
+                    ),
+                  ],
+                ),
+              ] else if (widget.applicationId != null) ...[
+                // If citizen has an existing submitted/draft application
+                const SizedBox(height: 10),
+                Row(
+                  children: [
+                    Expanded(
+                      child: OutlinedButton.icon(
+                        style: OutlinedButton.styleFrom(
+                          foregroundColor: const Color(0xFF1D4ED8),
+                          side: const BorderSide(color: Color(0xFF1D4ED8), width: 1.2),
+                          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
+                          padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 10),
+                        ),
+                        icon: const Icon(CupertinoIcons.checkmark_shield, size: 15),
+                        label: const Text(
+                          'Eligibility Audit UI',
+                          style: TextStyle(fontSize: 12, fontWeight: FontWeight.w600),
+                        ),
+                        onPressed: launchEligibilityCheck,
+                      ),
+                    ),
+                    const SizedBox(width: 8),
+                    Expanded(
+                      child: ElevatedButton.icon(
+                        style: ElevatedButton.styleFrom(
+                          backgroundColor: AppColors.primary,
+                          foregroundColor: Colors.white,
+                          elevation: 0,
+                          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
+                          padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 10),
+                        ),
+                        icon: const Icon(CupertinoIcons.doc_text, size: 15),
+                        label: const Text(
+                          'View Application',
+                          style: TextStyle(fontSize: 12, fontWeight: FontWeight.w600),
+                        ),
+                        onPressed: launchApplication,
+                      ),
+                    ),
+                  ],
+                ),
+              ] else ...[
+                // Statutory Gatekeeper: Citizen must verify statutory eligibility before starting application
+                const SizedBox(height: 10),
+                SizedBox(
+                  width: double.infinity,
+                  height: 40,
+                  child: ElevatedButton.icon(
+                    style: ElevatedButton.styleFrom(
+                      backgroundColor: const Color(0xFF1D4ED8),
+                      foregroundColor: Colors.white,
+                      elevation: 0,
+                      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
+                      padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
+                    ),
+                    icon: const Icon(CupertinoIcons.checkmark_shield_fill, size: 18),
+                    label: const Text(
+                      'Launch Eligibility Check UI',
+                      style: TextStyle(fontSize: 13, fontWeight: FontWeight.bold),
+                    ),
+                    onPressed: launchEligibilityCheck,
+                  ),
+                ),
+              ],
+            ],
+          ),
+        ),
       ),
     );
   }

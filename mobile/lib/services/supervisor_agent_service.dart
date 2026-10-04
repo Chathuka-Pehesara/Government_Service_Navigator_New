@@ -1,4 +1,5 @@
 import 'dart:convert';
+import 'package:flutter/foundation.dart';
 import 'package:http/http.dart' as http;
 import '../config/app_config.dart';
 
@@ -63,6 +64,8 @@ class SupervisorResponseModel {
   final List<AgentExecutionTraceItemModel> collaborationTrace;
   final SupervisorRecommendationModel? recommendation;
   final List<String> suggestedFollowups;
+  final String? serviceName;
+  final int? serviceProcedureId;
 
   SupervisorResponseModel({
     required this.answer,
@@ -70,6 +73,8 @@ class SupervisorResponseModel {
     required this.collaborationTrace,
     this.recommendation,
     required this.suggestedFollowups,
+    this.serviceName,
+    this.serviceProcedureId,
   });
 
   factory SupervisorResponseModel.fromJson(Map<String, dynamic> json) {
@@ -85,6 +90,8 @@ class SupervisorResponseModel {
       suggestedFollowups: (json['suggestedFollowups'] as List? ?? [])
           .map((f) => f.toString())
           .toList(),
+      serviceName: json['serviceName'] as String?,
+      serviceProcedureId: json['serviceProcedureId'] as int?,
     );
   }
 }
@@ -95,11 +102,13 @@ class SupervisorAgentService {
     final list = <String>[primary];
     const local1 = 'http://localhost:5119/api/orchestrator/chat';
     const local2 = 'http://127.0.0.1:5119/api/orchestrator/chat';
-    const emulator = 'http://10.0.2.2:5119/api/orchestrator/chat';
 
     if (!list.contains(local1)) list.add(local1);
     if (!list.contains(local2)) list.add(local2);
-    if (!list.contains(emulator)) list.add(emulator);
+    if (!kIsWeb) {
+      const emulator = 'http://10.0.2.2:5119/api/orchestrator/chat';
+      if (!list.contains(emulator)) list.add(emulator);
+    }
     return list;
   }
 

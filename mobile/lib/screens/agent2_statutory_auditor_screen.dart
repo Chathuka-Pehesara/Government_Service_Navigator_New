@@ -7,6 +7,7 @@ import '../services/eligibility_agent_service.dart';
 import '../theme/app_colors.dart';
 import '../utils/validators.dart';
 import '../providers/catalog_providers.dart';
+import 'application_form_screen.dart';
 
 class Agent2StatutoryAuditorScreen extends ConsumerStatefulWidget {
   final int serviceId;
@@ -14,8 +15,8 @@ class Agent2StatutoryAuditorScreen extends ConsumerStatefulWidget {
 
   const Agent2StatutoryAuditorScreen({
     super.key,
-    this.serviceId = 24,
-    this.serviceName = 'National Identity Card (NIC) Issuance & Replacement',
+    this.serviceId = 37,
+    this.serviceName = 'Certificate of Police Clearance',
   });
 
   @override
@@ -27,6 +28,7 @@ class _Agent2StatutoryAuditorScreenState
     extends ConsumerState<Agent2StatutoryAuditorScreen> {
   late String _selectedService;
   late int _serviceId;
+  List<({int id, String name})> _availableServices = const [];
 
   int _age = 25;
   String _citizenship = 'Sri Lankan';
@@ -196,6 +198,18 @@ class _Agent2StatutoryAuditorScreenState
   Widget build(BuildContext context) {
     final servicesAsync = ref.watch(servicesProvider);
     final allServices = _getAvailableServices(servicesAsync.asData?.value);
+    _availableServices = allServices;
+
+    if (allServices.isNotEmpty && !allServices.any((s) => s.id == _serviceId)) {
+      final matchingService = allServices.firstWhere(
+        (s) => s.name.trim().toLowerCase() == _selectedService.trim().toLowerCase() ||
+               s.name.toLowerCase().contains(_selectedService.toLowerCase()) ||
+               _selectedService.toLowerCase().contains(s.name.toLowerCase()),
+        orElse: () => allServices.first,
+      );
+      _serviceId = matchingService.id;
+      _selectedService = matchingService.name;
+    }
 
     return Scaffold(
       backgroundColor: const Color(0xFFF6F8FB),
@@ -1336,6 +1350,53 @@ class _Agent2StatutoryAuditorScreenState
                   ),
                 )),
           ],
+
+          // Direct Apply Button when statutory criteria and documents are satisfied
+          if (isFullyEligible) ...[
+            const SizedBox(height: 16),
+            SizedBox(
+              width: double.infinity,
+              height: 44,
+              child: ElevatedButton.icon(
+                style: ElevatedButton.styleFrom(
+                  backgroundColor: const Color(0xFF16A34A),
+                  foregroundColor: Colors.white,
+                  elevation: 2,
+                  shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
+                  padding: const EdgeInsets.symmetric(horizontal: 16),
+                ),
+                icon: const Icon(CupertinoIcons.square_pencil, size: 18),
+                label: const Text(
+                  'Apply for this Service Now',
+                  style: TextStyle(fontSize: 14, fontWeight: FontWeight.bold),
+                ),
+                onPressed: () {
+                  int effectiveId = _serviceId;
+                  if (_availableServices.isNotEmpty) {
+                    final matchingService = _availableServices.firstWhere(
+                      (s) => s.id == _serviceId ||
+                             s.name.trim().toLowerCase() == _selectedService.trim().toLowerCase() ||
+                             s.name.toLowerCase().contains(_selectedService.toLowerCase()) ||
+                             _selectedService.toLowerCase().contains(s.name.toLowerCase()),
+                      orElse: () => _availableServices.first,
+                    );
+                    effectiveId = matchingService.id;
+                  }
+
+                  Navigator.push(
+                    context,
+                    MaterialPageRoute(
+                      builder: (context) => ApplicationFormScreen(
+                        serviceId: effectiveId,
+                        serviceName: _selectedService,
+                        stageNumber: 1,
+                      ),
+                    ),
+                  );
+                },
+              ),
+            ),
+          ],
         ],
       ),
     );
@@ -1511,16 +1572,19 @@ class _Agent2StatutoryAuditorScreenState
           children: [
             const Icon(CupertinoIcons.exclamationmark_triangle_fill, size: 15, color: Color(0xFFD97706)),
             const SizedBox(width: 6),
-            const Text(
-              'Required Documents to Complete Application',
-              style: TextStyle(
-                fontWeight: FontWeight.w700,
-                color: Color(0xFF0F172A),
-                fontSize: 13,
-                letterSpacing: -0.2,
+            const Expanded(
+              child: Text(
+                'Required Documents to Complete Application',
+                style: TextStyle(
+                  fontWeight: FontWeight.w700,
+                  color: Color(0xFF0F172A),
+                  fontSize: 13,
+                  letterSpacing: -0.2,
+                ),
+                overflow: TextOverflow.ellipsis,
               ),
             ),
-            const Spacer(),
+            const SizedBox(width: 6),
             Text(
               '${missingDocs.length} pending',
               style: const TextStyle(
