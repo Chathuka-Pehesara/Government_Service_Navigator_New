@@ -251,7 +251,10 @@ namespace Government_Service_Navigator.AgenticAi.Orchestration
                     caseContext.CitizenNic,
                     serviceId,
                     caseContext.ApplicationId,
-                    cancellationToken);
+                    caseContext.CitizenAge,
+                    caseContext.UploadedDocumentNames,
+                    stage: currentStage,
+                    cancellationToken: cancellationToken);
 
                 trace.Add(safetyOutcome.Trace);
                 duplicateResult = safetyOutcome.Data;
@@ -340,7 +343,7 @@ namespace Government_Service_Navigator.AgenticAi.Orchestration
             {
                 bool hasMissingDocs = agent2Result?.MissingDocuments.Count > 0;
                 bool hasIneligibility = agent2Result != null && (!agent2Result.IsEligible || agent2Result.MissingCriteria.Count > 0);
-                bool hasAgent4Issues = trace.Any(t => t.AgentId == "agent-4" && (t.Status == "AttentionRequired" || t.Summary.Contains("SCHEMA", StringComparison.OrdinalIgnoreCase) || t.Summary.Contains("DOC-", StringComparison.OrdinalIgnoreCase)));
+                bool hasAgent4Issues = trace.Any(t => t.AgentId == "agent-4" && (t.Status == "AttentionRequired" || t.Summary.Contains("SCHEMA-", StringComparison.OrdinalIgnoreCase) || t.Summary.Contains("DOC-", StringComparison.OrdinalIgnoreCase) || t.Summary.Contains("SAFETY-", StringComparison.OrdinalIgnoreCase)));
                 bool isExplicitlyNonCompliant = answer.Contains("Non-compliant", StringComparison.OrdinalIgnoreCase)
                                                 || answer.Contains("fails initial statutory compliance", StringComparison.OrdinalIgnoreCase)
                                                 || answer.Contains("Conflict Identified", StringComparison.OrdinalIgnoreCase)
@@ -360,7 +363,14 @@ namespace Government_Service_Navigator.AgenticAi.Orchestration
                 else if (hasMissingDocs || hasIneligibility || hasAgent4Issues || isExplicitlyNonCompliant)
                 {
                     var issues = new List<string>();
-                    if (hasAgent4Issues) issues.Add("Identity document absent or age anomaly detected");
+                    if (hasAgent4Issues)
+                    {
+                        var agent4Trace = trace.FirstOrDefault(t => t.AgentId == "agent-4");
+                        var msg = agent4Trace != null && !string.IsNullOrWhiteSpace(agent4Trace.Summary)
+                            ? agent4Trace.Summary
+                            : "Safety schema or document anomaly detected";
+                        issues.Add(msg);
+                    }
                     if (hasMissingDocs) issues.Add($"Missing: {string.Join(", ", agent2Result!.MissingDocuments)}");
                     if (hasIneligibility) issues.Add($"Criteria: {string.Join(", ", agent2Result!.MissingCriteria)}");
 
@@ -482,7 +492,7 @@ namespace Government_Service_Navigator.AgenticAi.Orchestration
                     "- ABSOLUTELY NO INTERNAL AI JARGON: NEVER mention internal AI architecture such as 'sub-agents', 'Agent 1', 'Agent 2', 'Agent 3', 'Agent 4', 'deterministic verification', 'cognitive AI assessment', 'semantic document interpretation', 'schema codes (like SCHEMA-AGE-002, DOC-002)', or 'algorithmic fee math'. A verification officer needs practical, plain-language facts, not system logs.\n" +
                     "- STRUCTURE CASE BRIEFINGS CLEARLY:\n" +
                     "  1. Case Overview: 1-2 sentences stating the applicant, service, and immediate status (e.g. ⚠️ Action Required — Incomplete Submission, or ✅ Ready for Determination).\n" +
-                    "  2. Key Verification Findings: Clear, scannable bullet points detailing what is missing or problematic, and what was verified successfully (e.g. 'Missing Document: National Identity Card (NIC) was not uploaded', 'Data Discrepancy: Applicant age is entered as 0 years (minimum required age is 16)', 'Duplicate Check: Clean — no duplicate application found', 'Stage 1 Statutory Fee: LKR 0.00').\n" +
+                    "  2. Key Verification Findings: Clear, scannable bullet points detailing what is missing or problematic, and what was verified successfully (e.g. 'Missing Document: National Identity Card (NIC) was not uploaded', 'Data Discrepancy: Applicant age is entered as 0 years (minimum required age is 16)', 'Duplicate Check: Clean — no duplicate application found', 'Stage Statutory Fee: LKR [reconciled fee]').\n" +
                     "  3. Recommended Officer Action: 2-3 concrete, actionable steps for the officer (e.g. 'Request the applicant to upload a clear copy of their NIC (front & back)', 'Verify the applicant's date of birth before granting approval').\n" +
                     "- DIRECT ANSWERS TO QUESTIONS: When the officer asks a specific question (e.g., about fees, rules, or duplicate checks), answer directly, concisely, and practically in 1-2 paragraphs in plain terms without re-pasting system logs or internal engineering terms.\n" +
                     "- DETERMINATION INTEGRITY: If any required document is missing or any eligibility rule is violated, conclude clearly that the application CANNOT be approved yet and requires evidentiary revision. Never say all rules are satisfied when deficiencies exist.\n" +
@@ -510,14 +520,29 @@ namespace Government_Service_Navigator.AgenticAi.Orchestration
                 ? $"\nOFFICIAL INTAKE ROADMAP:\n- Recommended Service: {agent1.RecommendedService}\n- Mandatory Documents: {string.Join(", ", agent1.RequiredDocuments)}\n- Steps: {string.Join(" -> ", agent1.StepByStepPlan)}\n"
                 : "";
 
+            decimal activeStageFee = fee?.TotalAmount ?? 0m;
+            if (activeStageFee == 0 && caseContext != null && caseContext.PaidAmount > 0)
+            {
+                activeStageFee = caseContext.PaidAmount;
+            }
+
+            string paymentStatusNote = caseContext != null && caseContext.PaidAmount > 0
+                ? (caseContext.IsPaymentVerified ? " (Payment Confirmed)" : " (Deposit Slip Uploaded — Awaiting Finance Audit)")
+                : "";
+
             var userPrompt =
                 $"PLATFORM: {(isWeb ? "Government Verification Officer Workspace" : "Citizen Mobile Application")}\n" +
                 $"SERVICE: {serviceName} (Stage {currentStage})\n" +
                 $"CITIZEN NIC: {caseContext?.CitizenNic ?? "N/A"} | APPLICANT: {caseContext?.CitizenName ?? "N/A"}\n" +
+                $"ACTIVE STAGE STATUTORY FEE: LKR {activeStageFee:N2}{paymentStatusNote}\n" +
                 $"VERIFICATION AUDIT FINDINGS:\n{findingsSummary}\n" +
                 intakeSummary + "\n" +
                 $"OFFICER QUERY: \"{request.Query}\"\n\n" +
-                "Respond to the officer query adhering strictly to your human-friendly advisory directives. Translate any technical findings (such as missing documents or age bounds) into plain, professional administrative language.";
+                $"Respond to the officer query adhering strictly to your human-friendly advisory directives:\n" +
+                $"- CASE OVERVIEW: State applicant name, NIC, service, and immediate status. If any document is a generic camera/WhatsApp capture needing visual audit, or payment is pending finance audit, report status as '⚠️ Action Required — Manual Document Verification & Finance Audit Required'. Never claim Ready for Approval if generic uploads or unverified payments exist.\n" +
+                $"- STATUTORY FEE: State the exact Stage Statutory Fee given above: LKR {activeStageFee:N2}{paymentStatusNote}. Never state LKR 0.00 unless the active stage fee is truly 0.00. Never say fee exemption or zero fee.\n" +
+                $"- FINDINGS: Explicitly distinguish between documents whose filenames match the requirement (e.g. NIC) and generic uploads that require officer visual verification (e.g. Birth Certificate uploaded as a camera/WhatsApp capture).\n" +
+                $"- RECOMMENDED ACTION: Provide practical, concrete next steps (e.g. '1. Visually inspect the attached file to confirm it is an authentic Birth Certificate. 2. Verify statutory fee payment of LKR {activeStageFee:N2}.').";
 
             var aiContent = await _llmService!.GenerateChatCompletionAsync(systemPrompt, userPrompt, jsonMode: false, cancellationToken);
             if (!string.IsNullOrWhiteSpace(aiContent))

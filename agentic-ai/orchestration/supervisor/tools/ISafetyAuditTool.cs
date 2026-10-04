@@ -14,6 +14,10 @@ namespace Government_Service_Navigator.AgenticAi.Orchestration.Supervisor.Tools
             string citizenNic,
             int serviceId,
             int applicationId,
+            int? citizenAge = null,
+            List<string>? attachedDocumentNames = null,
+            int? stage = null,
+            List<string>? requiredDocuments = null,
             CancellationToken cancellationToken = default);
     }
 }

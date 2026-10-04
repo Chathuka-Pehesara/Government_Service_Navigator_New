@@ -34,7 +34,9 @@ namespace Government_Service_Navigator.AgenticAi.Orchestration.Supervisor.Tools
                 var feeResult = await _feeTool.CalculateAsync(serviceId, expressProcessing, asOf: null, stage: stage, cancellationToken: cancellationToken);
                 sw.Stop();
 
-                var tariffDesc = feeResult.LineItems.FirstOrDefault()?.FeeType ?? "Statutory Fee";
+                var tariffDesc = feeResult.TotalAmount > 0
+                    ? (feeResult.LineItems.FirstOrDefault()?.FeeType ?? "Statutory Fee")
+                    : "No statutory fee required for this stage";
                 var trace = new AgentExecutionTraceItem
                 {
                     AgentId = "agent-3",

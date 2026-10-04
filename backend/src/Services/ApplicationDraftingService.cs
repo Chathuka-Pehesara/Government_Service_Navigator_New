@@ -60,7 +60,26 @@ public class ApplicationDraftingService : IApplicationDraftingService
         var stored = await _context.AgentDrafts.FirstOrDefaultAsync(d => d.ApplicationId == applicationId, cancellationToken);
         if (stored == null) return null;
 
-        try { return JsonSerializer.Deserialize<AgentDraftView>(stored.DraftJson, JsonOptions); }
+        try 
+        { 
+            var draft = JsonSerializer.Deserialize<AgentDraftView>(stored.DraftJson, JsonOptions);
+            if (draft == null) return null;
+
+            // In multi-stage workflows, check if stored draft matches current submission stage
+            var submission = await _context.ApplicationSubmissions
+                .Where(s => s.Id == applicationId)
+                .Select(s => new { s.CurrentStage })
+                .FirstOrDefaultAsync(cancellationToken);
+
+            var activeStage = submission?.CurrentStage > 0 ? submission.CurrentStage : 1;
+            if (draft.Action?.Draft?.Stage != null && draft.Action.Draft.Stage != activeStage)
+            {
+                // Stale stage draft — caller will regenerate for the active stage!
+                return null;
+            }
+
+            return draft;
+        }
         catch (JsonException) { return null; } // stale shape — caller regenerates
     }
 
@@ -126,18 +145,26 @@ public class ApplicationDraftingService : IApplicationDraftingService
             .Select(f => f.Label.Trim().TrimEnd(':').Trim())
             .ToHashSet(StringComparer.OrdinalIgnoreCase);
 
-        var stageProvidedDocuments = (currentStageFieldLabels != null && currentStageFieldLabels.Count > 0)
-            ? dbDocs
-                .Where(d => !string.IsNullOrWhiteSpace(d.FieldLabel) && currentStageFieldLabels.Contains(d.FieldLabel.Trim().TrimEnd(':').Trim()))
-                .Select(d => $"{d.FieldLabel}: {d.FileName}")
-                .Distinct(StringComparer.OrdinalIgnoreCase)
-                .ToList()
-            : providedDocuments;
-
-        // Fallback for single-stage or legacy submissions
-        if (stageProvidedDocuments.Count == 0 && providedDocuments.Count > 0 && currentStage <= 1)
+        List<string> stageProvidedDocuments;
+        if (currentStageTemplate != null)
         {
-            stageProvidedDocuments = providedDocuments;
+            if (currentStageFieldLabels != null && currentStageFieldLabels.Count > 0)
+            {
+                stageProvidedDocuments = dbDocs
+                    .Where(d => !string.IsNullOrWhiteSpace(d.FieldLabel) && currentStageFieldLabels.Contains(d.FieldLabel.Trim().TrimEnd(':').Trim()))
+                    .Select(d => $"{d.FieldLabel}: {d.FileName}")
+                    .Distinct(StringComparer.OrdinalIgnoreCase)
+                    .ToList();
+            }
+            else
+            {
+                // This stage template exists and requires NO files
+                stageProvidedDocuments = new List<string>();
+            }
+        }
+        else
+        {
+            stageProvidedDocuments = currentStage <= 1 ? providedDocuments : new List<string>();
         }
 
         var profile = new CitizenProfile
@@ -146,7 +173,7 @@ public class ApplicationDraftingService : IApplicationDraftingService
             CitizenshipStatus = FindAnswer(citizenAnswers, "citizenship", "nationality") ?? "Sri Lankan",
             AnnualIncome = income,
             EmploymentStatus = FindAnswer(citizenAnswers, "employment", "occupation") ?? string.Empty,
-            ProvidedDocuments = stageProvidedDocuments.Count > 0 ? stageProvidedDocuments : providedDocuments,
+            ProvidedDocuments = stageProvidedDocuments,
             AdditionalAttributes = citizenAnswers
         };
 
@@ -170,7 +197,7 @@ public class ApplicationDraftingService : IApplicationDraftingService
                 AdditionalAttributes = citizenAnswers
             },
             Eligibility: eligibility,
-            ProvidedDocuments: providedDocuments,
+            ProvidedDocuments: stageProvidedDocuments,
             Stage: currentStage), cancellationToken);
 
         var existingPayment = await _context.Payments
@@ -179,7 +206,7 @@ public class ApplicationDraftingService : IApplicationDraftingService
             .FirstOrDefaultAsync(cancellationToken);
         decimal effectiveFee = (action.Fee != null && action.Fee.TotalAmount > 0)
             ? action.Fee.TotalAmount
-            : (existingPayment?.Amount ?? 0m);
+            : (currentStage <= 1 && existingPayment != null ? existingPayment.Amount : 0m);
 
         var draftForValidation = action.Draft ?? new DraftApplication
         {
@@ -192,7 +219,7 @@ public class ApplicationDraftingService : IApplicationDraftingService
             CitizenIncome = profile.AnnualIncome,
             CalculatedFee = effectiveFee,
             FormFields = citizenAnswers,
-            AttachedDocumentNames = stageProvidedDocuments.Count > 0 ? stageProvidedDocuments : providedDocuments,
+            AttachedDocumentNames = stageProvidedDocuments,
             Stage = currentStage,
             MaxStages = submission.MaxStages > 0 ? submission.MaxStages : 1,
         };
@@ -204,7 +231,7 @@ public class ApplicationDraftingService : IApplicationDraftingService
         draftForValidation.MaxStages = effectiveMaxStages;
         draftForValidation.DepartmentName = submission.CurrentDepartment ?? service.Category ?? "Government Service";
         draftForValidation.CalculatedFee = effectiveFee;
-        draftForValidation.AttachedDocumentNames = stageProvidedDocuments.Count > 0 ? stageProvidedDocuments : providedDocuments;
+        draftForValidation.AttachedDocumentNames = stageProvidedDocuments;
 
         var validation = await _safetyAgent.ValidateAndEnqueueAsync(draftForValidation, eligibility.RequiredDocuments, cancellationToken);
 

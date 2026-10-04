@@ -8,38 +8,64 @@ using Government_Service_Navigator.AgenticAi.Schemas;
 using Government_Service_Navigator.AgenticAi.Tools.CheckDuplicateApplication;
 using Government_Service_Navigator.AgenticAi.Tools.ValidateSchema;
 
+using Government_Service_Navigator.AgenticAi.Tools.GetDocumentRequirements;
+
 namespace Government_Service_Navigator.AgenticAi.Orchestration.Supervisor.Tools
 {
     public class SafetyAuditTool : ISafetyAuditTool
     {
         private readonly IDuplicateCheckTool _duplicateTool;
         private readonly ISchemaValidatorTool _schemaTool;
+        private readonly IGetDocumentRequirementsTool? _docsTool;
 
         public SafetyAuditTool(
             IDuplicateCheckTool duplicateTool,
-            ISchemaValidatorTool schemaTool)
+            ISchemaValidatorTool schemaTool,
+            IGetDocumentRequirementsTool? docsTool = null)
         {
             _duplicateTool = duplicateTool;
             _schemaTool = schemaTool;
+            _docsTool = docsTool;
         }
 
         public async Task<SupervisorToolResult<DuplicateCheckOutcome>> AuditSafetyAndDuplicateAsync(
             string citizenNic,
             int serviceId,
             int applicationId,
+            int? citizenAge = null,
+            List<string>? attachedDocumentNames = null,
+            int? stage = null,
+            List<string>? requiredDocuments = null,
             CancellationToken cancellationToken = default)
         {
             var sw = Stopwatch.StartNew();
             try
             {
-                // Tool 1: Check Schema & Identity integrity
+                // Tool 1: Check Schema & Identity integrity with actual applicant context
                 var draftStub = new DraftApplication
                 {
                     ApplicationId = applicationId,
                     ServiceProcedureId = serviceId,
-                    CitizenNic = citizenNic
+                    CitizenNic = citizenNic,
+                    CitizenAge = citizenAge ?? 0,
+                    AttachedDocumentNames = attachedDocumentNames ?? new List<string>(),
+                    Stage = stage ?? 1
                 };
-                var schemaValidation = await _schemaTool.ValidateAsync(draftStub);
+
+                List<string>? neededDocs = requiredDocuments;
+                if (neededDocs == null)
+                {
+                    if (_docsTool != null)
+                    {
+                        neededDocs = await _docsTool.GetRequiredDocumentsForServiceAsync(serviceId, stage, cancellationToken);
+                    }
+                    else if (stage.HasValue && stage.Value > 1)
+                    {
+                        neededDocs = new List<string>();
+                    }
+                }
+
+                var schemaValidation = await _schemaTool.ValidateAsync(draftStub, neededDocs);
 
                 // Tool 2: Check Duplicate Application (Anti-Collision / Anti-Double-Spend)
                 var duplicateResult = await _duplicateTool.CheckAsync(citizenNic, serviceId, applicationId);

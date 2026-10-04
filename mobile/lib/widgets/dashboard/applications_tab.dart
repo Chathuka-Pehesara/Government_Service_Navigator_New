@@ -11,6 +11,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import '../../providers/application_providers.dart';
 import '../../providers/session_provider.dart';
 import '../../screens/application_form_screen.dart';
+import '../../screens/booking_options_screen.dart';
 import '../../utils/validators.dart';
 
 class ApplicationsTab extends ConsumerStatefulWidget {
@@ -674,7 +675,7 @@ class _ApplicationsTabState extends ConsumerState<ApplicationsTab> {
             ? (app.stageStatus == 'AwaitingFeePayment' ? 'Awaiting Fee' : 'In Review')
             : (app.stageStatus == 'StageApproved'
                 ? 'Stage Approved'
-                : (app.stageStatus == 'Completed' ? 'Completed' : app.status)));
+                : (app.stageStatus == 'Completed' || app.status.toLowerCase() == 'approved' ? 'Completed' : app.status)));
 
     final statusColor = _getStatusColor(effectiveCardStatus);
     final reviews = app.verificationTask?.reviews ?? [];
@@ -874,9 +875,11 @@ class _ApplicationsTabState extends ConsumerState<ApplicationsTab> {
                   ],
                 ),
               ),
-            ] else if (app.status.toLowerCase() == 'revision requested' ||
-                       app.status.toLowerCase() == 'revised' ||
-                       app.stageStatus.toLowerCase() == 'actionrequired') ...[
+            ] else if ((app.status.toLowerCase() == 'revision requested' ||
+                        app.status.toLowerCase() == 'revised' ||
+                        app.stageStatus.toLowerCase() == 'actionrequired') &&
+                       app.stageStatus != 'Completed' &&
+                       app.status.toLowerCase() != 'approved') ...[
               const SizedBox(height: 10),
               Container(
                 padding: const EdgeInsets.all(12),
@@ -1185,8 +1188,8 @@ class _ApplicationsTabState extends ConsumerState<ApplicationsTab> {
                             ? 'Fee Payment Required'
                             : ((app.stageStatus == 'StageApproved' || app.stageStatus.endsWith('Unlocked'))
                                 ? 'Stage ${app.currentStage} Ready • ${app.currentDepartment ?? 'Next Dept'}'
-                                : (app.stageStatus == 'Completed'
-                                    ? 'All Milestones Cleared'
+                                : ((app.stageStatus == 'Completed' || app.status.toLowerCase() == 'approved')
+                                    ? 'All Milestones Cleared • Ready for Booking'
                                     : (app.currentDepartment != null
                                         ? 'Reviewing: ${app.currentDepartment}'
                                         : 'In Review'))),
@@ -1200,6 +1203,30 @@ class _ApplicationsTabState extends ConsumerState<ApplicationsTab> {
                         overflow: TextOverflow.ellipsis,
                       ),
                     ),
+                    if (app.stageStatus == 'Completed' || app.status.toLowerCase() == 'approved')
+                      CupertinoButton(
+                        padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
+                        color: AppColors.primary,
+                        borderRadius: BorderRadius.circular(8),
+                        onPressed: () => Navigator.of(context).push(
+                          CupertinoPageRoute(
+                            builder: (context) => BookingOptionsScreen(
+                              applicationId: app.applicationId.toString(),
+                              serviceName: app.serviceName,
+                              departmentName: app.department,
+                              citizenNic: app.citizenNic,
+                            ),
+                          ),
+                        ),
+                        child: const Row(
+                          mainAxisSize: MainAxisSize.min,
+                          children: [
+                            Icon(CupertinoIcons.calendar, size: 11, color: Colors.white),
+                            SizedBox(width: 4),
+                            Text('Book Collection', style: TextStyle(fontSize: 11, fontWeight: FontWeight.bold, color: Colors.white)),
+                          ],
+                        ),
+                      ),
                     if (app.stageStatus == 'StageApproved' || app.stageStatus.endsWith('Unlocked'))
                       CupertinoButton(
                         padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),

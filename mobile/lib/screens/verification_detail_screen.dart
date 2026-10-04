@@ -9,6 +9,7 @@ import '../theme/app_colors.dart';
 import '../widgets/service_roadmap_tracker.dart';
 import 'payments/payment_screen.dart';
 import 'application_form_screen.dart';
+import 'booking_options_screen.dart';
 import '../utils/validators.dart';
 import '../services/service_api_client.dart';
 import '../providers/session_provider.dart';
@@ -143,15 +144,17 @@ class _VerificationDetailScreenState extends ConsumerState<VerificationDetailScr
             _buildHeroStatusBanner(statusColor),
             const SizedBox(height: 20),
 
-            // 2. Action Required Banner (Only if status is Revised)
-            if (_isRevised(_app.status)) ...[
+            // 2. Action Required Banner (Only if status is Revised and not Completed/Approved)
+            if (_isRevised(_app.status) && _app.stageStatus != 'Completed' && _app.status.toLowerCase() != 'approved') ...[
               _buildActionRequiredBanner(),
               const SizedBox(height: 20),
             ],
 
-            // 3. Official Verification Pass & QR (Only if status == 'Approved')
-            if (_app.status.toLowerCase() == 'approved') ...[
+            // 3. Official Verification Pass & QR (If status == 'Approved' or stageStatus == 'Completed')
+            if (_app.status.toLowerCase() == 'approved' || _app.stageStatus == 'Completed') ...[
               _buildDigitalVerificationPass(),
+              const SizedBox(height: 16),
+              _buildBookingOptionsCard(),
               const SizedBox(height: 20),
             ],
 
@@ -173,6 +176,19 @@ class _VerificationDetailScreenState extends ConsumerState<VerificationDetailScr
                       serviceName: _app.serviceName,
                       stageNumber: _app.currentStage,
                       applicationId: _app.applicationId,
+                    ),
+                  ),
+                );
+                if (mounted) await _refresh();
+              },
+              onBookingTap: () async {
+                await Navigator.of(context).push(
+                  CupertinoPageRoute(
+                    builder: (_) => BookingOptionsScreen(
+                      applicationId: _app.applicationId.toString(),
+                      serviceName: _app.serviceName,
+                      departmentName: _app.department,
+                      citizenNic: _app.citizenNic,
                     ),
                   ),
                 );
@@ -381,6 +397,103 @@ class _VerificationDetailScreenState extends ConsumerState<VerificationDetailScr
                 style: TextStyle(fontWeight: FontWeight.w700, fontSize: 14),
               ),
               onPressed: () => _openResubmissionSheet(context),
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  // --- WIDGET 2.5: Booking Options Card (Completed / Approved status) ---
+  Widget _buildBookingOptionsCard() {
+    return Container(
+      decoration: BoxDecoration(
+        color: AppColors.cardBg,
+        borderRadius: BorderRadius.circular(18),
+        border: Border.all(color: AppColors.success.withValues(alpha: 0.35), width: 1.2),
+        boxShadow: [
+          BoxShadow(
+            color: AppColors.success.withValues(alpha: 0.08),
+            blurRadius: 16,
+            offset: const Offset(0, 4),
+          ),
+        ],
+      ),
+      padding: const EdgeInsets.all(20),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Row(
+            children: [
+              Container(
+                padding: const EdgeInsets.all(10),
+                decoration: BoxDecoration(
+                  color: AppColors.success.withValues(alpha: 0.12),
+                  borderRadius: BorderRadius.circular(12),
+                ),
+                child: const Icon(CupertinoIcons.calendar_badge_plus, color: AppColors.success, size: 24),
+              ),
+              const SizedBox(width: 12),
+              const Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text(
+                      'Ready for Collection & Booking',
+                      style: TextStyle(
+                        fontSize: 16,
+                        fontWeight: FontWeight.w700,
+                        color: AppColors.dark,
+                      ),
+                    ),
+                    SizedBox(height: 2),
+                    Text(
+                      'Official Decree & Clearance Process Completed',
+                      style: TextStyle(fontSize: 12, color: AppColors.secondaryLabel),
+                    ),
+                  ],
+                ),
+              ),
+            ],
+          ),
+          const SizedBox(height: 12),
+          const Text(
+            'All statutory milestones and regulatory verification stages have been approved. You can now book an in-person appointment slot at the counter or schedule postal delivery dispatch.',
+            style: TextStyle(fontSize: 12.5, color: AppColors.dark, height: 1.35),
+          ),
+          const SizedBox(height: 16),
+          SizedBox(
+            width: double.infinity,
+            child: CupertinoButton(
+              padding: const EdgeInsets.symmetric(vertical: 12),
+              color: AppColors.primary,
+              borderRadius: BorderRadius.circular(12),
+              onPressed: () async {
+                await Navigator.of(context).push(
+                  CupertinoPageRoute(
+                    builder: (_) => BookingOptionsScreen(
+                      applicationId: _app.applicationId.toString(),
+                      serviceName: _app.serviceName,
+                      departmentName: _app.department,
+                      citizenNic: _app.citizenNic,
+                    ),
+                  ),
+                );
+                if (mounted) await _refresh();
+              },
+              child: const Row(
+                mainAxisAlignment: MainAxisAlignment.center,
+                children: [
+                  Icon(CupertinoIcons.calendar, size: 16, color: Colors.white),
+                  SizedBox(width: 8),
+                  Text(
+                    'Book Collection / Appointment Options',
+                    style: TextStyle(fontSize: 13.5, fontWeight: FontWeight.w700, color: Colors.white),
+                  ),
+                  SizedBox(width: 6),
+                  Icon(CupertinoIcons.arrow_right, size: 14, color: Colors.white),
+                ],
+              ),
             ),
           ),
         ],

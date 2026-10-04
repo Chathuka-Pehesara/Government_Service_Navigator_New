@@ -49,7 +49,10 @@ namespace Government_Service_Navigator.Backend.Controllers
                     s.CitizenNic,
                     ServiceName = s.ServiceProcedure!.Name,
                     s.ServiceProcedure.Category,
-                    s.CurrentDepartment
+                    s.CurrentDepartment,
+                    s.CurrentStage,
+                    s.MaxStages,
+                    s.StageStatus
                 })
                 .ToDictionaryAsync(s => s.Id);
 
@@ -77,17 +80,29 @@ namespace Government_Service_Navigator.Backend.Controllers
                 submissions.TryGetValue(t.ApplicationId, out var s);
                 var nic = s?.CitizenNic ?? t.CitizenNic;
                 reviewByTask.TryGetValue(t.Id, out var rev);
+
+                int effectiveMaxStages = s?.MaxStages > 0 ? s.MaxStages : (t.MaxStages > 0 ? t.MaxStages : 1);
+                int effectiveStage = t.StageNumber > 0 
+                    ? t.StageNumber 
+                    : (s?.CurrentStage > 0 ? s.CurrentStage : (t.CurrentStage > 0 ? t.CurrentStage : 1));
+
+                string effectiveStatus = t.Status;
+                if (effectiveStatus == "Pending" && s?.StageStatus == "Completed")
+                {
+                    effectiveStatus = "Approved";
+                }
+
                 return (object)new
                 {
                     t.Id,
                     t.ApplicationId,
-                    t.Status,
+                    Status = effectiveStatus,
                     t.CreatedDate,
                     VerifiedDate = rev?.ReviewDate ?? t.CreatedDate,
-                    t.CurrentStage,
-                    t.MaxStages,
+                    CurrentStage = effectiveStage,
+                    MaxStages = effectiveMaxStages,
                     Department = t.Department ?? s?.CurrentDepartment,
-                    t.StageNumber,
+                    StageNumber = effectiveStage,
                     ReferenceNumber = $"APP-{t.ApplicationId}",
                     CitizenNic = nic,
                     CitizenName = nic != null && names.TryGetValue(nic, out var name) ? name : null,
@@ -533,28 +548,43 @@ namespace Government_Service_Navigator.Backend.Controllers
 
             if (!result) return NotFound("Task not found or update failed");
 
-            // Synchronize the citizen application status
+            // Synchronize the citizen application status & verification task
             var sub = await _context.ApplicationSubmissions.FindAsync(task.ApplicationId);
             if (sub != null)
             {
                 if (string.Equals(request.Status, "Suspended", StringComparison.OrdinalIgnoreCase))
                 {
                     sub.StageStatus = "ActionRequired";
+                    task.Status = "Suspended";
                 }
                 else if (string.Equals(request.Status, "Rejected", StringComparison.OrdinalIgnoreCase))
                 {
                     sub.StageStatus = "ActionRequired";
+                    task.Status = "Rejected";
                 }
                 else if (string.Equals(request.Status, "Revised", StringComparison.OrdinalIgnoreCase) ||
                          string.Equals(request.Status, "Revision Requested", StringComparison.OrdinalIgnoreCase))
                 {
                     sub.StageStatus = "ActionRequired";
+                    task.Status = "Revised";
                 }
                 else if (string.Equals(request.Status, "Approved", StringComparison.OrdinalIgnoreCase))
                 {
                     int currentStage = sub.CurrentStage > 0 ? sub.CurrentStage : (task.CurrentStage > 0 ? task.CurrentStage : 1);
                     int maxStages = sub.MaxStages > 0 ? sub.MaxStages : (task.MaxStages > 0 ? task.MaxStages : 1);
-                    sub.StageStatus = (currentStage < maxStages) ? "StageApproved" : "Completed";
+                    task.Status = "Approved";
+
+                    if (currentStage >= maxStages)
+                    {
+                        sub.CurrentStage = maxStages;
+                        sub.StageStatus = "Completed";
+                        task.CurrentStage = maxStages;
+                        task.StageNumber = maxStages;
+                    }
+                    else
+                    {
+                        sub.StageStatus = "StageApproved";
+                    }
                 }
                 await _context.SaveChangesAsync();
             }
@@ -713,12 +743,15 @@ namespace Government_Service_Navigator.Backend.Controllers
 
             var officerId = GetCurrentOfficerId();
 
-            var prevStage = task.StageNumber > 0 ? task.StageNumber : task.CurrentStage;
+            var prevStage = task.StageNumber > 0 ? task.StageNumber : (submission.CurrentStage > 0 ? submission.CurrentStage : task.CurrentStage);
+            var maxStages = task.MaxStages > 0 ? task.MaxStages : (submission.MaxStages > 0 ? submission.MaxStages : 1);
             var prevDept = task.Department ?? submission.CurrentDepartment ?? "Verifying Department";
 
             // 1. Mark THIS stage verification task as APPROVED and record official officer review
             task.Status = "Approved";
             task.StageNumber = prevStage;
+            task.CurrentStage = prevStage;
+            task.MaxStages = maxStages;
             task.Department = prevDept;
 
             _context.OfficerReviews.Add(new OfficerReview
@@ -731,8 +764,8 @@ namespace Government_Service_Navigator.Backend.Controllers
                     : $"Stage {prevStage} verified and approved by {prevDept}"
             });
 
-            // 2. Advance the citizen submission to the next stage
-            if (prevStage < task.MaxStages)
+            // 2. Advance the citizen submission to the next stage or complete
+            if (prevStage < maxStages)
             {
                 var nextStage = prevStage + 1;
                 submission.CurrentStage = nextStage;
@@ -755,7 +788,7 @@ namespace Government_Service_Navigator.Backend.Controllers
             else
             {
                 // All stages finished
-                submission.CurrentStage = task.MaxStages;
+                submission.CurrentStage = maxStages;
                 submission.StageStatus = "Completed";
             }
 

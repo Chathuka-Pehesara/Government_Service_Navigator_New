@@ -59,13 +59,24 @@ public class FeeScheduleRepository : IFeeScheduleRepository
                     catch { }
                 }
 
-                // If template has no payment field or 0 fee, check if procedure has configured fee schedules before returning empty
-                var catalogFees = await _db.FeeSchedules
-                    .Where(f => f.ServiceProcedureId == serviceProcedureId)
-                    .Select(f => new FeeScheduleEntry(f.FeeType, f.Amount, f.EffectiveDate))
-                    .ToListAsync(cancellationToken);
-                if (catalogFees.Count > 0) return catalogFees;
+                // If stage 1 template has no explicit embedded payment field, check FeeSchedules table
+                if (stage.Value <= 1)
+                {
+                    var baseFees = await _db.FeeSchedules
+                        .Where(f => f.ServiceProcedureId == serviceProcedureId)
+                        .Select(f => new FeeScheduleEntry(f.FeeType, f.Amount, f.EffectiveDate))
+                        .ToListAsync(cancellationToken);
+                    if (baseFees.Any()) return baseFees;
+                }
 
+                // If template exists for this stage, ADR-0009 specifies the stage's fee is defined by this template's payment field.
+                // If it has no payment field or 0 fee, this stage has NO fee.
+                return new List<FeeScheduleEntry>();
+            }
+
+            // If stage > 1 and no specific template found, stage has no fee
+            if (stage.Value > 1)
+            {
                 return new List<FeeScheduleEntry>();
             }
         }
@@ -138,10 +149,15 @@ public class DocumentRequirementRepository : IDocumentRequirementRepository
                     .Distinct()
                     .ToList();
 
-                if (fileFields.Count > 0)
-                {
-                    return fileFields;
-                }
+                // The stage template explicitly specifies which evidentiary documents are required for this stage.
+                // If fileFields is empty, this stage requires NO documents.
+                return fileFields;
+            }
+
+            // If stage > 1 and no active template exists, subsequent stages require no documents by default.
+            if (stage.Value > 1)
+            {
+                return new List<string>();
             }
         }
 

@@ -40,7 +40,7 @@ namespace Government_Service_Navigator.AgenticAi.Orchestration.Supervisor.Tools
             {
                 // Tool 1: Deterministic rules verification
                 var age = caseContext?.CitizenAge ?? 25;
-                const string citizenship = "Citizen by Descent";
+                const string citizenship = "Sri Lankan Citizen by Descent";
                 var ruleOutcome = _rulesTool.EvaluateRules(serviceId, age, citizenship);
 
                 // Tool 2: Document requirements retrieval
@@ -60,19 +60,37 @@ namespace Government_Service_Navigator.AgenticAi.Orchestration.Supervisor.Tools
                 ), cancellationToken);
 
                 sw.Stop();
-                bool hasDocumentDiscrepancy = plan.MissingDocuments.Count > 0;
+                bool hasDiscrepancy = plan.MissingDocuments.Count > 0 || plan.MissingCriteria.Count > 0 || !plan.IsEligible;
+
+                var details = new List<string>();
+                if (plan.MissingDocuments.Any())
+                {
+                    details.Add($"Missing documents: {string.Join(", ", plan.MissingDocuments)}");
+                }
+                if (plan.MissingCriteria.Any())
+                {
+                    details.Add($"Missing statutory criteria: {string.Join(", ", plan.MissingCriteria)}");
+                }
+
+                string summaryText;
+                if (details.Any())
+                {
+                    summaryText = $"Statutory eligibility at {plan.MatchPercentage}%. Attention required: {string.Join("; ", details)}.";
+                }
+                else
+                {
+                    summaryText = $"Statutory criteria satisfied ({plan.MatchPercentage}%). All mandatory attachments verified.";
+                }
 
                 var trace = new AgentExecutionTraceItem
                 {
                     AgentId = "agent-2",
                     AgentName = "Agent 2: Statutory Eligibility & Document Intelligence",
                     Action = "evaluate_eligibility_and_evidence",
-                    Status = hasDocumentDiscrepancy ? "AttentionRequired" : "Completed",
+                    Status = hasDiscrepancy ? "AttentionRequired" : "Completed",
                     IsDeterministic = true,
                     LatencyMs = sw.ElapsedMilliseconds,
-                    Summary = hasDocumentDiscrepancy
-                        ? $"Eligibility check: {ruleOutcome.ScorePercentage}%. Missing mandatory evidentiary attachments: {string.Join(", ", plan.MissingDocuments)}"
-                        : $"Statutory criteria satisfied ({ruleOutcome.ScorePercentage}%). All mandatory attachments verified."
+                    Summary = summaryText
                 };
 
                 return new SupervisorToolResult<EligibilityPlanResponse>(plan, trace, isSuccess: true);

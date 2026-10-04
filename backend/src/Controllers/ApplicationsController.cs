@@ -273,18 +273,54 @@ namespace Government_Service_Navigator.Backend.Controllers
             {
                 submission = await _context.ApplicationSubmissions
                     .FirstOrDefaultAsync(s => s.Id == request.ApplicationId.Value && s.CitizenNic == nic);
+
+                if (submission != null && submission.StageStatus == "Completed")
+                {
+                    return BadRequest(new 
+                    { 
+                        message = "This application has already completed all stages and was officially approved. Further edits or re-submission are not permitted.",
+                        applicationId = submission.Id,
+                        status = "Completed"
+                    });
+                }
             }
 
             if (submission == null)
             {
-                // If citizen has an unsubmitted draft, awaiting-fee placeholder, or a PendingReview record
-                // that never made it to an officer's queue (no VerificationTask), adopt it instead of blocking.
-                submission = await _context.ApplicationSubmissions
+                // Check if citizen already has a completed or active application for this service
+                var existingSubmission = await _context.ApplicationSubmissions
+                    .Where(s => s.CitizenNic == nic && s.ServiceProcedureId == service.Id && s.StageStatus != "Deleted")
                     .OrderByDescending(s => s.Id)
-                    .FirstOrDefaultAsync(s => s.CitizenNic == nic && 
-                                              s.ServiceProcedureId == service.Id && 
-                                              (s.StageStatus == "AwaitingFeePayment" || s.StageStatus == "Draft" ||
-                                               (s.StageStatus == "PendingReview" && !_context.VerificationTasks.Any(t => t.ApplicationId == s.Id))));
+                    .FirstOrDefaultAsync();
+
+                if (existingSubmission != null)
+                {
+                    if (existingSubmission.StageStatus == "Completed")
+                    {
+                        return BadRequest(new 
+                        { 
+                            message = $"An approved application already exists for this service (Ref: APP-{existingSubmission.Id}). Duplicate submissions are not permitted under statutory regulations.",
+                            duplicate = true,
+                            existingApplicationId = existingSubmission.Id
+                        });
+                    }
+
+                    if (existingSubmission.StageStatus == "PendingReview" &&
+                        await _context.VerificationTasks.AnyAsync(t => t.ApplicationId == existingSubmission.Id && (t.Status == "Pending" || t.Status == "Revised")))
+                    {
+                        return BadRequest(new 
+                        { 
+                            message = $"An active application is already under review in the verification queue (Ref: APP-{existingSubmission.Id}). Duplicate submission is prohibited.",
+                            duplicate = true,
+                            existingApplicationId = existingSubmission.Id
+                        });
+                    }
+
+                    if (existingSubmission.StageStatus == "AwaitingFeePayment" || existingSubmission.StageStatus == "Draft")
+                    {
+                        submission = existingSubmission;
+                    }
+                }
             }
 
             if (submission != null)

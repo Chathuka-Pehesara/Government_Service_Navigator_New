@@ -14,6 +14,7 @@ import 'payments/payment_screen.dart';
 import 'payments/checkout_webview_screen.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import '../utils/validators.dart';
+import 'citizen_assistant_chat_screen.dart';
 
 /// Renders the admin-built application template as a paper-style government form
 /// (matching the web Template Builder canvas) and submits the citizen's answers.
@@ -565,6 +566,31 @@ class _ApplicationFormScreenState extends ConsumerState<ApplicationFormScreen> {
           elevation: 0,
           actions: [
             if (!_isSubmitting && _submitted == null) ...[
+              IconButton(
+                tooltip: 'Ask AI Assistant',
+                icon: Container(
+                  padding: const EdgeInsets.all(6),
+                  decoration: BoxDecoration(
+                    color: AppColors.primary.withValues(alpha: 0.1),
+                    shape: BoxShape.circle,
+                  ),
+                  child: const Icon(CupertinoIcons.sparkles, size: 17, color: AppColors.primary),
+                ),
+                onPressed: () {
+                  _saveDraft(showNotice: false);
+                  Navigator.push(
+                    context,
+                    MaterialPageRoute(
+                      builder: (context) => CitizenAssistantChatScreen(
+                        serviceProcedureId: widget.serviceId,
+                        serviceName: widget.serviceName,
+                        stage: _currentStage,
+                        applicationId: _activeApplicationId,
+                      ),
+                    ),
+                  );
+                },
+              ),
               TextButton.icon(
                 onPressed: () => _saveDraft(showNotice: true),
                 icon: const Icon(CupertinoIcons.floppy_disk, size: 16, color: AppColors.primary),

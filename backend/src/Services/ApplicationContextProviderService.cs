@@ -47,15 +47,85 @@ namespace Government_Service_Navigator.Backend.Services
             var derivedAge = ApplicationDraftingService.AgeFromNic(submission.CitizenNic, DateTime.UtcNow);
             int age = derivedAge ?? 25;
 
-            var documents = await _context.SubmissionDocuments
+            var currentStageNum = submission.CurrentStage > 0 ? submission.CurrentStage : 1;
+
+            var currentStageTemplate = await _context.Templates
+                .Include(t => t.Fields)
+                .Where(t => t.ServiceProcedureId == submission.ServiceProcedureId && t.StageOrder == currentStageNum && t.Status == "Active")
+                .OrderByDescending(t => t.CreatedAt)
+                .FirstOrDefaultAsync(cancellationToken);
+
+            HashSet<string>? stageFileLabels = null;
+            bool stageRequiresPayment = false;
+            decimal stageRequiredAmount = 0m;
+
+            if (currentStageTemplate != null)
+            {
+                stageFileLabels = currentStageTemplate.Fields
+                    .Where(f => f.Type == "file" || f.Type == "document" || f.Type == "documentUpload")
+                    .Select(f => f.Label.Trim().TrimEnd(':').Trim())
+                    .ToHashSet(StringComparer.OrdinalIgnoreCase);
+
+                var payField = currentStageTemplate.Fields.FirstOrDefault(f => f.Type == "payment");
+                if (payField != null && !string.IsNullOrWhiteSpace(payField.Options))
+                {
+                    try
+                    {
+                        using var pDoc = JsonDocument.Parse(payField.Options);
+                        if (pDoc.RootElement.TryGetProperty("amount", out var amt) && amt.ValueKind == JsonValueKind.Number)
+                            stageRequiredAmount = amt.GetDecimal();
+                        else if (pDoc.RootElement.TryGetProperty("feeAmount", out var famt) && famt.ValueKind == JsonValueKind.Number)
+                            stageRequiredAmount = famt.GetDecimal();
+                        stageRequiresPayment = stageRequiredAmount > 0;
+                    }
+                    catch { }
+                }
+            }
+
+            var dbDocs = await _context.SubmissionDocuments
                 .Where(d => d.ApplicationId == applicationId)
-                .Select(d => !string.IsNullOrWhiteSpace(d.FieldLabel) ? $"{d.FieldLabel}: {d.FileName}" : d.FileName)
                 .ToListAsync(cancellationToken);
+
+            List<string> documents;
+            if (currentStageTemplate != null)
+            {
+                if (stageFileLabels != null && stageFileLabels.Count > 0)
+                {
+                    documents = dbDocs
+                        .Where(d => !string.IsNullOrWhiteSpace(d.FieldLabel) && stageFileLabels.Contains(d.FieldLabel.Trim().TrimEnd(':').Trim()))
+                        .Select(d => $"{d.FieldLabel}: {d.FileName}")
+                        .Distinct(StringComparer.OrdinalIgnoreCase)
+                        .ToList();
+                }
+                else
+                {
+                    documents = new List<string>();
+                }
+            }
+            else
+            {
+                documents = (currentStageNum <= 1)
+                    ? dbDocs.Select(d => !string.IsNullOrWhiteSpace(d.FieldLabel) ? $"{d.FieldLabel}: {d.FileName}" : d.FileName).ToList()
+                    : new List<string>();
+            }
 
             var payment = await _context.Payments
                 .Where(p => p.ApplicationId == applicationId)
                 .OrderByDescending(p => p.Id)
                 .FirstOrDefaultAsync(cancellationToken);
+
+            bool isPaymentVerified;
+            decimal paidAmount;
+            if (stageRequiresPayment)
+            {
+                paidAmount = payment?.Amount ?? 0m;
+                isPaymentVerified = payment?.Status == "Paid" || payment?.Status == "Verified";
+            }
+            else
+            {
+                paidAmount = 0m;
+                isPaymentVerified = true;
+            }
 
             return new ApplicationCaseContext
             {
@@ -66,13 +136,13 @@ namespace Government_Service_Navigator.Backend.Services
                 CitizenNic = submission.CitizenNic,
                 CitizenName = citizenName,
                 CitizenAge = age,
-                CurrentStage = submission.CurrentStage > 0 ? submission.CurrentStage : 1,
+                CurrentStage = currentStageNum,
                 MaxStages = submission.MaxStages > 0 ? submission.MaxStages : 1,
                 StageStatus = submission.StageStatus,
                 FormAnswers = answers,
                 UploadedDocumentNames = documents,
-                PaidAmount = payment?.Amount ?? 0m,
-                IsPaymentVerified = payment?.Status == "Paid" || payment?.Status == "Verified"
+                PaidAmount = paidAmount,
+                IsPaymentVerified = isPaymentVerified
             };
         }
 
