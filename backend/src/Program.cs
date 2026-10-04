@@ -238,6 +238,7 @@ builder.Services.AddScoped<IActionVectorRetriever, ActionVectorRetrieverService>
 builder.Services.AddScoped<IActionToolAgent, ActionToolAgent>();
 // Agent 4: Validation & Safety Agent and Orchestrator
 builder.Services.AddScoped<ISchemaValidatorTool, SchemaValidatorTool>();
+builder.Services.AddScoped<Government_Service_Navigator.AgenticAi.Tools.CheckDuplicateApplication.IDuplicateApplicationRepository, DuplicateApplicationRepository>();
 builder.Services.AddScoped<IDuplicateCheckTool, DuplicateCheckTool>();
 builder.Services.AddScoped<IValidationSafetyAgent, ValidationSafetyAgent>();
 builder.Services.AddScoped<Government_Service_Navigator.AgenticAi.Orchestration.Workflows.ICitizenApplicationWorkflow, Government_Service_Navigator.AgenticAi.Orchestration.Workflows.CitizenApplicationWorkflow>();

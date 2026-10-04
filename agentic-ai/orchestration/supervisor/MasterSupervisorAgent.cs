@@ -93,25 +93,31 @@ namespace Government_Service_Navigator.AgenticAi.Orchestration
             // Resolve service name and ID from Query or History if not provided
             if (string.IsNullOrWhiteSpace(serviceName) || serviceName.Equals("Government Service", StringComparison.OrdinalIgnoreCase))
             {
-                // 1. Direct match in current query
-                string? matchedInQuery = validActiveServices.FirstOrDefault(s => queryLower.Contains(s.ToLowerInvariant()));
-                if (matchedInQuery == null)
+                // 1. Dynamic match against active services in database
+                var qTokens = TextTokenizer.Tokenize(queryLower);
+                string? matchedInQuery = null;
+
+                foreach (var svc in validActiveServices)
                 {
-                    if (queryLower.Contains("police") || queryLower.Contains("clearance"))
-                        matchedInQuery = validActiveServices.FirstOrDefault(s => s.Contains("Police", StringComparison.OrdinalIgnoreCase)) ?? "Certificate of Police Clearance";
-                    else if (queryLower.Contains("nic") || queryLower.Contains("identity"))
-                        matchedInQuery = validActiveServices.FirstOrDefault(s => s.Contains("Identity", StringComparison.OrdinalIgnoreCase) || s.Contains("NIC", StringComparison.OrdinalIgnoreCase)) ?? "National Identity Card (NIC) Issuance & Replacement";
-                    else if (queryLower.Contains("passport"))
-                        matchedInQuery = validActiveServices.FirstOrDefault(s => s.Contains("Passport", StringComparison.OrdinalIgnoreCase)) ?? "Passport Application & Renewal";
-                    else if (queryLower.Contains("license") || queryLower.Contains("licence"))
-                        matchedInQuery = validActiveServices.FirstOrDefault(s => s.Contains("License", StringComparison.OrdinalIgnoreCase)) ?? "Driving License Examination & Renewal";
+                    if (queryLower.Contains(svc.ToLowerInvariant()))
+                    {
+                        matchedInQuery = svc;
+                        break;
+                    }
+
+                    var svcTokens = TextTokenizer.Tokenize(svc);
+                    if (qTokens.Count > 0 && TextTokenizer.SharesKeyword(qTokens, svcTokens))
+                    {
+                        matchedInQuery = svc;
+                        break;
+                    }
                 }
 
                 if (matchedInQuery != null)
                 {
                     serviceName = matchedInQuery;
                 }
-                // 2. Check conversation history (from most recent to oldest)
+                // 2. Check conversation history ONLY if citizen is in an ongoing discussion and query is contextual
                 else if (request.History != null && request.History.Count > 0)
                 {
                     for (int i = request.History.Count - 1; i >= 0; i--)
@@ -124,23 +130,7 @@ namespace Government_Service_Navigator.AgenticAi.Orchestration
                             serviceName = matchedInHist;
                             break;
                         }
-                        if (contentLower.Contains("police clearance") || contentLower.Contains("police"))
-                        {
-                            serviceName = validActiveServices.FirstOrDefault(s => s.Contains("Police", StringComparison.OrdinalIgnoreCase)) ?? "Certificate of Police Clearance";
-                            break;
-                        }
-                        if (contentLower.Contains("identity card") || contentLower.Contains("nic"))
-                        {
-                            serviceName = validActiveServices.FirstOrDefault(s => s.Contains("Identity", StringComparison.OrdinalIgnoreCase) || s.Contains("NIC", StringComparison.OrdinalIgnoreCase)) ?? "National Identity Card (NIC) Issuance & Replacement";
-                            break;
-                        }
                     }
-                }
-
-                // 3. Fallback: if exactly 1 active service exists in DB, default to it
-                if ((string.IsNullOrWhiteSpace(serviceName) || serviceName.Equals("Government Service", StringComparison.OrdinalIgnoreCase)) && validActiveServices.Count == 1)
-                {
-                    serviceName = validActiveServices[0];
                 }
             }
 
@@ -199,9 +189,9 @@ namespace Government_Service_Navigator.AgenticAi.Orchestration
             }
 
             // ── Step 1: Agent 1 Intake & Procedure Discovery
-            // Enriches query with the active service name so Vector DB retrieval accurately finds the policy circular
+            // Only prepend service name when user is in a specific active case submission
             string intakeQuery = request.Query ?? "Public service inquiry";
-            if (!string.IsNullOrWhiteSpace(serviceName) && !serviceName.Equals("Government Service", StringComparison.OrdinalIgnoreCase)
+            if (caseContext != null && !string.IsNullOrWhiteSpace(serviceName) && !serviceName.Equals("Government Service", StringComparison.OrdinalIgnoreCase)
                 && !intakeQuery.Contains(serviceName, StringComparison.OrdinalIgnoreCase))
             {
                 intakeQuery = $"{serviceName} {intakeQuery}";
@@ -211,11 +201,46 @@ namespace Government_Service_Navigator.AgenticAi.Orchestration
             trace.Add(intakeOutcome.Trace);
             agent1Result = intakeOutcome.Data;
 
-            if (agent1Result != null && !string.IsNullOrWhiteSpace(agent1Result.RecommendedService)
-                && !agent1Result.RecommendedService.Contains("Not Found", StringComparison.OrdinalIgnoreCase)
-                && serviceName.Equals("Government Service", StringComparison.OrdinalIgnoreCase))
+            bool isServiceNotFound = agent1Result == null 
+                || string.IsNullOrWhiteSpace(agent1Result.RecommendedService)
+                || agent1Result.RecommendedService.Contains("Not Found", StringComparison.OrdinalIgnoreCase)
+                || agent1Result.RecommendedService.Equals("Service Not Found", StringComparison.OrdinalIgnoreCase);
+
+            // Fast exit when service is not available and user is not inside a fixed case submission:
+            if (isServiceNotFound && caseContext == null)
             {
-                serviceName = agent1Result.RecommendedService;
+                string availableList = validActiveServices.Count > 0
+                    ? string.Join("\n", validActiveServices.Select(s => $"- **{s}**"))
+                    : "No active public services currently published.";
+
+                string notFoundAnswer = $"### Service Not Available\n\n" +
+                    $"We could not find an official statutory procedure matching your inquiry in the GovNavigator catalogue.\n\n" +
+                    $"**Currently Available Services in GovNavigator:**\n" +
+                    $"{availableList}\n\n" +
+                    $"*Please select one of the active services above or browse the service directory.*";
+
+                return new SupervisorChatResponse
+                {
+                    Answer = notFoundAnswer,
+                    Tone = isWeb ? "StatutoryOfficial" : "CitizenSupportive",
+                    CollaborationTrace = trace,
+                    Recommendation = new SupervisorRecommendation
+                    {
+                        ActionType = "ExploreCatalog",
+                        Title = "Service Not Available",
+                        Rationale = "The requested service is not listed in the GovNavigator catalogue. Please choose from our available services.",
+                        RiskLevel = "Low"
+                    },
+                    SuggestedFollowups = validActiveServices.Take(3).Select(s => $"How do I apply for {s}?").ToList(),
+                    ServiceName = "Service Not Found",
+                    ServiceProcedureId = null,
+                    Timestamp = DateTime.UtcNow
+                };
+            }
+
+            if (!isServiceNotFound && (string.IsNullOrWhiteSpace(serviceName) || serviceName.Equals("Government Service", StringComparison.OrdinalIgnoreCase)))
+            {
+                serviceName = agent1Result!.RecommendedService;
             }
 
             // ── Step 2: Agent 2 Statutory Eligibility & Evidentiary Document Analysis

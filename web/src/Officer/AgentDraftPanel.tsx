@@ -168,7 +168,7 @@ export default function AgentDraftPanel({
           serviceName: serviceName || action?.draft?.serviceName || "Government Service",
           citizenNic: citizenNic || action?.draft?.citizenNic || "",
           citizenName: citizenName || action?.draft?.citizenName || "",
-          citizenAge: action?.draft?.citizenAge ?? draft.derivedAgeFromNic ?? 24,
+          citizenAge: action?.draft?.citizenAge ?? draft.derivedAgeFromNic ?? 0,
           calculatedFee: action?.fee?.totalAmount ?? 0,
           attachedDocumentNames: action?.draft?.attachedDocumentNames ?? [],
           requiredDocuments: eligibility?.requiredDocuments ?? [],
@@ -486,33 +486,67 @@ export default function AgentDraftPanel({
 
             {/* 4 Guardrail Metric Tiles */}
             <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(220px, 1fr))", gap: "0.75rem", marginBottom: "1rem" }}>
-              <div style={{ padding: "0.75rem", backgroundColor: "#f4f7fb", borderRadius: "6px", border: "1px solid #d0e2ff" }}>
-                <div style={{ fontSize: "0.75rem", color: "#525252" }}>Identity & Bounds Check</div>
-                <div style={{ fontSize: "0.8125rem", fontWeight: 600, color: "#161616", marginTop: "2px" }}>
-                  NIC Format & Age ({draft.derivedAgeFromNic ?? "Valid"}) Verified
-                </div>
-              </div>
+              {(() => {
+                const idCheck = validation?.complianceChecks.find(c => 
+                  c.checkType.toLowerCase().includes("identity") || c.checkType.toLowerCase().includes("age")
+                );
+                const isFailed = idCheck && !idCheck.isPassed;
+                return (
+                  <div style={{ padding: "0.75rem", backgroundColor: isFailed ? "#fff1f1" : "#f4f7fb", borderRadius: "6px", border: isFailed ? "1px solid #ffd7d9" : "1px solid #d0e2ff" }}>
+                    <div style={{ fontSize: "0.75rem", color: isFailed ? "#da1e28" : "#525252" }}>Identity & Bounds Check</div>
+                    <div style={{ fontSize: "0.8125rem", fontWeight: 600, color: isFailed ? "#da1e28" : "#161616", marginTop: "2px" }}>
+                      {draft.derivedAgeFromNic ? `NIC Format & Age (${draft.derivedAgeFromNic}) Verified` : (idCheck?.details || "Identity Verified")}
+                    </div>
+                  </div>
+                );
+              })()}
 
-              <div style={{ padding: "0.75rem", backgroundColor: "#f4f7fb", borderRadius: "6px", border: "1px solid #d0e2ff" }}>
-                <div style={{ fontSize: "0.75rem", color: "#525252" }}>Anti-Duplicate Registry</div>
-                <div style={{ fontSize: "0.8125rem", fontWeight: 600, color: "#198038", marginTop: "2px" }}>
-                  Clear — Zero Collisions Found
-                </div>
-              </div>
+              {(() => {
+                const dupCheck = validation?.complianceChecks.find(c => 
+                  c.checkType.toLowerCase().includes("duplicate") || c.checkType.toLowerCase().includes("anti-fraud")
+                );
+                const hasDupRejection = (validation?.rejectionReasons ?? []).some(r => 
+                  r.toLowerCase().includes("dup-") || r.toLowerCase().includes("duplicate")
+                );
+                const isDup = (dupCheck && !dupCheck.isPassed) || hasDupRejection;
+                return (
+                  <div style={{ padding: "0.75rem", backgroundColor: isDup ? "#fff1f1" : "#f4f7fb", borderRadius: "6px", border: isDup ? "1px solid #ffd7d9" : "1px solid #d0e2ff" }}>
+                    <div style={{ fontSize: "0.75rem", color: isDup ? "#da1e28" : "#525252" }}>Anti-Duplicate Registry</div>
+                    <div style={{ fontSize: "0.8125rem", fontWeight: 600, color: isDup ? "#da1e28" : "#198038", marginTop: "2px" }}>
+                      {isDup ? "Collision Detected — Active Case Found" : "Clear — Zero Collisions Found"}
+                    </div>
+                  </div>
+                );
+              })()}
 
-              <div style={{ padding: "0.75rem", backgroundColor: "#f4f7fb", borderRadius: "6px", border: "1px solid #d0e2ff" }}>
-                <div style={{ fontSize: "0.75rem", color: "#525252" }}>Adversarial Injection Shield</div>
-                <div style={{ fontSize: "0.8125rem", fontWeight: 600, color: "#198038", marginTop: "2px" }}>
-                  Clear — Form Payload Sanitized
-                </div>
-              </div>
+              {(() => {
+                const injectionCheck = validation?.complianceChecks.find(c => 
+                  c.checkType.toLowerCase().includes("injection") || c.checkType.toLowerCase().includes("adversarial")
+                );
+                const isFailed = injectionCheck && !injectionCheck.isPassed;
+                return (
+                  <div style={{ padding: "0.75rem", backgroundColor: isFailed ? "#fff1f1" : "#f4f7fb", borderRadius: "6px", border: isFailed ? "1px solid #ffd7d9" : "1px solid #d0e2ff" }}>
+                    <div style={{ fontSize: "0.75rem", color: isFailed ? "#da1e28" : "#525252" }}>Adversarial Injection Shield</div>
+                    <div style={{ fontSize: "0.8125rem", fontWeight: 600, color: isFailed ? "#da1e28" : "#198038", marginTop: "2px" }}>
+                      {isFailed ? "Threat Flagged — Payload Rejected" : (injectionCheck?.details || "Clear — Form Payload Sanitized")}
+                    </div>
+                  </div>
+                );
+              })()}
 
-              <div style={{ padding: "0.75rem", backgroundColor: "#f4f7fb", borderRadius: "6px", border: "1px solid #d0e2ff" }}>
-                <div style={{ fontSize: "0.75rem", color: "#525252" }}>Data Privacy (PII Filter)</div>
-                <div style={{ fontSize: "0.8125rem", fontWeight: 600, color: "#161616", marginTop: "2px" }}>
-                  Protected — Tokens Masked
-                </div>
-              </div>
+              {(() => {
+                const piiCheck = validation?.complianceChecks.find(c => 
+                  c.checkType.toLowerCase().includes("privacy") || c.checkType.toLowerCase().includes("pii")
+                );
+                return (
+                  <div style={{ padding: "0.75rem", backgroundColor: "#f4f7fb", borderRadius: "6px", border: "1px solid #d0e2ff" }}>
+                    <div style={{ fontSize: "0.75rem", color: "#525252" }}>Data Privacy (PII Filter)</div>
+                    <div style={{ fontSize: "0.8125rem", fontWeight: 600, color: "#161616", marginTop: "2px" }}>
+                      {piiCheck?.details || "Protected — Tokens Masked"}
+                    </div>
+                  </div>
+                );
+              })()}
             </div>
 
             {/* Verification Checklist */}

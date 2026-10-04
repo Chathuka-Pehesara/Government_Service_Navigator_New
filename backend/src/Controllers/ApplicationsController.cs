@@ -289,7 +289,10 @@ namespace Government_Service_Navigator.Backend.Controllers
             {
                 // Check if citizen already has a completed or active application for this service
                 var existingSubmission = await _context.ApplicationSubmissions
-                    .Where(s => s.CitizenNic == nic && s.ServiceProcedureId == service.Id && s.StageStatus != "Deleted")
+                    .Include(s => s.ServiceProcedure)
+                    .Where(s => (s.CitizenNic == nic || EF.Functions.ILike(s.CitizenNic, nic) || s.CitizenNic.Trim() == nic.Trim()) &&
+                                (s.ServiceProcedureId == service.Id || (s.ServiceProcedure != null && s.ServiceProcedure.Name == service.Name)) &&
+                                s.StageStatus != "Deleted")
                     .OrderByDescending(s => s.Id)
                     .FirstOrDefaultAsync();
 
@@ -305,12 +308,12 @@ namespace Government_Service_Navigator.Backend.Controllers
                         });
                     }
 
-                    if (existingSubmission.StageStatus == "PendingReview" &&
-                        await _context.VerificationTasks.AnyAsync(t => t.ApplicationId == existingSubmission.Id && (t.Status == "Pending" || t.Status == "Revised")))
+                    // Any in-progress or under review submission is an active duplicate
+                    if (existingSubmission.StageStatus != "Draft" && existingSubmission.StageStatus != "Rejected")
                     {
                         return BadRequest(new 
                         { 
-                            message = $"An active application is already under review in the verification queue (Ref: APP-{existingSubmission.Id}). Duplicate submission is prohibited.",
+                            message = $"An active application is already under review in the verification queue (Ref: APP-{existingSubmission.Id}). Duplicate submission is prohibited under statutory regulations.",
                             duplicate = true,
                             existingApplicationId = existingSubmission.Id
                         });

@@ -105,7 +105,7 @@ namespace Government_Service_Navigator.AgenticAi.Agents.ValidationSafety
                 CalledAt: DateTime.UtcNow
             ));
 
-            if (duplicateResult.IsDuplicate && _config.BlockDuplicateSubmissions)
+            if (duplicateResult.IsDuplicate)
             {
                 rejectionReasons.Add(duplicateResult.Message);
             }
@@ -283,10 +283,11 @@ namespace Government_Service_Navigator.AgenticAi.Agents.ValidationSafety
             // =========================================================================
             if (rejectionReasons.Any())
             {
+                string appRef = draft.ApplicationId > 0 ? $"application #{draft.ApplicationId}" : "draft submission";
                 var rejected = ValidationResult.Rejected(
                     reasons: rejectionReasons,
                     checks: complianceChecks,
-                    summary: $"Agent 4 flagged application #{draft.ApplicationId}. Found {rejectionReasons.Count} statutory compliance violation(s) or documentary inconsistency.",
+                    summary: $"Agent 4 flagged {appRef}: Found {rejectionReasons.Count} statutory compliance violation(s) or missing document(s).",
                     riskLevel: string.IsNullOrWhiteSpace(riskLevel) || riskLevel.Equals("Low", StringComparison.OrdinalIgnoreCase) ? "High" : riskLevel,
                     officerBriefing: officerBriefing,
                     toolCalls: toolCalls
@@ -316,10 +317,11 @@ namespace Government_Service_Navigator.AgenticAi.Agents.ValidationSafety
             int regAppId = draft.ApplicationId > 0 ? draft.ApplicationId : taskId;
             _duplicateTool.RegisterApplication(draft.CitizenNic, draft.ServiceProcedureId, $"APP-2026-{regAppId}");
 
+            string successAppRef = draft.ApplicationId > 0 ? $"Application #{draft.ApplicationId}" : "Draft application";
             var success = ValidationResult.Success(
                 verificationTaskId: taskId,
                 checks: complianceChecks,
-                summary: $"Application #{draft.ApplicationId} cleared all safety, schema, anti-fraud, and compliance audits. Enqueued as Verification Task #{taskId}.",
+                summary: $"{successAppRef} cleared all safety, schema, anti-fraud, and compliance audits. Enqueued as Verification Task #{taskId}.",
                 riskLevel: riskLevel,
                 officerBriefing: officerBriefing,
                 toolCalls: toolCalls

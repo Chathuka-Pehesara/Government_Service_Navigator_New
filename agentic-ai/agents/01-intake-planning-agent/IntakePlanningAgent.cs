@@ -74,11 +74,35 @@ public class IntakePlanningAgent : IIntakePlanningAgent
             return CreateNoPolicyResponse(new List<string>());
         }
 
-        // Verify that at least one retrieved chunk actually shares keywords or mentions the user query
+        // Verify that at least one retrieved chunk actually shares keywords with the citizen inquiry
         var queryTokens = TextTokenizer.Tokenize(request.UserNeedDescription);
-        bool hasRelevantChunk = topResults.Any(chunk =>
+
+        bool hasRelevantChunk = queryTokens.Count > 0 && topResults.Any(chunk =>
         {
             var parsed = ServiceCatalogChunk.TryParse(chunk);
+            if (parsed != null && !string.IsNullOrWhiteSpace(parsed.ServiceName))
+            {
+                var svcTokens = TextTokenizer.Tokenize(parsed.ServiceName);
+                // A policy chunk is only relevant if the citizen's inquiry shares keywords with the service itself
+                if (TextTokenizer.SharesKeyword(queryTokens, svcTokens))
+                {
+                    return true;
+                }
+
+                // If chunk has a specific category or procedure title, check that too
+                if (!string.IsNullOrWhiteSpace(parsed.Category))
+                {
+                    var catTokens = TextTokenizer.Tokenize(parsed.Category);
+                    if (TextTokenizer.SharesKeyword(queryTokens, catTokens))
+                    {
+                        return true;
+                    }
+                }
+
+                // The chunk belongs to an unrelated service (only matched on generic text or supporting document mentions)
+                return false;
+            }
+
             var chunkTokens = parsed != null ? parsed.KeywordTokens() : TextTokenizer.Tokenize(chunk);
             return TextTokenizer.SharesKeyword(queryTokens, chunkTokens);
         });

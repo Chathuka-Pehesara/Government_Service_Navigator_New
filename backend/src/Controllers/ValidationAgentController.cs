@@ -10,6 +10,7 @@ using Government_Service_Navigator.AgenticAi.Schemas;
 using Government_Service_Navigator.AgenticAi.State;
 using Government_Service_Navigator.AgenticAi.Tools.CheckDuplicateApplication;
 using Government_Service_Navigator.Backend.Data.Context;
+using Government_Service_Navigator.Backend.Services;
 using DA = System.ComponentModel.DataAnnotations;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.EntityFrameworkCore;
@@ -151,7 +152,7 @@ public class ValidationAgentController : ControllerBase
             ServiceProcedureId = submission.ServiceProcedureId,
             ServiceName = submission.ServiceProcedure?.Name ?? "Procedure",
             CitizenNic = submission.CitizenNic,
-            CitizenAge = 25,
+            CitizenAge = ApplicationDraftingService.AgeFromNic(submission.CitizenNic, DateTime.UtcNow) ?? 0,
             AttachedDocumentNames = docs
         };
 

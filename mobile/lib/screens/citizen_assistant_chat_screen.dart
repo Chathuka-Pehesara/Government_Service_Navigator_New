@@ -5,6 +5,7 @@ import '../theme/app_colors.dart';
 import 'agent2_statutory_auditor_screen.dart';
 import 'application_form_screen.dart';
 import 'booking_options_screen.dart';
+import 'service_discovery_screen.dart';
 
 class ChatMessageItem {
   final String text;
@@ -131,7 +132,12 @@ class _CitizenAssistantChatScreenState extends State<CitizenAssistantChatScreen>
 
       setState(() {
         if (res.serviceName != null && res.serviceName!.isNotEmpty) {
-          _activeServiceName = res.serviceName;
+          if (res.serviceName!.contains('Not Found')) {
+            _activeServiceName = null;
+            _activeServiceProcedureId = null;
+          } else {
+            _activeServiceName = res.serviceName;
+          }
         }
         if (res.serviceProcedureId != null && res.serviceProcedureId! > 0) {
           _activeServiceProcedureId = res.serviceProcedureId;
@@ -216,14 +222,20 @@ class _CitizenAssistantChatScreenState extends State<CitizenAssistantChatScreen>
           Container(
             color: Colors.white,
             padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
-            child: Row(
-              mainAxisAlignment: MainAxisAlignment.spaceAround,
-              children: [
-                _buildAgentChip('1. Pathway', CupertinoIcons.compass, true),
-                _buildAgentChip('2. Documents', CupertinoIcons.doc_text, true),
-                _buildAgentChip('3. Fees & Slots', CupertinoIcons.creditcard, true),
-                _buildAgentChip('4. Safety', CupertinoIcons.shield_lefthalf_fill, true),
-              ],
+            child: SingleChildScrollView(
+              scrollDirection: Axis.horizontal,
+              physics: const BouncingScrollPhysics(),
+              child: Row(
+                children: [
+                  _buildAgentChip('1. Pathway', CupertinoIcons.compass, true),
+                  const SizedBox(width: 8),
+                  _buildAgentChip('2. Documents', CupertinoIcons.doc_text, true),
+                  const SizedBox(width: 8),
+                  _buildAgentChip('3. Fees & Slots', CupertinoIcons.creditcard, true),
+                  const SizedBox(width: 8),
+                  _buildAgentChip('4. Safety', CupertinoIcons.shield_lefthalf_fill, true),
+                ],
+              ),
             ),
           ),
           const Divider(height: 1, thickness: 1, color: Color(0xFFE8EEF5)),
@@ -464,6 +476,7 @@ class _CitizenAssistantChatScreenState extends State<CitizenAssistantChatScreen>
             ? widget.serviceProcedureId!
             : 37);
 
+    final bool isExploreCatalog = rec.actionType == 'ExploreCatalog';
     final bool isEligibilityAction = rec.actionType == 'CheckEligibility' ||
         rec.actionType == 'AuditEligibility' ||
         rec.actionType == 'ReviewEligibility' ||
@@ -471,6 +484,13 @@ class _CitizenAssistantChatScreenState extends State<CitizenAssistantChatScreen>
         rec.actionType == 'RequestRevision';
 
     final bool isBookAppointment = rec.actionType == 'BookAppointment';
+
+    void launchCatalog() {
+      Navigator.push(
+        context,
+        MaterialPageRoute(builder: (context) => const ServiceDiscoveryScreen()),
+      );
+    }
 
     void launchEligibilityCheck() {
       Navigator.push(
@@ -510,9 +530,11 @@ class _CitizenAssistantChatScreenState extends State<CitizenAssistantChatScreen>
       );
     }
 
-    final VoidCallback primaryCardTap = isEligibilityAction
-        ? launchEligibilityCheck
-        : (isBookAppointment ? launchBooking : launchApplication);
+    final VoidCallback primaryCardTap = isExploreCatalog
+        ? launchCatalog
+        : (isEligibilityAction && currentServiceName != 'Service Not Found')
+            ? launchEligibilityCheck
+            : (isBookAppointment ? launchBooking : launchApplication);
 
     return Material(
       color: Colors.transparent,
@@ -568,8 +590,29 @@ class _CitizenAssistantChatScreenState extends State<CitizenAssistantChatScreen>
                 ),
               ],
 
-              // Action: For all pre-application service inquiries, require Launch Eligibility Check UI first
-              if (isBookAppointment) ...[
+              // Action: Dynamic actions depending on recommendation type
+              if (isExploreCatalog) ...[
+                const SizedBox(height: 10),
+                SizedBox(
+                  width: double.infinity,
+                  height: 40,
+                  child: ElevatedButton.icon(
+                    style: ElevatedButton.styleFrom(
+                      backgroundColor: const Color(0xFF0369A1),
+                      foregroundColor: Colors.white,
+                      elevation: 0,
+                      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
+                      padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
+                    ),
+                    icon: const Icon(CupertinoIcons.compass, size: 16),
+                    label: const Text(
+                      'Browse Service Catalog',
+                      style: TextStyle(fontSize: 13, fontWeight: FontWeight.bold),
+                    ),
+                    onPressed: launchCatalog,
+                  ),
+                ),
+              ] else if (isBookAppointment) ...[
                 const SizedBox(height: 10),
                 Row(
                   children: [
@@ -648,8 +691,8 @@ class _CitizenAssistantChatScreenState extends State<CitizenAssistantChatScreen>
                     ),
                   ],
                 ),
-              ] else ...[
-                // Statutory Gatekeeper: Citizen must verify statutory eligibility before starting application
+              ] else if (isEligibilityAction && currentServiceName != 'Service Not Found') ...[
+                // Statutory Gatekeeper: Only displayed when a valid supported service is found
                 const SizedBox(height: 10),
                 SizedBox(
                   width: double.infinity,

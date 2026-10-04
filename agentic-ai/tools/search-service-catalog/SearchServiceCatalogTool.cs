@@ -40,14 +40,24 @@ public class SearchServiceCatalogTool : ISearchServiceCatalogTool
 
         var allServices = await GetActiveServicesAsync(cancellationToken);
         var q = query.Trim().ToLowerInvariant();
-        var tokens = q.Split(' ', StringSplitOptions.RemoveEmptyEntries);
+        var tokens = q.Split(new[] { ' ', '?', '!', ',', '.', '-', '(', ')' }, StringSplitOptions.RemoveEmptyEntries)
+            .Where(t => t.Length >= 3 && !IsCommonStopWord(t))
+            .ToList();
 
         return allServices
             .Where(s => s.IsActive && (
                 s.ServiceName.ToLowerInvariant().Contains(q) ||
                 s.Description.ToLowerInvariant().Contains(q) ||
-                tokens.Any(t => s.ServiceName.ToLowerInvariant().Contains(t) || s.Description.ToLowerInvariant().Contains(t))))
+                (tokens.Count > 0 && tokens.Any(t => 
+                    s.ServiceName.ToLowerInvariant().Split(' ', StringSplitOptions.RemoveEmptyEntries).Any(w => w.Equals(t, StringComparison.OrdinalIgnoreCase) || (t.Length >= 4 && w.StartsWith(t, StringComparison.OrdinalIgnoreCase))) ||
+                    s.Description.ToLowerInvariant().Split(' ', StringSplitOptions.RemoveEmptyEntries).Any(w => w.Equals(t, StringComparison.OrdinalIgnoreCase) || (t.Length >= 4 && w.StartsWith(t, StringComparison.OrdinalIgnoreCase)))))))
             .ToList();
+    }
+
+    private static bool IsCommonStopWord(string word)
+    {
+        return word is "the" or "for" or "can" or "get" or "how" or "and" or "are" or "you" or "your" 
+            or "what" or "with" or "from" or "need" or "want" or "certificate" or "service" or "document";
     }
 
     public async Task<List<ServiceCatalogItem>> GetActiveServicesAsync(CancellationToken cancellationToken = default)
