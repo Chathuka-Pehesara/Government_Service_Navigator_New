@@ -199,6 +199,7 @@ class ApplicationItemModel {
   final String? paymentStatus;
   final bool isPaymentVerified;
   final bool isStagePaymentRequired;
+  final String? citizenNic;
 
   ApplicationItemModel({
     required this.applicationId,
@@ -223,6 +224,7 @@ class ApplicationItemModel {
     this.paymentStatus,
     this.isPaymentVerified = false,
     this.isStagePaymentRequired = false,
+    this.citizenNic,
   });
 
   ApplicationItemModel copyWith({
@@ -241,6 +243,7 @@ class ApplicationItemModel {
     String? paymentStatus,
     bool? isPaymentVerified,
     bool? isStagePaymentRequired,
+    String? citizenNic,
   }) {
     return ApplicationItemModel(
       applicationId: applicationId,
@@ -265,6 +268,7 @@ class ApplicationItemModel {
       paymentStatus: paymentStatus ?? this.paymentStatus,
       isPaymentVerified: isPaymentVerified ?? this.isPaymentVerified,
       isStagePaymentRequired: isStagePaymentRequired ?? this.isStagePaymentRequired,
+      citizenNic: citizenNic ?? this.citizenNic,
     );
   }
 }
