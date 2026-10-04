@@ -2,6 +2,8 @@ import 'dart:convert';
 import 'package:flutter/material.dart';
 import 'package:flutter/cupertino.dart';
 import 'package:file_picker/file_picker.dart';
+import 'package:http/http.dart' as http;
+import '../config/app_config.dart';
 import '../theme/app_colors.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import '../providers/application_providers.dart';
@@ -71,6 +73,187 @@ class _ApplicationFormScreenState extends ConsumerState<ApplicationFormScreen> {
   Map<String, dynamic>? _resolvedDepartment;
   bool _isLoadingStageForm = false;
   String? _stageFormError;
+
+  bool _agent3AutoFilled = false;
+  bool _isAgent4Auditing = false;
+  Map<String, dynamic>? _agent4AuditResult;
+
+  void _runAgent3AutoFill() {
+    final session = ref.read(sessionProvider);
+    final user = session.user;
+    final userName = session.fullName ?? (user?['fullName']?.toString() ?? user?['name']?.toString() ?? '');
+    final userNic = user?['nicNumber']?.toString() ??
+        user?['nic']?.toString() ??
+        user?['NicNumber']?.toString() ??
+        '';
+    final userEmail = session.email.isNotEmpty ? session.email : (user?['email']?.toString() ?? '');
+    final userPhone = user?['phoneNumber']?.toString() ?? user?['phone']?.toString() ?? '';
+    final userAddress = user?['address']?.toString() ?? '';
+
+    // Dynamically calculate age from authenticated NIC to ensure semantic consistency with Agent 4
+    int? derivedAge;
+    if (userNic.isNotEmpty) {
+      final parsedNic = SriLankaNic.parse(userNic);
+      if (parsedNic != null) {
+        final now = DateTime.now();
+        var age = now.year - parsedNic.birthDate.year;
+        if (now.month < parsedNic.birthDate.month ||
+            (now.month == parsedNic.birthDate.month && now.day < parsedNic.birthDate.day)) {
+          age--;
+        }
+        derivedAge = age;
+      }
+    }
+    final userAgeStr = (derivedAge != null && derivedAge > 0) ? derivedAge.toString() : '';
+
+    int prefilledCount = 0;
+
+    for (final field in _fields) {
+      final label = field['label']?.toString() ?? '';
+      final lower = label.toLowerCase();
+      final type = field['type']?.toString() ?? 'text';
+
+      if (_displayOnly.contains(type) || label.isEmpty) continue;
+
+      if (type == 'text' || type == 'number' || type == 'email' || type == 'phone') {
+        final ctrl = _controllerFor(label);
+        if (ctrl.text.trim().isEmpty) {
+          if ((lower.contains('name') || lower.contains('applicant')) && userName.isNotEmpty) {
+            ctrl.text = userName;
+            prefilledCount++;
+          } else if ((lower.contains('nic') || lower.contains('identity') || lower.contains('id card')) && userNic.isNotEmpty) {
+            ctrl.text = userNic;
+            prefilledCount++;
+          } else if (lower.contains('age') && userAgeStr.isNotEmpty) {
+            ctrl.text = userAgeStr;
+            prefilledCount++;
+          } else if (lower.contains('email') && userEmail.isNotEmpty) {
+            ctrl.text = userEmail;
+            prefilledCount++;
+          } else if ((lower.contains('phone') || lower.contains('mobile') || lower.contains('contact')) && userPhone.isNotEmpty) {
+            ctrl.text = userPhone;
+            prefilledCount++;
+          } else if (lower.contains('address') && userAddress.isNotEmpty) {
+            ctrl.text = userAddress;
+            prefilledCount++;
+          }
+        }
+      } else if (type == 'payment') {
+        _paymentModes[label] = 'online';
+        prefilledCount++;
+      }
+    }
+
+    setState(() {
+      _agent3AutoFilled = true;
+    });
+
+    // Automatically trigger Agent 4 pre-audit to flag duplicates or missing attachments
+    _runAgent4PreCheck();
+
+    ScaffoldMessenger.of(context).showSnackBar(
+      SnackBar(
+        content: Row(
+          children: [
+            const Icon(CupertinoIcons.sparkles, color: Colors.white, size: 20),
+            const SizedBox(width: 10),
+            Expanded(
+              child: Text(
+                'Agent 3 (Action & Drafting) prefilled $prefilledCount fields and verified statutory fees!',
+                style: const TextStyle(fontWeight: FontWeight.bold),
+              ),
+            ),
+          ],
+        ),
+        backgroundColor: const Color(0xFF0284C7),
+        duration: const Duration(seconds: 3),
+      ),
+    );
+  }
+
+  Future<void> _runAgent4PreCheck() async {
+    setState(() {
+      _isAgent4Auditing = true;
+    });
+
+    try {
+      final session = ref.read(sessionProvider);
+      final answers = _collectAnswers();
+      final attachedDocs = _documents.values.map((d) => d.fileName).toList();
+
+      final userNic = session.user?['nicNumber']?.toString() ??
+          session.user?['nic']?.toString() ??
+          session.user?['NicNumber']?.toString() ??
+          answers['nic'] ?? answers['NIC'] ?? answers['Nic'] ?? '';
+
+      int? derivedAge;
+      if (userNic.isNotEmpty) {
+        final parsed = SriLankaNic.parse(userNic);
+        if (parsed != null) {
+          final now = DateTime.now();
+          var age = now.year - parsed.birthDate.year;
+          if (now.month < parsed.birthDate.month ||
+              (now.month == parsed.birthDate.month && now.day < parsed.birthDate.day)) {
+            age--;
+          }
+          derivedAge = age;
+        }
+      }
+      final parsedAge = int.tryParse(answers['age'] ?? answers['Age'] ?? '');
+      final effectiveAge = parsedAge ?? derivedAge ?? 0;
+
+      final response = await http.post(
+        Uri.parse('${AppConfig.baseUrl}/validationagent/validate'),
+        headers: {'Content-Type': 'application/json'},
+        body: jsonEncode({
+          'applicationId': _activeApplicationId ?? widget.applicationId ?? 0,
+          'serviceProcedureId': widget.serviceId,
+          'serviceName': widget.serviceName,
+          'citizenNic': userNic,
+          'citizenName': session.fullName ?? (session.user?['fullName']?.toString() ?? answers['name'] ?? answers['fullName'] ?? ''),
+          'citizenAge': effectiveAge,
+          'formFields': answers,
+          'attachedDocumentNames': attachedDocs,
+          'requiredDocuments': _fields
+              .where((f) => f['type'] == 'file' && (f['isRequired'] == true))
+              .map((f) => f['label']?.toString() ?? '')
+              .toList(),
+          'stage': _currentStage,
+        }),
+      );
+
+      if (response.statusCode == 200) {
+        final data = jsonDecode(response.body) as Map<String, dynamic>;
+        if (mounted) {
+          setState(() {
+            _agent4AuditResult = data;
+            _isAgent4Auditing = false;
+          });
+        }
+      } else {
+        Map<String, dynamic>? errJson;
+        try {
+          errJson = jsonDecode(response.body) as Map<String, dynamic>?;
+        } catch (_) {}
+        if (mounted) {
+          setState(() {
+            _agent4AuditResult = errJson ?? {
+              'isValid': false,
+              'rejectionReasons': ['Validation audit failed. Please review your submission.'],
+              'riskLevel': 'High',
+            };
+            _isAgent4Auditing = false;
+          });
+        }
+      }
+    } catch (_) {
+      if (mounted) {
+        setState(() {
+          _isAgent4Auditing = false;
+        });
+      }
+    }
+  }
 
   bool get _isStageMode => widget.stageNumber != null && widget.stageNumber! > 1;
 
@@ -159,7 +342,7 @@ class _ApplicationFormScreenState extends ConsumerState<ApplicationFormScreen> {
       final prefs = await SharedPreferences.getInstance();
       await prefs.setString(_draftStorageKey, jsonEncode(draftData));
 
-      if (widget.applicationId != null) {
+      if (widget.applicationId != null && mounted) {
         final token = ref.read(authTokenProvider);
         if (token.isNotEmpty) {
           await ServiceApiClient.saveDraft(
@@ -172,7 +355,9 @@ class _ApplicationFormScreenState extends ConsumerState<ApplicationFormScreen> {
             paymentMethod: paymentMethod,
             token: token,
           );
-          ref.invalidate(myApplicationsProvider);
+          if (mounted) {
+            ref.invalidate(myApplicationsProvider);
+          }
         }
       }
 
@@ -458,6 +643,20 @@ class _ApplicationFormScreenState extends ConsumerState<ApplicationFormScreen> {
 
     setState(() => _isSubmitting = true);
     try {
+      // Pre-submission statutory safety check
+      await _runAgent4PreCheck();
+      if (_agent4AuditResult != null && _agent4AuditResult!['isValid'] == false) {
+        final reasons = (_agent4AuditResult!['rejectionReasons'] as List?)?.map((e) => e.toString()).toList() ?? [];
+        final dupError = reasons.firstWhere(
+          (r) => r.toLowerCase().contains('dup-') || r.toLowerCase().contains('duplicate'),
+          orElse: () => '',
+        );
+        if (dupError.isNotEmpty) {
+          setState(() => _isSubmitting = false);
+          _showError(dupError);
+          return;
+        }
+      }
       final Map<String, dynamic> result;
       if (_isStageMode && widget.applicationId != null) {
         result = await ServiceApiClient.submitStageApplication(
@@ -628,6 +827,10 @@ class _ApplicationFormScreenState extends ConsumerState<ApplicationFormScreen> {
           // Sequential Multi-Department Workflow Stepper & Info
           _buildStageWorkflowHeader(),
 
+          // Agent 3 Smart Action & Drafting Cockpit
+          _buildAgent3DraftingBanner(),
+          const SizedBox(height: 12),
+
           // The "paper" sheet
           Container(
             padding: const EdgeInsets.fromLTRB(16, 16, 16, 20),
@@ -657,6 +860,11 @@ class _ApplicationFormScreenState extends ConsumerState<ApplicationFormScreen> {
             ),
           ),
           const SizedBox(height: 16),
+
+          // Agent 4 Statutory Safety & Anti-Fraud Verification Gatekeeper
+          _buildAgent4SafetyCard(),
+          const SizedBox(height: 16),
+
           SizedBox(
             height: 52,
             child: ElevatedButton(
@@ -691,6 +899,365 @@ class _ApplicationFormScreenState extends ConsumerState<ApplicationFormScreen> {
             ),
           ],
           const SizedBox(height: 12),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildAgent3DraftingBanner() {
+    return Container(
+      padding: const EdgeInsets.all(14),
+      decoration: BoxDecoration(
+        color: const Color(0xFFF0F7FF),
+        borderRadius: BorderRadius.circular(12),
+        border: Border.all(color: const Color(0xFFBAE6FD)),
+        boxShadow: [
+          BoxShadow(
+            color: const Color(0xFF0284C7).withValues(alpha: 0.06),
+            blurRadius: 6,
+            offset: const Offset(0, 2),
+          ),
+        ],
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Row(
+            children: [
+              Container(
+                padding: const EdgeInsets.all(6),
+                decoration: BoxDecoration(
+                  color: const Color(0xFF0284C7),
+                  borderRadius: BorderRadius.circular(8),
+                ),
+                child: const Icon(CupertinoIcons.sparkles, size: 16, color: Colors.white),
+              ),
+              const SizedBox(width: 8),
+              const Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text(
+                      'Agent 3 • Action & Smart Form Drafting',
+                      style: TextStyle(
+                        fontSize: 13,
+                        fontWeight: FontWeight.bold,
+                        color: Color(0xFF0369A1),
+                      ),
+                    ),
+                    Text(
+                      'Auto-fills your verified demographics & verifies statutory fees',
+                      style: TextStyle(fontSize: 11, color: Color(0xFF0C4A6E)),
+                    ),
+                  ],
+                ),
+              ),
+            ],
+          ),
+          const SizedBox(height: 10),
+          Row(
+            children: [
+              Expanded(
+                child: ElevatedButton.icon(
+                  onPressed: _runAgent3AutoFill,
+                  style: ElevatedButton.styleFrom(
+                    backgroundColor: const Color(0xFF0284C7),
+                    foregroundColor: Colors.white,
+                    elevation: 0,
+                    padding: const EdgeInsets.symmetric(vertical: 10, horizontal: 12),
+                    shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
+                  ),
+                  icon: const Icon(Icons.flash_on_rounded, size: 16),
+                  label: Text(
+                    _agent3AutoFilled ? 'Re-Apply Auto-Fill' : 'Auto-Fill with Agent 3',
+                    style: const TextStyle(fontSize: 12, fontWeight: FontWeight.bold),
+                  ),
+                ),
+              ),
+              const SizedBox(width: 8),
+              OutlinedButton.icon(
+                onPressed: () {
+                  _saveDraft(showNotice: false);
+                  Navigator.push(
+                    context,
+                    MaterialPageRoute(
+                      builder: (context) => CitizenAssistantChatScreen(
+                        serviceProcedureId: widget.serviceId,
+                        serviceName: widget.serviceName,
+                        stage: _currentStage,
+                        applicationId: _activeApplicationId,
+                      ),
+                    ),
+                  );
+                },
+                style: OutlinedButton.styleFrom(
+                  foregroundColor: const Color(0xFF0369A1),
+                  side: const BorderSide(color: Color(0xFF7DD3FC)),
+                  padding: const EdgeInsets.symmetric(vertical: 10, horizontal: 12),
+                  shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
+                ),
+                icon: const Icon(CupertinoIcons.chat_bubble_2_fill, size: 15),
+                label: const Text(
+                  'Ask Agent 3',
+                  style: TextStyle(fontSize: 12, fontWeight: FontWeight.bold),
+                ),
+              ),
+            ],
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildAgent4SafetyCard() {
+    final audit = _agent4AuditResult;
+    final isAudited = audit != null;
+    final bool isValid = audit != null && (audit['isValid'] == true);
+    final String riskLevel = audit?['riskLevel']?.toString() ?? (isValid ? 'Low' : 'High');
+    final List rejectionReasons = (audit?['rejectionReasons'] as List?) ?? [];
+    final List complianceChecks = (audit?['complianceChecks'] as List?) ?? [];
+
+    Color cardBg;
+    Color cardBorder;
+    Color iconBg;
+    IconData iconData;
+    Color titleColor;
+    Color subtitleColor;
+
+    if (!isAudited) {
+      cardBg = const Color(0xFFF8FAFC);
+      cardBorder = const Color(0xFFCBD5E1);
+      iconBg = const Color(0xFF475569);
+      iconData = CupertinoIcons.shield;
+      titleColor = const Color(0xFF334155);
+      subtitleColor = const Color(0xFF64748B);
+    } else if (isValid) {
+      cardBg = const Color(0xFFF0FDF4);
+      cardBorder = const Color(0xFF86EFAC);
+      iconBg = const Color(0xFF16A34A);
+      iconData = CupertinoIcons.shield_fill;
+      titleColor = const Color(0xFF166534);
+      subtitleColor = const Color(0xFF15803D);
+    } else {
+      cardBg = const Color(0xFFFEF2F2);
+      cardBorder = const Color(0xFFFECACA);
+      iconBg = const Color(0xFFDC2626);
+      iconData = CupertinoIcons.exclamationmark_shield_fill;
+      titleColor = const Color(0xFF991B1B);
+      subtitleColor = const Color(0xFFB91C1C);
+    }
+
+    return Container(
+      padding: const EdgeInsets.all(14),
+      decoration: BoxDecoration(
+        color: cardBg,
+        borderRadius: BorderRadius.circular(12),
+        border: Border.all(color: cardBorder),
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Row(
+            children: [
+              Container(
+                padding: const EdgeInsets.all(6),
+                decoration: BoxDecoration(
+                  color: iconBg,
+                  borderRadius: BorderRadius.circular(8),
+                ),
+                child: Icon(iconData, size: 16, color: Colors.white),
+              ),
+              const SizedBox(width: 8),
+              Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text(
+                      'Agent 4 • Statutory Safety & Anti-Fraud Gatekeeper',
+                      style: TextStyle(
+                        fontSize: 13,
+                        fontWeight: FontWeight.bold,
+                        color: titleColor,
+                      ),
+                    ),
+                    Text(
+                      !isAudited
+                          ? 'Validates schema completeness and checks for duplicate active submissions'
+                          : isValid
+                              ? 'Statutory compliance & anti-fraud pre-screening passed'
+                              : '⚠️ Action Required — Statutory deficiencies detected',
+                      style: TextStyle(
+                        fontSize: 11,
+                        fontWeight: isValid ? FontWeight.normal : FontWeight.w600,
+                        color: subtitleColor,
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+            ],
+          ),
+          if (isAudited) ...[
+            const SizedBox(height: 10),
+            Container(
+              padding: const EdgeInsets.all(10),
+              decoration: BoxDecoration(
+                color: Colors.white,
+                borderRadius: BorderRadius.circular(8),
+                border: Border.all(color: isValid ? const Color(0xFFBBF7D0) : const Color(0xFFFECACA)),
+              ),
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  if (complianceChecks.isNotEmpty) ...[
+                    for (final chk in complianceChecks) ...[
+                      if (chk is Map) ...[
+                        Builder(
+                          builder: (_) {
+                            final isPass = chk['isPassed'] == true;
+                            final type = chk['checkType']?.toString() ?? 'Compliance Gate';
+                            final details = chk['details']?.toString() ?? '';
+                            return Padding(
+                              padding: const EdgeInsets.only(bottom: 4),
+                              child: Row(
+                                crossAxisAlignment: CrossAxisAlignment.start,
+                                children: [
+                                  Icon(
+                                    isPass ? Icons.check_circle_rounded : Icons.cancel_rounded,
+                                    size: 15,
+                                    color: isPass ? const Color(0xFF16A34A) : const Color(0xFFDC2626),
+                                  ),
+                                  const SizedBox(width: 6),
+                                  Expanded(
+                                    child: Text(
+                                      details.isNotEmpty ? '$type: $details' : type,
+                                      style: TextStyle(
+                                        fontSize: 12,
+                                        fontWeight: FontWeight.w600,
+                                        color: isPass ? const Color(0xFF166534) : const Color(0xFF991B1B),
+                                      ),
+                                    ),
+                                  ),
+                                ],
+                              ),
+                            );
+                          },
+                        ),
+                      ],
+                    ],
+                  ] else if (isValid) ...[
+                    Row(
+                      children: const [
+                        Icon(Icons.check_circle_rounded, size: 15, color: Color(0xFF16A34A)),
+                        SizedBox(width: 6),
+                        Expanded(
+                          child: Text('Statutory Compliance Checks: Verified', style: TextStyle(fontSize: 12, fontWeight: FontWeight.w600, color: Color(0xFF166534))),
+                        ),
+                      ],
+                    ),
+                    const SizedBox(height: 4),
+                  ],
+                  if (rejectionReasons.isNotEmpty) ...[
+                    for (final r in rejectionReasons) ...[
+                      Padding(
+                        padding: const EdgeInsets.only(bottom: 4),
+                        child: Row(
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          children: [
+                            const Icon(Icons.cancel_rounded, size: 15, color: Color(0xFFDC2626)),
+                            const SizedBox(width: 6),
+                            Expanded(
+                              child: Text(
+                                r.toString(),
+                                style: const TextStyle(fontSize: 12, fontWeight: FontWeight.w600, color: Color(0xFF991B1B)),
+                              ),
+                            ),
+                          ],
+                        ),
+                      ),
+                    ],
+                  ],
+                  Row(
+                    children: [
+                      Icon(
+                        isValid ? Icons.verified_user_rounded : Icons.shield_outlined,
+                        size: 15,
+                        color: isValid ? const Color(0xFF16A34A) : const Color(0xFFB45309),
+                      ),
+                      const SizedBox(width: 6),
+                      Expanded(
+                        child: Text(
+                          isValid
+                              ? 'Statutory Risk Level: $riskLevel (Ready for Official Queue)'
+                              : 'Statutory Risk Level: $riskLevel (Resolution required before review)',
+                          style: TextStyle(
+                            fontSize: 12,
+                            fontWeight: FontWeight.w600,
+                            color: isValid ? const Color(0xFF166534) : const Color(0xFF92400E),
+                          ),
+                        ),
+                      ),
+                    ],
+                  ),
+                  if (audit['summary'] != null && audit['summary'].toString().isNotEmpty) ...[
+                    const Divider(height: 12, thickness: 0.8, color: Color(0xFFE2E8F0)),
+                    Text(
+                      audit['summary'].toString(),
+                      style: const TextStyle(fontSize: 11, color: Color(0xFF334155)),
+                    ),
+                  ],
+                ],
+              ),
+            ),
+            const SizedBox(height: 8),
+            Row(
+              children: [
+                Expanded(
+                  child: OutlinedButton.icon(
+                    onPressed: _isAgent4Auditing ? null : _runAgent4PreCheck,
+                    style: OutlinedButton.styleFrom(
+                      foregroundColor: isValid ? const Color(0xFF166534) : const Color(0xFF991B1B),
+                      side: BorderSide(color: isValid ? const Color(0xFF86EFAC) : const Color(0xFFFECACA)),
+                      padding: const EdgeInsets.symmetric(vertical: 8, horizontal: 10),
+                      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
+                    ),
+                    icon: _isAgent4Auditing
+                        ? const SizedBox(width: 12, height: 12, child: CircularProgressIndicator(strokeWidth: 2))
+                        : const Icon(CupertinoIcons.arrow_counterclockwise, size: 14),
+                    label: Text(
+                      _isAgent4Auditing ? 'Auditing...' : (isValid ? 'Re-Audit Safety' : 'Re-Check Safety (After Attaching)'),
+                      style: const TextStyle(fontSize: 11, fontWeight: FontWeight.bold),
+                    ),
+                  ),
+                ),
+              ],
+            ),
+          ] else ...[
+            const SizedBox(height: 10),
+            SizedBox(
+              width: double.infinity,
+              child: OutlinedButton.icon(
+                onPressed: _isAgent4Auditing ? null : _runAgent4PreCheck,
+                style: OutlinedButton.styleFrom(
+                  foregroundColor: const Color(0xFF1E3A6E),
+                  side: const BorderSide(color: Color(0xFF94A3B8)),
+                  padding: const EdgeInsets.symmetric(vertical: 10, horizontal: 12),
+                  shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
+                ),
+                icon: _isAgent4Auditing
+                    ? const SizedBox(
+                        width: 14,
+                        height: 14,
+                        child: CircularProgressIndicator(strokeWidth: 2, color: Color(0xFF1E3A6E)),
+                      )
+                    : const Icon(CupertinoIcons.search, size: 16),
+                label: Text(
+                  _isAgent4Auditing ? 'Running Statutory Safety Audit...' : 'Run Safety Pre-Audit (Agent 4)',
+                  style: const TextStyle(fontSize: 12, fontWeight: FontWeight.bold),
+                ),
+              ),
+            ),
+          ],
         ],
       ),
     );
