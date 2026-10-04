@@ -67,7 +67,7 @@ function parseOfficerBriefing(rawBriefing?: string, hasDeficiencies = false): Br
   const items: BriefingItem[] = [];
 
   for (const line of lines) {
-    let clean = line.replace(/^[•\-\*]\s*/, "");
+    let clean = line.replace(/^[•\-*]\s*/, "");
     if (hasDeficiencies && clean.toLowerCase().includes("recommended action:") && clean.toLowerCase().includes("approve")) {
       clean = "Recommended Action: REQUEST REVISION — Mandatory evidentiary document requires citizen amendment or manual officer inspection.";
     }

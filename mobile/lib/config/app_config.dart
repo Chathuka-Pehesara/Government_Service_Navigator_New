@@ -1,11 +1,11 @@
+import 'package:flutter/foundation.dart';
+
 /// Single source of truth for the backend base URL.
 ///
 /// Defaults to the hosted Azure API. To run against a local backend, pass the
 /// server origin (without /api) at build/run time:
 ///   • Web / Windows / iOS sim → flutter run --dart-define=API_URL=http://localhost:5119
 ///   • Android emulator        → flutter run --dart-define=API_URL=http://10.0.2.2:5119
-import 'package:flutter/foundation.dart';
-
 class AppConfig {
   AppConfig._();
 
