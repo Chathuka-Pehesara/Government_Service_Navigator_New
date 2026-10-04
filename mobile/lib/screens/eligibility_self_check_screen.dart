@@ -1,5 +1,5 @@
 import 'package:flutter/material.dart';
-import 'agent2_statutory_auditor_screen.dart';
+import 'citizen_assistant_chat_screen.dart';
 
 class EligibilitySelfCheckScreen extends StatelessWidget {
   final int serviceId;
@@ -13,8 +13,8 @@ class EligibilitySelfCheckScreen extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    return Agent2StatutoryAuditorScreen(
-      serviceId: serviceId,
+    return CitizenAssistantChatScreen(
+      serviceProcedureId: serviceId,
       serviceName: serviceName,
     );
   }

@@ -35,8 +35,15 @@ class _BookingsListScreenState extends ConsumerState<BookingsListScreen> {
   Future<void> _fetchBookings() async {
     setState(() => _isLoadingBookings = true);
     try {
+      final token = ref.read(sessionProvider).token;
       final url = Uri.parse('${AppConfig.baseUrl}/admin/collection-slots/bookings');
-      final res = await http.get(url).timeout(const Duration(seconds: 8));
+      final res = await http.get(
+        url,
+        headers: {
+          'Content-Type': 'application/json',
+          if (token.isNotEmpty) 'Authorization': 'Bearer $token',
+        },
+      ).timeout(const Duration(seconds: 8));
 
       if (res.statusCode == 200) {
         final list = jsonDecode(res.body) as List<dynamic>;
@@ -44,19 +51,30 @@ class _BookingsListScreenState extends ConsumerState<BookingsListScreen> {
 
         for (final item in list) {
           if (item is Map<String, dynamic>) {
-            final appCode = item['applicationCode']?.toString();
-            final appId = item['id']?.toString();
-            if (appCode != null && appCode.isNotEmpty) {
-              map[appCode.toUpperCase()] = item;
+            final appCode = item['applicationCode']?.toString().trim();
+            final rawAppId = item['applicationId']?.toString().trim();
+            final status = item['status']?.toString().toLowerCase();
+            if (status == 'cancelled') continue;
+
+            void registerKey(String? key) {
+              if (key == null || key.isEmpty) return;
+              final upper = key.toUpperCase();
+              map[upper] = item;
+              if (upper.startsWith('APP-')) {
+                map[upper.replaceFirst('APP-', '')] = item;
+              } else {
+                map['APP-$upper'] = item;
+              }
             }
-            if (appId != null && appId.isNotEmpty) {
-              map['APP-$appId'.toUpperCase()] = item;
-            }
+
+            registerKey(appCode);
+            registerKey(rawAppId);
           }
         }
 
         if (mounted) {
           setState(() {
+            _bookingsByAppCode.clear();
             _bookingsByAppCode.addAll(map);
             _isLoadingBookings = false;
           });
@@ -383,8 +401,11 @@ class _BookingsListScreenState extends ConsumerState<BookingsListScreen> {
               final dateCompleted = service['dateCompleted']!;
               final dept = service['department'] ?? 'Department Desk';
 
-              final booking = _bookingsByAppCode[appId.toUpperCase()];
-              final isBooked = booking != null;
+              final cleanId = appId.toUpperCase().replaceAll('APP-', '');
+              final booking = _bookingsByAppCode[appId.toUpperCase()] ??
+                  _bookingsByAppCode[cleanId] ??
+                  _bookingsByAppCode['APP-$cleanId'];
+              final isBooked = booking != null && booking['status'] != 'Cancelled';
               final isPostalRequested = _postalRequestedApps.contains(appId);
 
               return Card(
@@ -522,6 +543,26 @@ class _BookingsListScreenState extends ConsumerState<BookingsListScreen> {
                             ],
                           ),
                         ),
+                        Container(
+                          margin: const EdgeInsets.only(top: 8, bottom: 4),
+                          padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
+                          decoration: BoxDecoration(
+                            color: AppColors.success.withValues(alpha: 0.1),
+                            borderRadius: BorderRadius.circular(8),
+                          ),
+                          child: const Row(
+                            children: [
+                              Icon(Icons.lock_outline_rounded, size: 14, color: AppColors.success),
+                              SizedBox(width: 6),
+                              Expanded(
+                                child: Text(
+                                  'Appointment verified & locked. Multiple bookings are restricted.',
+                                  style: TextStyle(fontSize: 11, fontWeight: FontWeight.w600, color: AppColors.success),
+                                ),
+                              ),
+                            ],
+                          ),
+                        ),
                         const SizedBox(height: 10),
 
                         // Action Buttons for Booked Slot
@@ -542,8 +583,8 @@ class _BookingsListScreenState extends ConsumerState<BookingsListScreen> {
                             IconButton(
                               icon: const Icon(Icons.edit_calendar_rounded, size: 18),
                               tooltip: 'Reschedule Slot',
-                              onPressed: () {
-                                Navigator.of(context).push(
+                              onPressed: () async {
+                                await Navigator.of(context).push(
                                   CupertinoPageRoute(
                                     builder: (_) => BookingOptionsScreen(
                                       applicationId: appId,
@@ -560,6 +601,7 @@ class _BookingsListScreenState extends ConsumerState<BookingsListScreen> {
                                     ),
                                   ),
                                 );
+                                if (mounted) _fetchBookings();
                               },
                             ),
                           ],
@@ -647,8 +689,8 @@ class _BookingsListScreenState extends ConsumerState<BookingsListScreen> {
                               padding: const EdgeInsets.symmetric(vertical: 12),
                               shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
                             ),
-                            onPressed: () {
-                              Navigator.of(context).push(
+                            onPressed: () async {
+                              final result = await Navigator.of(context).push(
                                 CupertinoPageRoute(
                                   builder: (_) => BookingOptionsScreen(
                                     applicationId: appId,
@@ -667,6 +709,14 @@ class _BookingsListScreenState extends ConsumerState<BookingsListScreen> {
                                   ),
                                 ),
                               );
+                              if (result is Map<String, dynamic> && (result['isBooked'] == true || result['confirmationCode'] != null)) {
+                                if (mounted) {
+                                  setState(() {
+                                    _bookingsByAppCode[appId.toUpperCase()] = result;
+                                  });
+                                }
+                              }
+                              if (mounted) _fetchBookings();
                             },
                           ),
                         ),

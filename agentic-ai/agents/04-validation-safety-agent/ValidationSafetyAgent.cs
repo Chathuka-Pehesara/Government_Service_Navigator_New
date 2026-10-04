@@ -105,7 +105,7 @@ namespace Government_Service_Navigator.AgenticAi.Agents.ValidationSafety
                 CalledAt: DateTime.UtcNow
             ));
 
-            if (duplicateResult.IsDuplicate && _config.BlockDuplicateSubmissions)
+            if (duplicateResult.IsDuplicate)
             {
                 rejectionReasons.Add(duplicateResult.Message);
             }
@@ -283,10 +283,11 @@ namespace Government_Service_Navigator.AgenticAi.Agents.ValidationSafety
             // =========================================================================
             if (rejectionReasons.Any())
             {
+                string appRef = draft.ApplicationId > 0 ? $"application #{draft.ApplicationId}" : "draft submission";
                 var rejected = ValidationResult.Rejected(
                     reasons: rejectionReasons,
                     checks: complianceChecks,
-                    summary: $"Agent 4 flagged application #{draft.ApplicationId}. Found {rejectionReasons.Count} statutory compliance violation(s) or documentary inconsistency.",
+                    summary: $"Agent 4 flagged {appRef}: Found {rejectionReasons.Count} statutory compliance violation(s) or missing document(s).",
                     riskLevel: string.IsNullOrWhiteSpace(riskLevel) || riskLevel.Equals("Low", StringComparison.OrdinalIgnoreCase) ? "High" : riskLevel,
                     officerBriefing: officerBriefing,
                     toolCalls: toolCalls
@@ -316,10 +317,11 @@ namespace Government_Service_Navigator.AgenticAi.Agents.ValidationSafety
             int regAppId = draft.ApplicationId > 0 ? draft.ApplicationId : taskId;
             _duplicateTool.RegisterApplication(draft.CitizenNic, draft.ServiceProcedureId, $"APP-2026-{regAppId}");
 
+            string successAppRef = draft.ApplicationId > 0 ? $"Application #{draft.ApplicationId}" : "Draft application";
             var success = ValidationResult.Success(
                 verificationTaskId: taskId,
                 checks: complianceChecks,
-                summary: $"Application #{draft.ApplicationId} cleared all safety, schema, anti-fraud, and compliance audits. Enqueued as Verification Task #{taskId}.",
+                summary: $"{successAppRef} cleared all safety, schema, anti-fraud, and compliance audits. Enqueued as Verification Task #{taskId}.",
                 riskLevel: riskLevel,
                 officerBriefing: officerBriefing,
                 toolCalls: toolCalls
@@ -347,10 +349,19 @@ Focus on:
 Institutional Guidelines & Guardrails:
 - Government services require a wide variety of statutory proofs (e.g. Title Deeds, Cadastral Survey Plans, Company Registration Form 1, Tax Clearance, Medical Fitness Certificates, Salary/Income Slips, Police Clearance Reports, Grama Niladhari Assessments, Utility Bills, Identity Proofs, etc.). Never assume that an NIC or Birth Certificate is required unless it is explicitly listed in 'RequiredDocumentsForStage'.
 - STAGE SCOPING: In the 'Stage Documents' bullet, ONLY audit and report on documents requested in 'RequiredDocumentsForStage'. Do NOT state or invent that unrequested documents (such as an NIC) are attached for this stage.
-- SEMANTIC RELEVANCE CHECK: If an attached document filename (e.g. containing 'diagram', 'transformer', 'packaging', 'snack', 'label_design', 'screenshot', 'code', 'temp', or random test names) clearly does not match the nature of the required statutory document, you MUST flag it! In 'officerBriefing', state that the uploaded file appears unrelated to the required statutory proof. Set 'riskLevel' to 'Medium' or 'High', set 'isSemanticallyConsistent' to false, add the discrepancy to 'inconsistencies', and recommend that the Verifying Officer conduct a visual inspection or request document revision.
+- SEMANTIC RELEVANCE & AUTHENTICITY AUDIT (Applies universally to ANY service and ANY stage):
+  * For each document required in 'RequiredDocumentsForStage', inspect the attached file name:
+    1. NAMED MATCH: If the attached file name contains keywords or tokens corresponding to the required document (e.g., 'NIC', 'identity', 'id' for National Identity Card; 'birth', 'certificate', 'bc' for Birth Certificate; 'deed' for Title Deed; 'income', 'salary' for Pay Slip, etc.), it is semantically verified.
+    2. GENERIC / UNLABELLED CAPTURE: If a file is attached but has a generic device/camera name lacking document keywords (e.g., 'WhatsApp Image...', 'IMG_...', 'photo...', 'image...', 'camera...', 'scan.jpg'):
+       - The citizen has attached a file, so it is NOT missing.
+       - HOWEVER, because the filename contains no document identification keywords, the AI cannot confirm authenticity without human visual inspection.
+       - In this case: You MUST set 'riskLevel' to 'Medium'!
+       - In 'executiveSummary' and 'officerBriefing', explicitly state: 'Action Required: The attached file for [Document Name] ([filename]) is a generic capture name. Verifying Officer must visually inspect the attached document to confirm it is an authentic [Document Name] before granting approval.'
+       - In 'Recommended Action', state: 'MANUAL VISUAL AUDIT REQUIRED: Inspect attached [Document Name] to confirm authenticity before granting approval.'
+    3. MISSING OR ADVERSARIAL: If a mandatory document is completely missing or has an adversarial/unrelated name (e.g., 'circuit_diagram', 'snack_label', 'source_code'), set 'riskLevel' to 'High' and recommend citizen revision.
+  * Set 'riskLevel' to 'Low' and 'isSemanticallyConsistent' to true ONLY IF all mandatory proofs have filenames that clearly match their statutory document names and all checks pass.
 - The 'Department' field is internal administrative routing metadata, NOT a citizen form input. Never flag an empty or missing Department as a citizen inconsistency.
 - Do NOT flag optional, standard deposit slips, bank payment receipts, or extra uploads as anomalies if all mandatory requirements for this stage are met.
-- If all mandatory proofs for this stage are attached, semantically consistent, and eligibility criteria pass, riskLevel MUST be 'Low' and isSemanticallyConsistent MUST be true.
 
 Respond strictly with a JSON object matching this schema:
 {

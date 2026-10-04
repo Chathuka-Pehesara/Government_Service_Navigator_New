@@ -27,7 +27,8 @@ public class CheckEligibilityRulesTool : ICheckEligibilityRulesTool
             result.MissingCriteria.Add("Applicant must be at least 18 years old.");
         }
 
-        if (string.IsNullOrWhiteSpace(citizenship) || !citizenship.ToLower().Contains("sri lankan"))
+        var c = citizenship?.Trim().ToLowerInvariant() ?? "";
+        if (string.IsNullOrWhiteSpace(c) || (!c.Contains("sri lankan") && !c.Contains("sri lanka") && !c.Contains("descent") && !c.Contains("registration") && !c.Contains("citizen")))
         {
             result.ScorePercentage -= 30;
             result.MissingCriteria.Add("Non-resident/foreign citizenship requires additional clearance.");

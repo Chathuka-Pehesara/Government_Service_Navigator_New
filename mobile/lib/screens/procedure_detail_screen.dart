@@ -9,7 +9,7 @@ import '../providers/session_provider.dart';
 import '../theme/app_colors.dart';
 import '../widgets/service_roadmap_tracker.dart';
 import 'application_form_screen.dart';
-import 'agent2_statutory_auditor_screen.dart';
+import 'citizen_assistant_chat_screen.dart';
 import 'payments/payment_screen.dart';
 import 'verification_detail_screen.dart';
 
@@ -92,7 +92,26 @@ class _ProcedureDetailScreenState extends ConsumerState<ProcedureDetailScreen> {
         (workflowDepts.isNotEmpty && displayStage - 1 < workflowDepts.length ? workflowDepts[displayStage - 1] : null);
 
     return Scaffold(
-      appBar: AppBar(title: Text(serviceDetails['name'] ?? 'Service Details')),
+      appBar: AppBar(
+        title: Text(serviceDetails['name'] ?? 'Service Details'),
+        actions: [
+          IconButton(
+            icon: const Icon(CupertinoIcons.sparkles, color: AppColors.primary),
+            tooltip: 'Ask AI Guide',
+            onPressed: () {
+              Navigator.push(
+                context,
+                MaterialPageRoute(
+                  builder: (context) => CitizenAssistantChatScreen(
+                    serviceProcedureId: serviceId,
+                    serviceName: serviceDetails['name'] ?? 'Government Service',
+                  ),
+                ),
+              );
+            },
+          ),
+        ],
+      ),
       body: RefreshIndicator(
         onRefresh: () async {
           ref.invalidate(myApplicationsProvider);
@@ -405,19 +424,24 @@ class _ProcedureDetailScreenState extends ConsumerState<ProcedureDetailScreen> {
             ],
             SizedBox(
               width: double.infinity,
-              child: ElevatedButton.icon(
-                icon: const Icon(Icons.check_circle_outline),
-                label: const Text('Statutory Eligibility & Compliance Audit', style: TextStyle(fontSize: 14, fontWeight: FontWeight.w600)),
-                style: ElevatedButton.styleFrom(
+              child: OutlinedButton.icon(
+                icon: const Icon(CupertinoIcons.sparkles, color: AppColors.primary, size: 18),
+                label: const Text(
+                  'Ask AI Guide about this Service',
+                  style: TextStyle(fontSize: 14, fontWeight: FontWeight.w600, color: AppColors.primary),
+                ),
+                style: OutlinedButton.styleFrom(
                   minimumSize: const Size.fromHeight(48),
+                  side: const BorderSide(color: AppColors.primary, width: 1.2),
                   shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+                  backgroundColor: AppColors.primary.withValues(alpha: 0.04),
                 ),
                 onPressed: () {
                   Navigator.push(
                     context,
                     MaterialPageRoute(
-                      builder: (context) => Agent2StatutoryAuditorScreen(
-                        serviceId: serviceId,
+                      builder: (context) => CitizenAssistantChatScreen(
+                        serviceProcedureId: serviceId,
                         serviceName: serviceDetails['name'] ?? 'Government Service',
                       ),
                     ),

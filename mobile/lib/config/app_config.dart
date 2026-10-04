@@ -4,14 +4,28 @@
 /// server origin (without /api) at build/run time:
 ///   • Web / Windows / iOS sim → flutter run --dart-define=API_URL=http://localhost:5119
 ///   • Android emulator        → flutter run --dart-define=API_URL=http://10.0.2.2:5119
+import 'package:flutter/foundation.dart';
+
 class AppConfig {
   AppConfig._();
 
   static const String _hostedUrl =
       'https://gsn-api-dpa2agb6c5h7gyar.southeastasia-01.azurewebsites.net';
 
-  static const String _apiUrl =
-      String.fromEnvironment('API_URL', defaultValue: _hostedUrl);
+  static String get _defaultUrl {
+    if (kDebugMode) {
+      if (kIsWeb) return 'http://localhost:5119';
+      if (defaultTargetPlatform == TargetPlatform.android) {
+        return 'http://10.0.2.2:5119';
+      }
+      return 'http://localhost:5119';
+    }
+    return _hostedUrl;
+  }
+
+  static final String _apiUrl = const String.fromEnvironment('API_URL').isNotEmpty
+      ? const String.fromEnvironment('API_URL')
+      : _defaultUrl;
 
   /// Backend origin, e.g. for SignalR hubs and uploaded file links.
   static String get serverUrl =>

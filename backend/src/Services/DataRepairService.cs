@@ -53,15 +53,31 @@ namespace Government_Service_Navigator.Backend.Services
             using var scope = _scopeFactory.CreateScope();
             var db = scope.ServiceProvider.GetRequiredService<AppDbContext>();
 
-            // Tracked update (not raw SQL) so the change interceptor refreshes the citizens' caches
-            var unreviewed = await db.VerificationTasks
-                .Where(t => t.Status == "Approved" && !t.Reviews.Any())
+            // Synchronize tasks for submissions that completed all stages
+            var completedSubs = await db.ApplicationSubmissions
+                .Where(s => s.StageStatus == "Completed")
                 .ToListAsync(cancellationToken);
-            if (unreviewed.Count > 0)
+            if (completedSubs.Count > 0)
             {
-                foreach (var task in unreviewed) task.Status = "Pending";
-                await db.SaveChangesAsync(cancellationToken);
-                _logger.LogInformation("Reset {Count} approved task(s) without a review to Pending", unreviewed.Count);
+                var completedAppIds = completedSubs.Select(s => s.Id).ToList();
+                var tasksToSync = await db.VerificationTasks
+                    .Where(t => completedAppIds.Contains(t.ApplicationId) && (t.Status == "Pending" || t.StageNumber < t.MaxStages))
+                    .ToListAsync(cancellationToken);
+
+                foreach (var task in tasksToSync)
+                {
+                    task.Status = "Approved";
+                    if (task.MaxStages > 0)
+                    {
+                        task.CurrentStage = task.MaxStages;
+                        task.StageNumber = task.MaxStages;
+                    }
+                }
+                if (tasksToSync.Count > 0)
+                {
+                    await db.SaveChangesAsync(cancellationToken);
+                    _logger.LogInformation("Synchronized {Count} task(s) to Approved for completed applications", tasksToSync.Count);
+                }
             }
 
             // The citizen response already derives "Draft" for these; this only makes the stored value agree

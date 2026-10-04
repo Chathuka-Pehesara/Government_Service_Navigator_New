@@ -16,6 +16,20 @@ public record ServiceCatalogChunk(string ServiceName, string Category, List<stri
 
     public static ServiceCatalogChunk? TryParse(string content)
     {
+        if (string.IsNullOrWhiteSpace(content)) return null;
+
+        // Policy chunk format: "[ServiceName - Title]: Content..."
+        if (content.StartsWith('[') && content.Contains("]: "))
+        {
+            var closingBracket = content.IndexOf("]: ", StringComparison.Ordinal);
+            var header = content.Substring(1, closingBracket - 1);
+            var dashIdx = header.IndexOf(" - ", StringComparison.Ordinal);
+            string svcName = dashIdx > 0 ? header.Substring(0, dashIdx).Trim() : header.Trim();
+            string category = dashIdx > 0 ? header.Substring(dashIdx + 3).Trim() : "Policy";
+
+            return new ServiceCatalogChunk(svcName, category, new List<string>(), string.Empty);
+        }
+
         var headerEnd = content.IndexOf("): ", StringComparison.Ordinal);
         var categoryStart = headerEnd < 0 ? -1 : content.LastIndexOf(" (", headerEnd, StringComparison.Ordinal);
         var docsStart = content.IndexOf(DocsMarker, StringComparison.Ordinal);
@@ -23,7 +37,7 @@ public record ServiceCatalogChunk(string ServiceName, string Category, List<stri
         if (categoryStart < 0 || docsStart < 0 || feesStart < docsStart) return null;
 
         var name = content[..categoryStart].Trim();
-        var category = content[(categoryStart + 2)..headerEnd].Trim();
+        var cat = content[(categoryStart + 2)..headerEnd].Trim();
         var docsText = content[(docsStart + DocsMarker.Length)..feesStart].Trim();
         var feeText = content[(feesStart + FeesMarker.Length)..].TrimEnd('.', ' ');
 
@@ -31,7 +45,7 @@ public record ServiceCatalogChunk(string ServiceName, string Category, List<stri
             ? new List<string>()
             : docsText.Split(", ", StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries).ToList();
 
-        return new ServiceCatalogChunk(name, category, documents, feeText);
+        return new ServiceCatalogChunk(name, cat, documents, feeText);
     }
 
     public List<string> KeywordTokens() => TextTokenizer.Tokenize($"{ServiceName} {Category}");

@@ -20,6 +20,7 @@ import {
 import { Checkmark, Close, Document, ChevronLeft, ArrowRight, Warning, Money, TrashCan, Security, Task, CheckmarkFilled, WarningAltFilled } from "@carbon/icons-react";
 import AgentDraftPanel from "./AgentDraftPanel";
 import DocumentPreview from "./DocumentPreview";
+import SupervisorCopilotBubble from "./SupervisorCopilotBubble";
 import { getAgentDraft, generateAgentDraft, type AgentDraftView } from "./agentDraftApi";
 import { API_BASE_URL, ApiError } from "../utils/api";
 import { v } from "../utils/validation";
@@ -142,8 +143,11 @@ export default function VerificationWorkspace() {
       const paymentDocs = uploaded.filter(d => d.category === 'payment');
 
       // Pick at most ONE active payment slip (matching detail.payment.slipUrl, or newest upload)
-      const activeSlip = paymentDocs.find(d => detail?.payment?.slipUrl && detail.payment.slipUrl.includes(d.id))
-        ?? (paymentDocs.length > 0 ? paymentDocs[paymentDocs.length - 1] : null);
+      // Only include payment slip if this stage actually requires a statutory payment
+      const activeSlip = detail?.payment?.hasPayment
+        ? (paymentDocs.find(d => detail?.payment?.slipUrl && detail.payment.slipUrl.includes(d.id))
+          ?? (paymentDocs.length > 0 ? paymentDocs[paymentDocs.length - 1] : null))
+        : null;
 
       const relevant = activeSlip ? [...stageDocs, activeSlip] : stageDocs;
       const order: Record<string, number> = { stage: 0, payment: 1 };
@@ -292,7 +296,7 @@ export default function VerificationWorkspace() {
   };
 
   const handleDecision = async (status: string) => {
-    if (status === "Approved" && detail?.payment && !detail.payment.isVerified) {
+    if (status === "Approved" && detail?.payment?.hasPayment && !detail.payment.isVerified) {
       alert("Cannot complete stage as verified: Statutory payment has not been verified by the Department Finance Officer.");
       return;
     }
@@ -303,7 +307,7 @@ export default function VerificationWorkspace() {
   };
 
   const submitDecision = async (status: string) => {
-    if (status === "Approved" && detail?.payment && !detail.payment.isVerified) {
+    if (status === "Approved" && detail?.payment?.hasPayment && !detail.payment.isVerified) {
       alert("Cannot complete stage as verified: Statutory payment has not been verified by the Department Finance Officer.");
       return;
     }
@@ -322,7 +326,11 @@ export default function VerificationWorkspace() {
     setSubmitStatus("idle");
     
     const token = localStorage.getItem("officerToken");
-    const isMultiStage = (detail?.task.maxStages ?? 1) > (detail?.task.currentStage ?? 1);
+    const activeStage = (detail?.task.stageNumber && detail.task.stageNumber > 0)
+      ? detail.task.stageNumber
+      : (detail?.task.currentStage ?? 1);
+    const maxStages = detail?.task.maxStages ?? 1;
+    const isMultiStage = maxStages > activeStage;
 
     try {
       const endpoint = (status === "Approved" && isMultiStage)
@@ -513,35 +521,37 @@ export default function VerificationWorkspace() {
                                 <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: '0.5rem', flexWrap: 'wrap', gap: '0.5rem' }}>
                   <h2 style={{ fontSize: '1.75rem', fontWeight: 300 }}>Application Review</h2>
                   <div style={{ display: 'flex', gap: '0.5rem', alignItems: 'center', flexWrap: 'wrap' }}>
-                    {agentDraft?.validation && (
-                      <Tag
-                        type={
-                          agentDraft.validation.riskLevel?.toLowerCase() === 'low'
-                            ? 'green'
-                            : agentDraft.validation.riskLevel?.toLowerCase() === 'medium'
-                            ? 'warm-gray'
-                            : 'red'
-                        }
-                        style={{ fontWeight: 600, fontSize: '0.8125rem', display: 'inline-flex', alignItems: 'center', gap: '4px' }}
-                      >
-                        {agentDraft.validation.riskLevel?.toLowerCase() === 'high' ? (
-                          <>
-                            <WarningAltFilled size={14} />
-                            <span>High Risk Compliance Alert</span>
-                          </>
-                        ) : agentDraft.validation.riskLevel?.toLowerCase() === 'medium' ? (
-                          <>
-                            <Warning size={14} />
-                            <span>Moderate Risk Review</span>
-                          </>
-                        ) : (
-                          <>
-                            <CheckmarkFilled size={14} />
-                            <span>Statutory Verification Passed</span>
-                          </>
-                        )}
-                      </Tag>
-                    )}
+                    {agentDraft && (() => {
+                      const isEligible = agentDraft.eligibility?.isEligible ?? true;
+                      const hasDocDeficiencies = !isEligible || (agentDraft.eligibility?.missingDocuments?.length ?? 0) > 0 || (agentDraft.eligibility?.matchPercentage ?? 100) < 70;
+                      const rawRisk = agentDraft.validation?.riskLevel?.toLowerCase() ?? '';
+                      const isHigh = rawRisk.includes('high') || rawRisk.includes('critical');
+                      const isMedium = !isHigh && (rawRisk.includes('medium') || hasDocDeficiencies || agentDraft.validation?.isValid === false);
+
+                      return (
+                        <Tag
+                          type={isHigh ? 'red' : isMedium ? 'warm-gray' : 'green'}
+                          style={{ fontWeight: 600, fontSize: '0.8125rem', display: 'inline-flex', alignItems: 'center', gap: '4px' }}
+                        >
+                          {isHigh ? (
+                            <>
+                              <WarningAltFilled size={14} />
+                              <span>High Risk Compliance Alert</span>
+                            </>
+                          ) : isMedium ? (
+                            <>
+                              <Warning size={14} />
+                              <span>Action Required / Incomplete Submission</span>
+                            </>
+                          ) : (
+                            <>
+                              <CheckmarkFilled size={14} />
+                              <span>Statutory Verification Passed</span>
+                            </>
+                          )}
+                        </Tag>
+                      );
+                    })()}
                     {detail?.task.maxStages && detail.task.maxStages > 1 && (
                       <Tag type="teal">
                         Stage {detail.task.currentStage ?? 1} of {detail.task.maxStages}
@@ -565,7 +575,7 @@ export default function VerificationWorkspace() {
                 )}
 
                 {/* Statutory Payment Status Banner (Synchronized with Finance Officer Audit) */}
-                {detail?.payment && (
+                {detail?.payment && detail.payment.hasPayment && (
                   <div
                     style={{
                       backgroundColor: detail.payment.isVerified
@@ -664,28 +674,26 @@ export default function VerificationWorkspace() {
                   >
                     <Security size={16} />
                     <span>Statutory Advisor</span>
-                    {agentDraft?.validation && (
-                      <span style={{
-                        fontSize: '0.7rem',
-                        padding: '2px 8px',
-                        borderRadius: '10px',
-                        background:
-                          agentDraft.validation.riskLevel?.toLowerCase() === 'high'
-                            ? '#ffd7d9'
-                            : agentDraft.validation.riskLevel?.toLowerCase() === 'medium'
-                            ? '#fed2aa'
-                            : '#defbe6',
-                        color:
-                          agentDraft.validation.riskLevel?.toLowerCase() === 'high'
-                            ? '#da1e28'
-                            : agentDraft.validation.riskLevel?.toLowerCase() === 'medium'
-                            ? '#bc4a04'
-                            : '#0e6027',
-                        fontWeight: 700
-                      }}>
-                        {agentDraft.validation.riskLevel ?? 'Audited'}
-                      </span>
-                    )}
+                    {agentDraft && (() => {
+                      const isEligible = agentDraft.eligibility?.isEligible ?? true;
+                      const hasDocDeficiencies = !isEligible || (agentDraft.eligibility?.missingDocuments?.length ?? 0) > 0 || (agentDraft.eligibility?.matchPercentage ?? 100) < 70;
+                      const rawRisk = agentDraft.validation?.riskLevel?.toLowerCase() ?? '';
+                      const isHigh = rawRisk.includes('high') || rawRisk.includes('critical');
+                      const isMedium = !isHigh && (rawRisk.includes('medium') || hasDocDeficiencies || agentDraft.validation?.isValid === false);
+
+                      return (
+                        <span style={{
+                          fontSize: '0.7rem',
+                          padding: '2px 8px',
+                          borderRadius: '10px',
+                          background: isHigh ? '#ffd7d9' : isMedium ? '#fed2aa' : '#defbe6',
+                          color: isHigh ? '#da1e28' : isMedium ? '#bc4a04' : '#0e6027',
+                          fontWeight: 700
+                        }}>
+                          {isHigh ? 'High Risk' : isMedium ? 'Medium' : 'Low'}
+                        </span>
+                      );
+                    })()}
                   </button>
 
                   <button
@@ -802,12 +810,12 @@ export default function VerificationWorkspace() {
                            size="md"
                            renderIcon={Checkmark} 
                            onClick={() => handleDecision("Approved")}
-                           disabled={isSubmitting || (detail?.payment != null && !detail.payment.isVerified)}
+                           disabled={isSubmitting || (Boolean(detail?.payment?.hasPayment) && !detail?.payment?.isVerified)}
                            style={{ flex: '1 1 auto', minWidth: '160px', justifyContent: 'center' }}
                         >
-                           {(detail?.task.maxStages ?? 1) > (detail?.task.currentStage ?? 1)
-                             ? `Approve Stage ${detail?.task.currentStage ?? 1} & Advance`
-                             : "Approve"}
+                           {(detail?.task.maxStages ?? 1) > ((detail?.task.stageNumber && detail.task.stageNumber > 0) ? detail.task.stageNumber : (detail?.task.currentStage ?? 1))
+                             ? `Approve Stage ${(detail?.task.stageNumber && detail.task.stageNumber > 0) ? detail.task.stageNumber : (detail?.task.currentStage ?? 1)} & Advance`
+                             : "Approve Official Decree"}
                         </Button>
                         <Button 
                            kind={decision === "Revision Requested" ? "primary" : "tertiary"} 
@@ -831,7 +839,7 @@ export default function VerificationWorkspace() {
                         </Button>
                      </div>
 
-                     {detail?.payment != null && !detail.payment.isVerified && (
+                     {Boolean(detail?.payment?.hasPayment) && !detail?.payment?.isVerified && (
                        <div
                          style={{
                            marginBottom: '1.5rem',
@@ -848,7 +856,7 @@ export default function VerificationWorkspace() {
                        >
                          <Warning size={16} />
                          <span>
-                           <strong>Stage Approval Locked:</strong> Statutory fee of LKR {detail.payment.amount?.toLocaleString()} must be audited and verified by the Department Finance Officer before this stage can be approved.
+                           <strong>Stage Approval Locked:</strong> Statutory fee of LKR {detail?.payment?.amount?.toLocaleString()} must be audited and verified by the Department Finance Officer before this stage can be approved.
                          </span>
                        </div>
                      )}
@@ -989,6 +997,15 @@ export default function VerificationWorkspace() {
                 enableCounter
               />
             </Modal>
+            <SupervisorCopilotBubble
+              applicationId={detail?.task.applicationId}
+              serviceName={detail?.task.serviceName ?? "Government Service"}
+              currentStage={detail?.task.currentStage ?? 1}
+              maxStages={detail?.task.maxStages ?? 1}
+              citizenName={detail?.task.citizenName ?? ""}
+              citizenNic={detail?.task.citizenNic ?? ""}
+              departmentName={detail?.task.department ?? "Government Department"}
+            />
           </main>
     </>
   );

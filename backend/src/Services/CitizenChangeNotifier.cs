@@ -18,17 +18,29 @@ namespace Government_Service_Navigator.Backend.Services
 
         public async Task ApplicationsChangedAsync(IReadOnlyCollection<string> nics, CancellationToken cancellationToken = default)
         {
-            if (nics.Count == 0) return;
-            // Invalidate before notifying, otherwise the phone refetches and gets the old cached copy
-            await _cache.RemoveByTagAsync(nics.Select(CacheKeys.CitizenTag), cancellationToken);
-            await _hub.Clients.Users(nics.ToList()).SendAsync("applicationsChanged", cancellationToken);
+            var normalizedNics = nics
+                .Where(n => !string.IsNullOrWhiteSpace(n))
+                .Select(Validation.SriLankaNic.Normalize)
+                .Distinct()
+                .ToList();
+
+            if (normalizedNics.Count > 0)
+            {
+                // Invalidate before notifying, otherwise the phone refetches and gets the old cached copy
+                await _cache.RemoveByTagAsync(normalizedNics.Select(CacheKeys.CitizenTag), cancellationToken);
+                await _hub.Clients.Users(normalizedNics).SendAsync("applicationsChanged", cancellationToken);
+            }
+
+            // Broadcast to All so connected mobile clients immediately refresh without being dropped by claim mismatches
+            await _hub.Clients.All.SendAsync("applicationsChanged", cancellationToken);
         }
 
         public async Task RefundsChangedAsync(IReadOnlyDictionary<string, List<int>> refundIdsByNic, CancellationToken cancellationToken = default)
         {
             foreach (var (nic, refundIds) in refundIdsByNic)
             {
-                await _hub.Clients.User(nic).SendAsync("refundUpdated", refundIds, cancellationToken);
+                if (string.IsNullOrWhiteSpace(nic)) continue;
+                await _hub.Clients.User(Validation.SriLankaNic.Normalize(nic)).SendAsync("refundUpdated", refundIds, cancellationToken);
             }
         }
 

@@ -216,7 +216,6 @@ builder.Services.AddScoped<IVectorRetriever, VectorRetrieverService>();
 builder.Services.AddScoped<IEligibilityVectorRetriever, EligibilityVectorRetrieverService>();
 builder.Services.AddScoped<IDocumentChunker, DocumentChunker>();
 builder.Services.AddScoped<IEligibilityDocumentAgent, EligibilityDocumentAgent>();
-builder.Services.AddScoped<IAgent2WorkflowOrchestrator, Agent2WorkflowOrchestrator>();
 builder.Services.AddScoped<ICheckEligibilityRulesTool, CheckEligibilityRulesTool>();
 builder.Services.AddScoped<IGetDocumentRequirementsTool, GetDocumentRequirementsTool>();
 builder.Services.AddScoped<IDocumentRequirementRepository, DocumentRequirementRepository>();
@@ -226,6 +225,9 @@ var groqApiKey = Environment.GetEnvironmentVariable("GROQ_API_KEY") ?? builder.C
 var groqModel = Environment.GetEnvironmentVariable("GROQ_MODEL") ?? builder.Configuration["Groq:Model"] ?? "openai/gpt-oss-120b";
 builder.Services.AddSingleton<ILlmService>(new GroqLlmService(groqApiKey, groqModel));
 
+// Agent 1: Intake & Planning Tools
+builder.Services.AddScoped<Government_Service_Navigator.AgenticAi.Tools.SearchServiceCatalog.ISearchServiceCatalogTool, Government_Service_Navigator.AgenticAi.Tools.SearchServiceCatalog.SearchServiceCatalogTool>();
+builder.Services.AddScoped<Government_Service_Navigator.AgenticAi.Tools.RecommendServices.IRecommendServicesTool, Government_Service_Navigator.AgenticAi.Tools.RecommendServices.RecommendServicesTool>();
 builder.Services.AddScoped<IIntakePlanningAgent, IntakePlanningAgent>();
 builder.Services.AddScoped<IFeeScheduleRepository, FeeScheduleRepository>();
 builder.Services.AddScoped<IApplicationTemplateRepository, ApplicationTemplateRepository>();
@@ -234,12 +236,13 @@ builder.Services.AddScoped<IFindAppointmentSlotTool, FindAppointmentSlotTool>();
 builder.Services.AddScoped<IPrefillApplicationTool, PrefillApplicationTool>();
 builder.Services.AddScoped<IActionVectorRetriever, ActionVectorRetrieverService>();
 builder.Services.AddScoped<IActionToolAgent, ActionToolAgent>();
-builder.Services.AddScoped<IAgent3WorkflowOrchestrator, Agent3WorkflowOrchestrator>();
 // Agent 4: Validation & Safety Agent and Orchestrator
 builder.Services.AddScoped<ISchemaValidatorTool, SchemaValidatorTool>();
+builder.Services.AddScoped<Government_Service_Navigator.AgenticAi.Tools.CheckDuplicateApplication.IDuplicateApplicationRepository, DuplicateApplicationRepository>();
 builder.Services.AddScoped<IDuplicateCheckTool, DuplicateCheckTool>();
 builder.Services.AddScoped<IValidationSafetyAgent, ValidationSafetyAgent>();
-builder.Services.AddScoped<IValidationOrchestrator, ValidationOrchestrator>();
+builder.Services.AddScoped<Government_Service_Navigator.AgenticAi.Orchestration.Workflows.ICitizenApplicationWorkflow, Government_Service_Navigator.AgenticAi.Orchestration.Workflows.CitizenApplicationWorkflow>();
+builder.Services.AddScoped<Government_Service_Navigator.AgenticAi.Orchestration.Workflows.IOfficerVerificationWorkflow, Government_Service_Navigator.AgenticAi.Orchestration.Workflows.OfficerVerificationWorkflow>();
 builder.Services.AddSingleton(new ValidationSafetyConfig
 {
     BlockDuplicateSubmissions = false, // Duplicates are flagged for officers, not hard-blocked
@@ -247,6 +250,14 @@ builder.Services.AddSingleton(new ValidationSafetyConfig
     EnableAdversarialDefense = true
 });
 
+// Master Supervisor Delegate Tools (Agent 1, Agent 2, Agent 3, Agent 4)
+builder.Services.AddScoped<Government_Service_Navigator.AgenticAi.Orchestration.Supervisor.Tools.IIntakeSupervisorTool, Government_Service_Navigator.AgenticAi.Orchestration.Supervisor.Tools.IntakeSupervisorTool>();
+builder.Services.AddScoped<Government_Service_Navigator.AgenticAi.Orchestration.Supervisor.Tools.IEligibilitySupervisorTool, Government_Service_Navigator.AgenticAi.Orchestration.Supervisor.Tools.EligibilitySupervisorTool>();
+builder.Services.AddScoped<Government_Service_Navigator.AgenticAi.Orchestration.Supervisor.Tools.IAdministrativeActionTool, Government_Service_Navigator.AgenticAi.Orchestration.Supervisor.Tools.AdministrativeActionTool>();
+builder.Services.AddScoped<Government_Service_Navigator.AgenticAi.Orchestration.Supervisor.Tools.ISafetyAuditTool, Government_Service_Navigator.AgenticAi.Orchestration.Supervisor.Tools.SafetyAuditTool>();
+
+builder.Services.AddScoped<IApplicationContextProvider, ApplicationContextProviderService>();
+builder.Services.AddScoped<IMasterSupervisorAgent, MasterSupervisorAgent>();
 builder.Services.AddScoped<IApplicationDraftingService, ApplicationDraftingService>();
 builder.Services.AddSingleton<IEmbeddingService, LocalEmbeddingService>();
 builder.Services.AddHostedService<InstallmentMonitorService>();

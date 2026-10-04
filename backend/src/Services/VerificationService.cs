@@ -41,7 +41,10 @@ namespace Government_Service_Navigator.Backend.Services
                     existingTask.StageNumber = targetStage;
                     existingTask.CurrentStage = submission?.CurrentStage ?? existingTask.CurrentStage;
                     existingTask.MaxStages = submission?.MaxStages ?? existingTask.MaxStages;
-                    existingTask.Status = "Pending";
+                    if (existingTask.Status != "Approved" || submission?.StageStatus != "Completed")
+                    {
+                        existingTask.Status = "Pending";
+                    }
                     await _context.SaveChangesAsync();
                     await transaction.CommitAsync();
                     return existingTask;
@@ -354,7 +357,7 @@ namespace Government_Service_Navigator.Backend.Services
         {
             var query = _context.VerificationTasks.AsNoTracking()
                 .Where(t => t.ApplicationId > 0 &&
-                           (t.Status == "Approved" || t.Status == "Rejected" || t.Status == "Suspended" || t.Status == "Revised" || t.Reviews.Any()));
+                           (t.Status == "Approved" || t.Status == "Rejected" || t.Status == "Suspended" || t.Status == "Revised"));
 
             if (!string.IsNullOrEmpty(department))
             {
@@ -425,9 +428,10 @@ namespace Government_Service_Navigator.Backend.Services
         // Read-only: the "Approved without a review" repair runs in DataRepairService.
         public async Task<List<VerificationTask>> GetTasksForCitizenAsync(string citizenNic)
         {
+            var normalized = Validation.SriLankaNic.Normalize(citizenNic);
             return await _context.VerificationTasks
                 .AsNoTracking()
-                .Where(t => t.CitizenNic == citizenNic)
+                .Where(t => t.CitizenNic == normalized || EF.Functions.ILike(t.CitizenNic, normalized))
                 .OrderByDescending(t => t.CreatedDate)
                 .ToListAsync();
         }

@@ -165,10 +165,8 @@ namespace Government_Service_Navigator.AgenticAi.Tests
         }
 
         [Fact]
-        public async Task Orchestrator_ValidDraft_TransitionsToPendingHumanApproval()
+        public async Task SafetyAgent_ValidDraft_EvaluatesValidAndReadyForHumanApproval()
         {
-            var orchestrator = new ValidationOrchestrator(_agent);
-            var state = WorkflowExecutionState.Create(8841, "199423401928", "Small Business Registration");
             var draft = new DraftApplication
             {
                 ApplicationId = 8841,
@@ -178,11 +176,10 @@ namespace Government_Service_Navigator.AgenticAi.Tests
                 AttachedDocumentNames = new List<string> { "Identity Document.pdf" }
             };
 
-            var updatedState = await orchestrator.ExecuteStageAsync(state, draft, new List<string> { "Identity Document" });
+            var result = await _agent.ValidateAndEnqueueAsync(draft, new List<string> { "Identity Document" });
 
-            Assert.Equal("PendingHumanApproval", updatedState.CurrentStage);
-            Assert.Equal("AwaitingOfficerReview", updatedState.HumanApprovalStatus);
-            Assert.True(updatedState.ValidationResult!.IsValid);
+            Assert.True(result.IsValid);
+            Assert.Equal("EnqueuedForOfficer", result.Decision);
         }
 
         [Fact]

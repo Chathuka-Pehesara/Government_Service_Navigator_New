@@ -7,8 +7,8 @@ namespace Government_Service_Navigator.Backend.Services
         public const string AllServices = "catalog:services:all";
         public static string Service(int id) => $"catalog:service:{id}";
 
-        public static string CitizenTag(string nic) => $"citizen:{nic}";
-        public static string CitizenApplications(string nic) => $"citizen:{nic}:applications";
+        public static string CitizenTag(string nic) => $"citizen:{Validation.SriLankaNic.Normalize(nic)}";
+        public static string CitizenApplications(string nic) => $"citizen:{Validation.SriLankaNic.Normalize(nic)}:applications";
 
         public static string RevokedToken(string jti) => $"gsn:revoked:{jti}";
     }

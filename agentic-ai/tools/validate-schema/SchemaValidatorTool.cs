@@ -63,42 +63,49 @@ namespace Government_Service_Navigator.AgenticAi.Tools.ValidateSchema
             }
 
             // 3. Document Completeness Check
-            var neededDocs = requiredDocuments ?? new List<string> { "Identity Document" };
+            var neededDocs = requiredDocuments ?? (draft.Stage > 1 ? new List<string>() : new List<string> { "Identity Document" });
             var attached = draft.AttachedDocumentNames ?? new List<string>();
 
-            var missingDocs = neededDocs.Where(needed => 
-                !attached.Any(a => 
-                    a.IndexOf(needed, StringComparison.OrdinalIgnoreCase) >= 0 || 
-                    needed.IndexOf(a, StringComparison.OrdinalIgnoreCase) >= 0 ||
-                    (needed.Contains("Identity", StringComparison.OrdinalIgnoreCase) && 
-                     (a.Contains("NIC", StringComparison.OrdinalIgnoreCase) || 
-                      a.Contains("Passport", StringComparison.OrdinalIgnoreCase) || 
-                      a.Contains("License", StringComparison.OrdinalIgnoreCase) || 
-                      a.Contains("ID", StringComparison.OrdinalIgnoreCase))) ||
-                    (needed.Contains("NIC", StringComparison.OrdinalIgnoreCase) && 
-                     (a.Contains("Identity", StringComparison.OrdinalIgnoreCase) || 
-                      a.Contains("NIC", StringComparison.OrdinalIgnoreCase) || 
-                      a.Contains("ID", StringComparison.OrdinalIgnoreCase)))
-                )
-                && !(draft.FormFields != null && draft.FormFields.Any(kv =>
-                    !string.IsNullOrWhiteSpace(kv.Value) && (
-                        kv.Key.IndexOf(needed, StringComparison.OrdinalIgnoreCase) >= 0 ||
-                        needed.IndexOf(kv.Key, StringComparison.OrdinalIgnoreCase) >= 0 ||
-                        (needed.Contains("NIC", StringComparison.OrdinalIgnoreCase) && kv.Key.Contains("NIC", StringComparison.OrdinalIgnoreCase))
-                    )))
-            ).ToList();
-
-            if (missingDocs.Any())
+            if (neededDocs.Count == 0)
             {
-                foreach (var missing in missingDocs)
-                {
-                    outcome.Errors.Add($"DOC-002: Mandatory document missing: '{missing}'.");
-                }
-                outcome.ComplianceChecks.Add(new ComplianceCheckItem("Document Completeness", false, $"Missing required documents: {string.Join(", ", missingDocs)}."));
+                outcome.ComplianceChecks.Add(new ComplianceCheckItem("Document Completeness", true, "No additional evidentiary documents required for this stage."));
             }
             else
             {
-                outcome.ComplianceChecks.Add(new ComplianceCheckItem("Document Completeness", true, $"All {neededDocs.Count} required document(s) attached."));
+                var missingDocs = neededDocs.Where(needed => 
+                    !attached.Any(a => 
+                        a.IndexOf(needed, StringComparison.OrdinalIgnoreCase) >= 0 || 
+                        needed.IndexOf(a, StringComparison.OrdinalIgnoreCase) >= 0 ||
+                        (needed.Contains("Identity", StringComparison.OrdinalIgnoreCase) && 
+                         (a.Contains("NIC", StringComparison.OrdinalIgnoreCase) || 
+                          a.Contains("Passport", StringComparison.OrdinalIgnoreCase) || 
+                          a.Contains("License", StringComparison.OrdinalIgnoreCase) || 
+                          a.Contains("ID", StringComparison.OrdinalIgnoreCase))) ||
+                        (needed.Contains("NIC", StringComparison.OrdinalIgnoreCase) && 
+                         (a.Contains("Identity", StringComparison.OrdinalIgnoreCase) || 
+                          a.Contains("NIC", StringComparison.OrdinalIgnoreCase) || 
+                          a.Contains("ID", StringComparison.OrdinalIgnoreCase)))
+                    )
+                    && !(draft.FormFields != null && draft.FormFields.Any(kv =>
+                        !string.IsNullOrWhiteSpace(kv.Value) && (
+                            kv.Key.IndexOf(needed, StringComparison.OrdinalIgnoreCase) >= 0 ||
+                            needed.IndexOf(kv.Key, StringComparison.OrdinalIgnoreCase) >= 0 ||
+                            (needed.Contains("NIC", StringComparison.OrdinalIgnoreCase) && kv.Key.Contains("NIC", StringComparison.OrdinalIgnoreCase))
+                        )))
+                ).ToList();
+
+                if (missingDocs.Any())
+                {
+                    foreach (var missing in missingDocs)
+                    {
+                        outcome.Errors.Add($"DOC-002: Mandatory document missing: '{missing}'.");
+                    }
+                    outcome.ComplianceChecks.Add(new ComplianceCheckItem("Document Completeness", false, $"Missing required documents: {string.Join(", ", missingDocs)}."));
+                }
+                else
+                {
+                    outcome.ComplianceChecks.Add(new ComplianceCheckItem("Document Completeness", true, $"All {neededDocs.Count} required document(s) attached."));
+                }
             }
 
             // 4. Adversarial Prompt Injection & Safety Check

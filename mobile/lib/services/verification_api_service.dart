@@ -81,6 +81,7 @@ class VerificationApiService {
       paymentStatus: json['paymentStatus']?.toString(),
       isPaymentVerified: json['isPaymentVerified'] == true,
       isStagePaymentRequired: json['isStagePaymentRequired'] == true,
+      citizenNic: json['citizenNic']?.toString() ?? json['applicantNic']?.toString(),
     );
   }
 

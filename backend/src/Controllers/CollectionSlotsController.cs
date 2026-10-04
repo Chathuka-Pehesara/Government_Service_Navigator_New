@@ -554,7 +554,7 @@ namespace Government_Service_Navigator.Backend.Controllers
                 }
 
                 queryCmd.CommandText = @"
-                    SELECT ""Id"", COALESCE(""ApplicationCode"", CAST(""ApplicationId"" AS varchar)), ""CitizenNic"", 
+                    SELECT ""Id"", ""ApplicationId"", COALESCE(""ApplicationCode"", CAST(""ApplicationId"" AS varchar)), ""CitizenNic"", 
                            COALESCE(""DepartmentName"", 'General'), COALESCE(""ServiceName"", 'Document Collection'), 
                            COALESCE(CAST(""BookedDate"" AS varchar), ''), COALESCE(""BookedSlotTime"", ''), ""Status"", 
                            COALESCE(""ConfirmationCode"", 'SL-APT-0000'), COALESCE(""PreferredTimes"", ''), ""CreatedAt"",
@@ -578,17 +578,19 @@ namespace Government_Service_Navigator.Backend.Controllers
                     bookings.Add(new
                     {
                         id = reader.GetInt32(0),
-                        applicationCode = reader.GetString(1),
-                        citizenNic = reader.GetString(2),
-                        departmentName = reader.GetString(3),
-                        serviceName = reader.GetString(4),
-                        bookedDate = reader.GetString(5),
-                        bookedSlotTime = reader.GetString(6),
-                        status = reader.GetString(7),
-                        confirmationCode = reader.GetString(8),
-                        preferredTimes = reader.GetString(9),
-                        createdAt = reader.GetDateTime(10),
-                        isPast = reader.GetBoolean(11)
+                        bookingId = reader.GetInt32(0),
+                        applicationId = reader.GetInt32(1),
+                        applicationCode = reader.GetString(2),
+                        citizenNic = reader.GetString(3),
+                        departmentName = reader.GetString(4),
+                        serviceName = reader.GetString(5),
+                        bookedDate = reader.GetString(6),
+                        bookedSlotTime = reader.GetString(7),
+                        status = reader.GetString(8),
+                        confirmationCode = reader.GetString(9),
+                        preferredTimes = reader.GetString(10),
+                        createdAt = reader.GetDateTime(11),
+                        isPast = reader.GetBoolean(12)
                     });
                 }
             }

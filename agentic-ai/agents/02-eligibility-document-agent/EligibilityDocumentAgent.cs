@@ -80,7 +80,7 @@ public class EligibilityDocumentAgent : IEligibilityDocumentAgent
             ? await _docsTool.GetRequiredDocumentsForServiceAsync(serviceId, request.Stage, cancellationToken)
             : serviceChunk!.RequiredDocuments;
 
-        if (requiredDocs.Count == 0 && serviceChunk != null && serviceChunk.RequiredDocuments.Count > 0)
+        if (requiredDocs.Count == 0 && serviceChunk != null && serviceChunk.RequiredDocuments.Count > 0 && !request.Stage.HasValue)
         {
             requiredDocs = serviceChunk.RequiredDocuments;
         }
@@ -126,16 +126,19 @@ public class EligibilityDocumentAgent : IEligibilityDocumentAgent
                 "2. Evaluate age, citizenship, and any specific legal prerequisites from the regulations.\n" +
                 "3. Analyze provided documents with semantic intelligence:\n" +
                 "   - Different services require diverse statutory proofs (e.g. Title Deeds, Surveyor Plans, Business Registration Form 1, Tax Clearance, Medical Certificates, Salary/Income Slips, Police Clearance Reports, Grama Niladhari Certificates, Identity Documents, Passports, etc.). Never assume all services require only an NIC or Birth Certificate. Audit strictly against the required documents specified for this service and stage.\n" +
-                "   - SEMANTIC RELEVANCE & INTEGRITY CHECK: Do NOT blindly accept an upload merely because the form slot or prefix mentions the required document name. Scrutinize the underlying filename. If the filename indicates an unrelated asset, technical diagram, packaging label, screenshot, code file, meme, or unrelated graphic (e.g., 'decoder_transformer...', 'diagram...', 'snack...', 'packaging...', 'label_design...', 'screenshot...', 'code...'), you MUST flag it as UNVERIFIED / SUSPICIOUS. In 'reasoning', explicitly note that although submitted into the slot, the filename indicates it is not a genuine copy of the requested document and requires officer visual audit or citizen re-upload.\n" +
-                "   - If an uploaded file is generic, ambiguous, or unlabelled (e.g. 'WhatsApp Image...', 'IMG_001.jpg', 'photo.png'), identify it by name in 'reasoning' and note that it cannot be confirmed as the required statutory document without visual officer inspection.\n" +
-                "4. STRICT DETERMINATION OF ELIGIBILITY ('isEligible'):\n" +
-                "   - 'isEligible' MUST be TRUE ONLY IF: the applicant satisfies all statutory criteria AND all mandatory required documents for this stage are provided with authentic, semantically consistent files.\n" +
-                "   - If ANY mandatory document is missing, unlabelled, or suspicious/unrelated, 'isEligible' MUST be FALSE.\n" +
+                "   - SEMANTIC RELEVANCE & AUTHENTICITY AUDIT (Applies to ANY service and ANY stage):\n" +
+                "     * If an uploaded file name contains keywords identifying the required document (e.g., 'NIC', 'identity' for National Identity Card; 'birth', 'certificate', 'bc' for Birth Certificate; 'deed' for Title Deed, etc.), report it as verified and semantically matched.\n" +
+                "     * If an upload has a generic camera/device name (e.g., 'WhatsApp Image...', 'IMG_...', 'photo...', 'image...') that lacks document title keywords: the file is present in the slot, so do NOT mark it missing. Set 'isEligible' to true, set 'matchPercentage' to 80%, and explicitly state in 'reasoning' that because the file is a generic capture ('filename'), the Verifying Officer must visually inspect the upload to confirm authenticity before final determination.\n" +
+                "     * If a mandatory document is completely missing or an unrelated/adversarial file is uploaded, set 'isEligible' to false, 'matchPercentage' to 40%, and list it in 'missingDocuments'.\n" +
+                "4. DETERMINATION OF ELIGIBILITY ('isEligible'):\n" +
+                "   - 'isEligible' is TRUE when applicant meets age/citizenship criteria and all required stage documents are uploaded.\n" +
+                "   - 'isEligible' is FALSE ONLY IF a mandatory required document is missing or criteria are failed.\n" +
                 "5. Compute 'matchPercentage' (0 to 100):\n" +
-                "   - 100% ONLY when all criteria and all mandatory documents are fully and legitimately satisfied.\n" +
-                "   - If mandatory documents are suspicious, unlabelled, or missing, deduct points significantly (e.g., match percentage must be 50% or lower).\n" +
+                "   - 100% when all criteria and all mandatory documents are uploaded with named matching files.\n" +
+                "   - 80% if all required documents are attached but one or more have generic camera/device filenames requiring officer visual verification.\n" +
+                "   - 50% or below if mandatory documents are completely missing.\n" +
                 "6. In 'reasoning':\n" +
-                "   - Transparently explain the decision as an objective government advisory agent. Mention each required document and each uploaded file by name, noting whether it matches semantically or appears suspicious.\n" +
+                "   - Clearly evaluate each required document. Specifically note which files are verified by name, and which generic uploads require officer visual verification before approval.\n" +
                 "7. Output ONLY a valid JSON object matching this schema:\n" +
                 "{\n" +
                 "  \"isEligible\": boolean,\n" +
@@ -166,9 +169,9 @@ public class EligibilityDocumentAgent : IEligibilityDocumentAgent
                 $"BASELINE RULES TOOL RESULTS:\n" +
                 $"- Deterministic Eligibility Pass: {ruleResult.IsEligible}\n" +
                 $"- Rule Tool Missing Criteria: {(ruleResult.MissingCriteria.Count > 0 ? string.Join(", ", ruleResult.MissingCriteria) : "None")}\n" +
-                $"- Catalog Required Documents: {(requiredDocs.Count > 0 ? string.Join(", ", requiredDocs) : "No specific documents")}\n\n" +
+                $"- Catalog Required Documents: {(requiredDocs.Count > 0 ? string.Join(", ", requiredDocs) : "None (No evidentiary documents required for this stage)")}\n\n" +
                 $"OFFICIAL REGULATORY & POLICY CONTEXT (Retrieved from Neon pgvector):\n{contextBlock}\n\n" +
-                "Evaluate the citizen's eligibility and uploaded documents, and generate the structured JSON evaluation report.";
+                "Evaluate the citizen's eligibility and uploaded documents, and generate the structured JSON evaluation report. NOTE: If no evidentiary documents are required for this stage, do NOT flag missing documents or mark applicant ineligible due to documents.";
 
             var jsonResult = await _llmService!.GenerateChatCompletionAsync(
                 systemPrompt,
@@ -242,7 +245,27 @@ public class EligibilityDocumentAgent : IEligibilityDocumentAgent
                 matchPercentage = 50;
             }
 
+            // 3. If this stage has no required documents, ensure clean state without cross-stage artifacts
+            if (requiredDocs.Count == 0 && request.Stage.HasValue)
+            {
+                missingDocs.Clear();
+                aiRequiredDocs.Clear();
+                if (ruleResult.IsEligible)
+                {
+                    isEligible = true;
+                    matchPercentage = 100;
+                    missingCriteria.Clear();
+                }
+            }
+
             var reasoning = root.TryGetProperty("reasoning", out var reasonElem) ? reasonElem.GetString() : null;
+            if (requiredDocs.Count == 0 && request.Stage.HasValue && ruleResult.IsEligible)
+            {
+                if (string.IsNullOrWhiteSpace(reasoning) || reasoning.Contains("missing", StringComparison.OrdinalIgnoreCase) || reasoning.Contains("unverified", StringComparison.OrdinalIgnoreCase) || reasoning.Contains("suspicious", StringComparison.OrdinalIgnoreCase))
+                {
+                    reasoning = $"The applicant satisfies all statutory criteria. Stage {request.Stage} does not require any additional evidentiary documents.";
+                }
+            }
             if (string.IsNullOrWhiteSpace(reasoning))
             {
                 reasoning = isEligible 

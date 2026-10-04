@@ -11,6 +11,7 @@ class ServiceRoadmapTracker extends StatelessWidget {
   final String? currentDepartment;
   final VoidCallback? onFillStageFormTap;
   final String? fillStageFormButtonText;
+  final VoidCallback? onBookingTap;
   final int? selectedStage;
   final ValueChanged<int>? onStageSelected;
 
@@ -24,6 +25,7 @@ class ServiceRoadmapTracker extends StatelessWidget {
     this.currentDepartment,
     this.onFillStageFormTap,
     this.fillStageFormButtonText,
+    this.onBookingTap,
     this.selectedStage,
     this.onStageSelected,
   });
@@ -167,6 +169,31 @@ class ServiceRoadmapTracker extends StatelessWidget {
                     ),
                     const SizedBox(width: 6),
                     const Icon(CupertinoIcons.arrow_right, size: 14, color: Colors.white),
+                  ],
+                ),
+              ),
+            ),
+          ],
+          if (stageStatus == 'Completed' && onBookingTap != null) ...[
+            const SizedBox(height: 14),
+            SizedBox(
+              width: double.infinity,
+              child: CupertinoButton(
+                padding: const EdgeInsets.symmetric(vertical: 12),
+                color: AppColors.primary,
+                borderRadius: BorderRadius.circular(12),
+                onPressed: onBookingTap,
+                child: const Row(
+                  mainAxisAlignment: MainAxisAlignment.center,
+                  children: [
+                    Icon(CupertinoIcons.calendar, size: 16, color: Colors.white),
+                    SizedBox(width: 8),
+                    Text(
+                      'Book Counter Appointment / Collection',
+                      style: TextStyle(fontSize: 13.5, fontWeight: FontWeight.w700, color: Colors.white),
+                    ),
+                    SizedBox(width: 6),
+                    Icon(CupertinoIcons.arrow_right, size: 14, color: Colors.white),
                   ],
                 ),
               ),

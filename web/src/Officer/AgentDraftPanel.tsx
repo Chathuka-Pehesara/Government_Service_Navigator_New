@@ -55,6 +55,44 @@ function prettyJson(raw: string) {
   }
 }
 
+interface BriefingItem {
+  iconType: "identity" | "document" | "fraud" | "action" | "general";
+  category: string;
+  content: string;
+}
+
+function parseOfficerBriefing(rawBriefing?: string, hasDeficiencies = false): BriefingItem[] {
+  if (!rawBriefing) return [];
+  const lines = rawBriefing.split("\n").map((l) => l.trim()).filter(Boolean);
+  const items: BriefingItem[] = [];
+
+  for (const line of lines) {
+    let clean = line.replace(/^[•\-\*]\s*/, "");
+    if (hasDeficiencies && clean.toLowerCase().includes("recommended action:") && clean.toLowerCase().includes("approve")) {
+      clean = "Recommended Action: REQUEST REVISION — Mandatory evidentiary document requires citizen amendment or manual officer inspection.";
+    }
+
+    const colonIdx = clean.indexOf(":");
+    let category = "Finding";
+    let content = clean;
+    if (colonIdx > 0 && colonIdx < 35) {
+      category = clean.substring(0, colonIdx).trim();
+      content = clean.substring(colonIdx + 1).trim();
+    }
+
+    const catLower = category.toLowerCase();
+    let iconType: BriefingItem["iconType"] = "general";
+    if (catLower.includes("identity") || catLower.includes("profile")) iconType = "identity";
+    else if (catLower.includes("document") || catLower.includes("stage")) iconType = "document";
+    else if (catLower.includes("compliance") || catLower.includes("fraud") || catLower.includes("duplicate")) iconType = "fraud";
+    else if (catLower.includes("action") || catLower.includes("recommend")) iconType = "action";
+
+    items.push({ iconType, category, content });
+  }
+
+  return items;
+}
+
 export default function AgentDraftPanel({
   draft,
   loading,
@@ -82,22 +120,26 @@ export default function AgentDraftPanel({
     isHighOrCriticalRisk || validation?.riskLevel?.toLowerCase() === "medium";
   const hasRejectionsOrFlags = (validation?.rejectionReasons?.length ?? 0) > 0;
 
-  // Check if briefing explicitly recommends approval
-  const briefingRecommendsApproval =
-    validation?.officerBriefing?.toLowerCase().includes("approve stage") ?? false;
   const isEligible = eligibility?.isEligible ?? true;
+  const hasDocumentDeficiencies =
+    !isEligible ||
+    (eligibility?.missingDocuments?.length ?? 0) > 0 ||
+    (eligibility?.matchPercentage ?? 100) < 70;
 
-  // An application can be approved if valid, eligible, not high/critical risk, and either fully clean or recommended for approval
+  // An application can be approved only if valid, all mandatory documents verified, and clean risk
   const canApprove =
     validation?.isValid === true &&
-    isEligible &&
+    !hasDocumentDeficiencies &&
     !isHighOrCriticalRisk &&
-    (!hasFailedChecks || briefingRecommendsApproval);
+    !hasFailedChecks;
 
   const isFullyClean =
-    validation?.isValid === true && !hasFailedChecks && !hasRejectionsOrFlags && !isHighOrCriticalRisk && validation?.riskLevel?.toLowerCase() === "low";
+    canApprove &&
+    !hasRejectionsOrFlags &&
+    validation?.riskLevel?.toLowerCase() === "low";
 
-  const riskLevel = validation?.riskLevel ?? (isFullyClean ? "Low" : "Medium");
+  const rawRiskLevel = validation?.riskLevel ?? (isFullyClean ? "Low" : "Medium");
+  const riskLevel = hasDocumentDeficiencies && rawRiskLevel.toLowerCase() === "low" ? "Medium" : rawRiskLevel;
   const riskType =
     riskLevel.toLowerCase() === "low"
       ? "green"
@@ -110,6 +152,8 @@ export default function AgentDraftPanel({
   const [decisionOrder, setDecisionOrder] = useState<DecisionOrderDraft | null>(null);
   const [isGeneratingRecord, setIsGeneratingRecord] = useState(false);
   const [copiedText, setCopiedText] = useState(false);
+
+  const briefingItems = parseOfficerBriefing(validation?.officerBriefing, hasDocumentDeficiencies);
 
   // Single Consolidated Action: Generate Official Statutory Decree & Dossier
   const handleGenerateOfficialRecord = async () => {
@@ -124,7 +168,7 @@ export default function AgentDraftPanel({
           serviceName: serviceName || action?.draft?.serviceName || "Government Service",
           citizenNic: citizenNic || action?.draft?.citizenNic || "",
           citizenName: citizenName || action?.draft?.citizenName || "",
-          citizenAge: action?.draft?.citizenAge ?? draft.derivedAgeFromNic ?? 24,
+          citizenAge: action?.draft?.citizenAge ?? draft.derivedAgeFromNic ?? 0,
           calculatedFee: action?.fee?.totalAmount ?? 0,
           attachedDocumentNames: action?.draft?.attachedDocumentNames ?? [],
           requiredDocuments: eligibility?.requiredDocuments ?? [],
@@ -197,7 +241,7 @@ export default function AgentDraftPanel({
         <div style={{ display: "flex", flexDirection: "column", gap: "1.25rem" }}>
           
           {/* ========================================================================= */}
-          {/* CARD 1: AGENT 4 STATUTORY ADVISOR EXECUTIVE ASSESSMENT & DIRECTIVE        */}
+          {/* CARD 1: OVERALL CASE DETERMINATION & OFFICIAL DECREE ACTION BAR            */}
           {/* ========================================================================= */}
           <div style={{
             backgroundColor: "#fff",
@@ -240,40 +284,13 @@ export default function AgentDraftPanel({
               </div>
             </div>
 
-            {/* Officer Briefing Content */}
+            {/* Officer Action Directive */}
             <div style={{ padding: "1.25rem" }}>
-              <div style={{ fontSize: "0.8125rem", fontWeight: 700, color: "#525252", textTransform: "uppercase", letterSpacing: "0.5px", marginBottom: "0.5rem" }}>
-                Executive Statutory Briefing (Government Advisory Intelligence)
-              </div>
-
-              {validation?.officerBriefing ? (
-                <div style={{
-                  backgroundColor: "#f8f9fa",
-                  border: "1px solid #e9ecef",
-                  borderRadius: "6px",
-                  padding: "0.875rem 1rem",
-                  fontSize: "0.875rem",
-                  lineHeight: 1.6,
-                  color: "#212529",
-                  marginBottom: "1rem"
-                }}>
-                  {validation.officerBriefing.split("\n").map((line, idx) => (
-                    <div key={idx} style={{ marginBottom: line.startsWith("•") || line.startsWith("-") ? "0.35rem" : "0.5rem" }}>
-                      {line}
-                    </div>
-                  ))}
-                </div>
-              ) : (
-                <p style={{ ...muted, marginBottom: "1rem" }}>{validation?.summary || "Application evaluated against statutory rules."}</p>
-              )}
-
-              {/* Fixed-Style Statutory Directive Card */}
               <div style={{
                 backgroundColor: canApprove ? "#f6fcf7" : "#fff8f8",
                 border: `1.5px solid ${canApprove ? "#a7f0ba" : "#ffb3b8"}`,
                 borderRadius: "8px",
                 padding: "1.25rem",
-                marginTop: "1rem",
                 display: "flex",
                 flexDirection: "column",
                 gap: "0.875rem"
@@ -287,7 +304,7 @@ export default function AgentDraftPanel({
                     textTransform: "uppercase",
                     color: canApprove ? "#0f62fe" : "#ba1b23"
                   }}>
-                    {canApprove ? "Statutory Advisor Directive" : "Compliance Alert & Directive"}
+                    {canApprove ? "Official Determination Directive" : "Compliance Alert & Directive"}
                   </span>
                   <Tag
                     type={canApprove ? "green" : "red"}
@@ -322,7 +339,7 @@ export default function AgentDraftPanel({
                     : "Submitted evidentiary document does not match authentic statutory criteria (missing document or compliance anomaly detected). Verify the attached file before approving, or request citizen amendment."}
                 </p>
 
-                {/* Clean, Non-Overlapping Action Row */}
+                {/* Action Row */}
                 <div style={{
                   display: "flex",
                   alignItems: "center",
@@ -440,11 +457,174 @@ export default function AgentDraftPanel({
           </div>
 
           {/* ========================================================================= */}
-          {/* TWO-COLUMN GRID: AGENT 2 (ELIGIBILITY) & AGENT 3 (FEES & DISPATCH)        */}
+          {/* CARD 2: REGULATORY SAFETY & FRAUD VERIFICATION AGENT (OWNER SECTION)      */}
+          {/* ========================================================================= */}
+          <div style={{
+            backgroundColor: "#fff",
+            borderRadius: "8px",
+            border: "1px solid #e0e0e0",
+            padding: "1.25rem",
+            boxShadow: "0 1px 4px rgba(0,0,0,0.03)"
+          }}>
+            {/* Header with Role Title & Badge */}
+            <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", flexWrap: "wrap", gap: "0.5rem", marginBottom: "1rem", borderBottom: "1px solid #f0f0f0", paddingBottom: "0.75rem" }}>
+              <div style={{ display: "flex", alignItems: "center", gap: "0.5rem" }}>
+                <Security size={18} style={{ color: "#0f62fe" }} />
+                <div>
+                  <span style={{ fontSize: "1rem", fontWeight: 700, color: "#161616" }}>
+                    Regulatory Safety & Fraud Verification Agent
+                  </span>
+                  <div style={{ fontSize: "0.75rem", color: "#525252" }}>
+                    Automated Regulatory Safety, Schema Validation & Anti-Fraud Gateway
+                  </div>
+                </div>
+              </div>
+              <Tag type={riskType}>
+                {riskLevel} Risk Profile
+              </Tag>
+            </div>
+
+            {/* 4 Guardrail Metric Tiles */}
+            <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(220px, 1fr))", gap: "0.75rem", marginBottom: "1rem" }}>
+              {(() => {
+                const idCheck = validation?.complianceChecks.find(c => 
+                  c.checkType.toLowerCase().includes("identity") || c.checkType.toLowerCase().includes("age")
+                );
+                const isFailed = idCheck && !idCheck.isPassed;
+                return (
+                  <div style={{ padding: "0.75rem", backgroundColor: isFailed ? "#fff1f1" : "#f4f7fb", borderRadius: "6px", border: isFailed ? "1px solid #ffd7d9" : "1px solid #d0e2ff" }}>
+                    <div style={{ fontSize: "0.75rem", color: isFailed ? "#da1e28" : "#525252" }}>Identity & Bounds Check</div>
+                    <div style={{ fontSize: "0.8125rem", fontWeight: 600, color: isFailed ? "#da1e28" : "#161616", marginTop: "2px" }}>
+                      {draft.derivedAgeFromNic ? `NIC Format & Age (${draft.derivedAgeFromNic}) Verified` : (idCheck?.details || "Identity Verified")}
+                    </div>
+                  </div>
+                );
+              })()}
+
+              {(() => {
+                const dupCheck = validation?.complianceChecks.find(c => 
+                  c.checkType.toLowerCase().includes("duplicate") || c.checkType.toLowerCase().includes("anti-fraud")
+                );
+                const hasDupRejection = (validation?.rejectionReasons ?? []).some(r => 
+                  r.toLowerCase().includes("dup-") || r.toLowerCase().includes("duplicate")
+                );
+                const isDup = (dupCheck && !dupCheck.isPassed) || hasDupRejection;
+                return (
+                  <div style={{ padding: "0.75rem", backgroundColor: isDup ? "#fff1f1" : "#f4f7fb", borderRadius: "6px", border: isDup ? "1px solid #ffd7d9" : "1px solid #d0e2ff" }}>
+                    <div style={{ fontSize: "0.75rem", color: isDup ? "#da1e28" : "#525252" }}>Anti-Duplicate Registry</div>
+                    <div style={{ fontSize: "0.8125rem", fontWeight: 600, color: isDup ? "#da1e28" : "#198038", marginTop: "2px" }}>
+                      {isDup ? "Collision Detected — Active Case Found" : "Clear — Zero Collisions Found"}
+                    </div>
+                  </div>
+                );
+              })()}
+
+              {(() => {
+                const injectionCheck = validation?.complianceChecks.find(c => 
+                  c.checkType.toLowerCase().includes("injection") || c.checkType.toLowerCase().includes("adversarial")
+                );
+                const isFailed = injectionCheck && !injectionCheck.isPassed;
+                return (
+                  <div style={{ padding: "0.75rem", backgroundColor: isFailed ? "#fff1f1" : "#f4f7fb", borderRadius: "6px", border: isFailed ? "1px solid #ffd7d9" : "1px solid #d0e2ff" }}>
+                    <div style={{ fontSize: "0.75rem", color: isFailed ? "#da1e28" : "#525252" }}>Adversarial Injection Shield</div>
+                    <div style={{ fontSize: "0.8125rem", fontWeight: 600, color: isFailed ? "#da1e28" : "#198038", marginTop: "2px" }}>
+                      {isFailed ? "Threat Flagged — Payload Rejected" : (injectionCheck?.details || "Clear — Form Payload Sanitized")}
+                    </div>
+                  </div>
+                );
+              })()}
+
+              {(() => {
+                const piiCheck = validation?.complianceChecks.find(c => 
+                  c.checkType.toLowerCase().includes("privacy") || c.checkType.toLowerCase().includes("pii")
+                );
+                return (
+                  <div style={{ padding: "0.75rem", backgroundColor: "#f4f7fb", borderRadius: "6px", border: "1px solid #d0e2ff" }}>
+                    <div style={{ fontSize: "0.75rem", color: "#525252" }}>Data Privacy (PII Filter)</div>
+                    <div style={{ fontSize: "0.8125rem", fontWeight: 600, color: "#161616", marginTop: "2px" }}>
+                      {piiCheck?.details || "Protected — Tokens Masked"}
+                    </div>
+                  </div>
+                );
+              })()}
+            </div>
+
+            {/* Verification Checklist */}
+            {validation && validation.complianceChecks.length > 0 && (
+              <div style={{ marginBottom: "1rem" }}>
+                <div style={{ fontSize: "0.75rem", fontWeight: 700, color: "#525252", textTransform: "uppercase", letterSpacing: "0.5px", marginBottom: "0.5rem" }}>
+                  Automated Security & Compliance Checklist:
+                </div>
+                <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(280px, 1fr))", gap: "0.5rem" }}>
+                  {validation.complianceChecks.map((chk, idx) => (
+                    <div
+                      key={idx}
+                      style={{
+                        display: "flex",
+                        alignItems: "center",
+                        justifyContent: "space-between",
+                        padding: "0.375rem 0.625rem",
+                        backgroundColor: "#f8f9fa",
+                        borderRadius: "4px",
+                        border: "1px solid #e9ecef"
+                      }}
+                    >
+                      <span style={{ fontSize: "0.75rem" }}><strong>{chk.checkType}:</strong> {chk.details}</span>
+                      <Tag type={chk.isPassed ? "green" : "red"} size="sm" style={{ margin: 0, flexShrink: 0 }}>
+                        {chk.isPassed ? "PASS" : "FAIL"}
+                      </Tag>
+                    </div>
+                  ))}
+                </div>
+              </div>
+            )}
+
+            {/* Structured Safety & Compliance Findings */}
+            {briefingItems.length > 0 && (
+              <div>
+                <div style={{ fontSize: "0.75rem", fontWeight: 700, color: "#525252", textTransform: "uppercase", letterSpacing: "0.5px", marginBottom: "0.5rem" }}>
+                  Structured Safety & Evidentiary Findings:
+                </div>
+                <div style={{ display: "flex", flexDirection: "column", gap: "0.5rem" }}>
+                  {briefingItems.map((item, idx) => (
+                    <div
+                      key={idx}
+                      style={{
+                        display: "flex",
+                        alignItems: "flex-start",
+                        gap: "0.75rem",
+                        padding: "0.625rem 0.875rem",
+                        backgroundColor: item.iconType === "action" ? (canApprove ? "#f6fcf7" : "#fff8f8") : "#f8f9fa",
+                        border: `1px solid ${item.iconType === "action" ? (canApprove ? "#defbe6" : "#ffd7d9") : "#e9ecef"}`,
+                        borderRadius: "6px",
+                        fontSize: "0.8125rem",
+                        lineHeight: 1.5,
+                      }}
+                    >
+                      <span style={{ fontSize: "1rem", flexShrink: 0, marginTop: "1px" }}>
+                        {item.iconType === "identity" && "👤"}
+                        {item.iconType === "document" && "📁"}
+                        {item.iconType === "fraud" && "🛡️"}
+                        {item.iconType === "action" && "📋"}
+                        {item.iconType === "general" && "🔍"}
+                      </span>
+                      <div style={{ flex: 1 }}>
+                        <strong style={{ color: "#161616", marginRight: "0.35rem" }}>{item.category}:</strong>
+                        <span style={{ color: "#393939" }}>{item.content}</span>
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              </div>
+            )}
+          </div>
+
+          {/* ========================================================================= */}
+          {/* TWO-COLUMN GRID: STATUTORY ELIGIBILITY AUDITOR & TARIFF COORDINATOR       */}
           {/* ========================================================================= */}
           <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(320px, 1fr))", gap: "1.25rem" }}>
             
-            {/* COLUMN 1: AGENT 2 (STATUTORY ELIGIBILITY & DOCUMENT AUDIT) */}
+            {/* COLUMN 1: STATUTORY ELIGIBILITY & EVIDENCE AUDITOR */}
             <div style={{
               backgroundColor: "#fff",
               borderRadius: "8px",
@@ -455,9 +635,14 @@ export default function AgentDraftPanel({
               <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: "0.75rem" }}>
                 <div style={{ display: "flex", alignItems: "center", gap: "0.375rem" }}>
                   <Document size={16} style={{ color: "#0f62fe" }} />
-                  <span style={{ fontSize: "0.9375rem", fontWeight: 700, color: "#161616" }}>
-                    Statutory Eligibility & Proofs
-                  </span>
+                  <div>
+                    <span style={{ fontSize: "0.9375rem", fontWeight: 700, color: "#161616" }}>
+                      Statutory Eligibility & Evidence Auditor
+                    </span>
+                    <div style={{ fontSize: "0.75rem", color: "#525252" }}>
+                      Gazette Policy & Document Intelligence
+                    </div>
+                  </div>
                 </div>
                 <Tag type={eligibility?.isEligible ? "green" : "red"}>
                   {eligibility?.matchPercentage ?? 0}% Match
@@ -506,7 +691,7 @@ export default function AgentDraftPanel({
               )}
             </div>
 
-            {/* COLUMN 2: AGENT 3 (STATUTORY FEES & APPOINTMENT DISPATCH) */}
+            {/* COLUMN 2: ADMINISTRATIVE TARIFF & DISPATCH COORDINATOR */}
             <div style={{
               backgroundColor: "#fff",
               borderRadius: "8px",
@@ -517,7 +702,7 @@ export default function AgentDraftPanel({
               {(() => {
                 const displayFeeAmount = (action?.fee && action.fee.totalAmount > 0)
                   ? action.fee.totalAmount
-                  : (paymentAmount && paymentAmount > 0 ? paymentAmount : 0);
+                  : (currentStage <= 1 && paymentAmount && paymentAmount > 0 ? paymentAmount : 0);
                 const feeCurrency = action?.fee?.currency || "LKR";
 
                 return (
@@ -525,9 +710,14 @@ export default function AgentDraftPanel({
                     <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: "0.75rem" }}>
                       <div style={{ display: "flex", alignItems: "center", gap: "0.375rem" }}>
                         <Money size={16} style={{ color: "#198038" }} />
-                        <span style={{ fontSize: "0.9375rem", fontWeight: 700, color: "#161616" }}>
-                          Statutory Fees & Dispatch
-                        </span>
+                        <div>
+                          <span style={{ fontSize: "0.9375rem", fontWeight: 700, color: "#161616" }}>
+                            Administrative Tariff & Dispatch Coordinator
+                          </span>
+                          <div style={{ fontSize: "0.75rem", color: "#525252" }}>
+                            Statutory Fee Matrix & Appointment Dispatch
+                          </div>
+                        </div>
                       </div>
                       <Tag type={displayFeeAmount > 0 ? "green" : "cool-gray"}>
                         {formatMoney(displayFeeAmount, feeCurrency)}
@@ -590,82 +780,6 @@ export default function AgentDraftPanel({
           </div>
 
           {/* ========================================================================= */}
-          {/* CARD 3: AGENT 4 SECURITY, INTEGRITY & FRAUD GUARDRAILS                    */}
-          {/* ========================================================================= */}
-          <div style={{
-            backgroundColor: "#fff",
-            borderRadius: "8px",
-            border: "1px solid #e0e0e0",
-            padding: "1.25rem",
-            boxShadow: "0 1px 4px rgba(0,0,0,0.03)"
-          }}>
-            <div style={{ display: "flex", alignItems: "center", gap: "0.375rem", marginBottom: "0.75rem" }}>
-              <Security size={16} style={{ color: "#0f62fe" }} />
-              <span style={{ fontSize: "0.9375rem", fontWeight: 700, color: "#161616" }}>
-                System Security & Anti-Fraud Guardrails
-              </span>
-            </div>
-
-            <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(220px, 1fr))", gap: "0.75rem", marginBottom: "1rem" }}>
-              <div style={{ padding: "0.75rem", backgroundColor: "#f4f7fb", borderRadius: "6px", border: "1px solid #d0e2ff" }}>
-                <div style={{ fontSize: "0.75rem", color: "#525252" }}>Identity & Bounds Check</div>
-                <div style={{ fontSize: "0.8125rem", fontWeight: 600, color: "#161616", marginTop: "2px" }}>
-                  NIC Format & Age ({draft.derivedAgeFromNic ?? "Valid"}) Verified
-                </div>
-              </div>
-
-              <div style={{ padding: "0.75rem", backgroundColor: "#f4f7fb", borderRadius: "6px", border: "1px solid #d0e2ff" }}>
-                <div style={{ fontSize: "0.75rem", color: "#525252" }}>Anti-Duplicate Registry</div>
-                <div style={{ fontSize: "0.8125rem", fontWeight: 600, color: "#198038", marginTop: "2px" }}>
-                  Clear — Zero Collisions Found
-                </div>
-              </div>
-
-              <div style={{ padding: "0.75rem", backgroundColor: "#f4f7fb", borderRadius: "6px", border: "1px solid #d0e2ff" }}>
-                <div style={{ fontSize: "0.75rem", color: "#525252" }}>Adversarial Injection Shield</div>
-                <div style={{ fontSize: "0.8125rem", fontWeight: 600, color: "#198038", marginTop: "2px" }}>
-                  Clear — Form Payload Sanitized
-                </div>
-              </div>
-
-              <div style={{ padding: "0.75rem", backgroundColor: "#f4f7fb", borderRadius: "6px", border: "1px solid #d0e2ff" }}>
-                <div style={{ fontSize: "0.75rem", color: "#525252" }}>Data Privacy (PII Filter)</div>
-                <div style={{ fontSize: "0.8125rem", fontWeight: 600, color: "#161616", marginTop: "2px" }}>
-                  Protected — Tokens Masked
-                </div>
-              </div>
-            </div>
-
-            {/* Compliance Checks List */}
-            {validation && validation.complianceChecks.length > 0 && (
-              <div style={{ fontSize: "0.8125rem" }}>
-                <div style={{ fontWeight: 600, marginBottom: "0.375rem", color: "#525252" }}>Verification Checklist:</div>
-                <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(280px, 1fr))", gap: "0.5rem" }}>
-                  {validation.complianceChecks.map((chk, idx) => (
-                    <div
-                      key={idx}
-                      style={{
-                        display: "flex",
-                        alignItems: "center",
-                        justifyContent: "space-between",
-                        padding: "0.375rem 0.625rem",
-                        backgroundColor: "#f8f9fa",
-                        borderRadius: "4px",
-                        border: "1px solid #e9ecef"
-                      }}
-                    >
-                      <span style={{ fontSize: "0.75rem" }}><strong>{chk.checkType}:</strong> {chk.details}</span>
-                      <Tag type={chk.isPassed ? "green" : "red"} size="sm" style={{ margin: 0, flexShrink: 0 }}>
-                        {chk.isPassed ? "PASS" : "FAIL"}
-                      </Tag>
-                    </div>
-                  ))}
-                </div>
-              </div>
-            )}
-          </div>
-
-          {/* ========================================================================= */}
           {/* TECHNICAL TRACE DRAWER (COLLAPSED FOR NON-TECHNICAL OFFICERS)             */}
           {/* ========================================================================= */}
           <details style={{
@@ -682,8 +796,8 @@ export default function AgentDraftPanel({
             <div style={{ marginTop: "0.75rem" }}>
               {(() => {
                 const allToolCalls = [
-                  ...(action?.toolCalls ?? []).map(t => ({ ...t, agent: "Dispatch Coordinator (Agent 3)" })),
-                  ...(validation?.toolCalls ?? []).map(t => ({ ...t, agent: "Statutory Advisor (Agent 4)" })),
+                  ...(action?.toolCalls ?? []).map(t => ({ ...t, agent: "Administrative Tariff & Dispatch Coordinator" })),
+                  ...(validation?.toolCalls ?? []).map(t => ({ ...t, agent: "Regulatory Safety & Fraud Verification Agent" })),
                 ];
 
                 if (allToolCalls.length === 0) {
@@ -694,7 +808,7 @@ export default function AgentDraftPanel({
                   <details key={i} style={{ marginBottom: "0.5rem", fontSize: "0.75rem" }}>
                     <summary style={{ cursor: "pointer", display: "flex", alignItems: "center", gap: "0.5rem" }}>
                       <code>{t.toolName}</code>
-                      <Tag type={t.agent.includes("Agent 4") ? "purple" : "cyan"} size="sm">{t.agent}</Tag>
+                      <Tag type={t.agent.includes("Safety") ? "purple" : "cyan"} size="sm">{t.agent}</Tag>
                       <span style={{ color: "#6f6f6f", marginLeft: "auto" }}>· {new Date(t.calledAt).toLocaleTimeString()}</span>
                     </summary>
                     <pre style={{ background: "#f4f4f4", padding: "0.5rem", overflowX: "auto", whiteSpace: "pre-wrap", marginTop: "0.25rem", borderRadius: "4px" }}>
