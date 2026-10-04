@@ -11,10 +11,17 @@ namespace Government_Service_Navigator.Backend.Controllers
     public class OrchestratorController : ControllerBase
     {
         private readonly IMasterSupervisorAgent _supervisorAgent;
+        private readonly Government_Service_Navigator.AgenticAi.Orchestration.Workflows.ICitizenApplicationWorkflow _citizenWorkflow;
+        private readonly Government_Service_Navigator.AgenticAi.Orchestration.Workflows.IOfficerVerificationWorkflow _officerWorkflow;
 
-        public OrchestratorController(IMasterSupervisorAgent supervisorAgent)
+        public OrchestratorController(
+            IMasterSupervisorAgent supervisorAgent,
+            Government_Service_Navigator.AgenticAi.Orchestration.Workflows.ICitizenApplicationWorkflow citizenWorkflow,
+            Government_Service_Navigator.AgenticAi.Orchestration.Workflows.IOfficerVerificationWorkflow officerWorkflow)
         {
             _supervisorAgent = supervisorAgent;
+            _citizenWorkflow = citizenWorkflow;
+            _officerWorkflow = officerWorkflow;
         }
 
         /// <summary>
@@ -32,6 +39,38 @@ namespace Government_Service_Navigator.Backend.Controllers
 
             var response = await _supervisorAgent.ProcessChatQueryAsync(request, cancellationToken);
             return Ok(response);
+        }
+
+        /// <summary>
+        /// Executes Workflow 1: End-to-End Citizen Pre-Application & Submission Pipeline.
+        /// Coordinates Agent 1 (Intake) -> Agent 2 (Eligibility) -> Agent 3 (Drafting) -> Agent 4 (Safety).
+        /// </summary>
+        [HttpPost("workflows/citizen-pipeline")]
+        public async Task<IActionResult> RunCitizenPipeline(
+            [FromBody] Government_Service_Navigator.AgenticAi.Orchestration.Workflows.CitizenApplicationWorkflowRequest request,
+            CancellationToken cancellationToken)
+        {
+            if (string.IsNullOrWhiteSpace(request.UserNeedDescription) && string.IsNullOrWhiteSpace(request.CitizenNic))
+            {
+                return BadRequest(new { message = "Citizen NIC or description of need is required." });
+            }
+
+            var state = await _citizenWorkflow.ExecutePipelineAsync(request, cancellationToken);
+            return Ok(state);
+        }
+
+        /// <summary>
+        /// Executes Workflow 2: Statutory Officer Verification & Multi-Stage Approval Pipeline.
+        /// Coordinates Agent 1 (Audit) -> Agent 2 (Evidentiary) -> Agent 3 (Settlement) -> Agent 4 (Dossier & Decision Order).
+        /// </summary>
+        [HttpPost("workflows/officer-verification")]
+        [Authorize(Roles = "Verification Officer,Department Admin,SuperAdmin")]
+        public async Task<IActionResult> RunOfficerVerification(
+            [FromBody] Government_Service_Navigator.AgenticAi.Orchestration.Workflows.OfficerVerificationWorkflowRequest request,
+            CancellationToken cancellationToken)
+        {
+            var state = await _officerWorkflow.ExecuteVerificationPipelineAsync(request, cancellationToken);
+            return Ok(state);
         }
 
         /// <summary>

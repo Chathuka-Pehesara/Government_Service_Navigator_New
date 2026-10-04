@@ -216,7 +216,6 @@ builder.Services.AddScoped<IVectorRetriever, VectorRetrieverService>();
 builder.Services.AddScoped<IEligibilityVectorRetriever, EligibilityVectorRetrieverService>();
 builder.Services.AddScoped<IDocumentChunker, DocumentChunker>();
 builder.Services.AddScoped<IEligibilityDocumentAgent, EligibilityDocumentAgent>();
-builder.Services.AddScoped<IAgent2WorkflowOrchestrator, Agent2WorkflowOrchestrator>();
 builder.Services.AddScoped<ICheckEligibilityRulesTool, CheckEligibilityRulesTool>();
 builder.Services.AddScoped<IGetDocumentRequirementsTool, GetDocumentRequirementsTool>();
 builder.Services.AddScoped<IDocumentRequirementRepository, DocumentRequirementRepository>();
@@ -237,12 +236,12 @@ builder.Services.AddScoped<IFindAppointmentSlotTool, FindAppointmentSlotTool>();
 builder.Services.AddScoped<IPrefillApplicationTool, PrefillApplicationTool>();
 builder.Services.AddScoped<IActionVectorRetriever, ActionVectorRetrieverService>();
 builder.Services.AddScoped<IActionToolAgent, ActionToolAgent>();
-builder.Services.AddScoped<IAgent3WorkflowOrchestrator, Agent3WorkflowOrchestrator>();
 // Agent 4: Validation & Safety Agent and Orchestrator
 builder.Services.AddScoped<ISchemaValidatorTool, SchemaValidatorTool>();
 builder.Services.AddScoped<IDuplicateCheckTool, DuplicateCheckTool>();
 builder.Services.AddScoped<IValidationSafetyAgent, ValidationSafetyAgent>();
-builder.Services.AddScoped<IValidationOrchestrator, ValidationOrchestrator>();
+builder.Services.AddScoped<Government_Service_Navigator.AgenticAi.Orchestration.Workflows.ICitizenApplicationWorkflow, Government_Service_Navigator.AgenticAi.Orchestration.Workflows.CitizenApplicationWorkflow>();
+builder.Services.AddScoped<Government_Service_Navigator.AgenticAi.Orchestration.Workflows.IOfficerVerificationWorkflow, Government_Service_Navigator.AgenticAi.Orchestration.Workflows.OfficerVerificationWorkflow>();
 builder.Services.AddSingleton(new ValidationSafetyConfig
 {
     BlockDuplicateSubmissions = false, // Duplicates are flagged for officers, not hard-blocked

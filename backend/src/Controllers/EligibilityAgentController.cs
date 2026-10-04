@@ -14,14 +14,10 @@ namespace Government_Service_Navigator.Backend.Controllers;
 public class EligibilityAgentController : ControllerBase
 {
     private readonly IEligibilityDocumentAgent _eligibilityAgent;
-    private readonly IAgent2WorkflowOrchestrator _orchestrator;
 
-    public EligibilityAgentController(
-        IEligibilityDocumentAgent eligibilityAgent,
-        IAgent2WorkflowOrchestrator orchestrator)
+    public EligibilityAgentController(IEligibilityDocumentAgent eligibilityAgent)
     {
         _eligibilityAgent = eligibilityAgent;
-        _orchestrator = orchestrator;
     }
 
     /// <summary>
@@ -83,14 +79,29 @@ public class EligibilityAgentController : ControllerBase
             PlanSummary: query.PlanSummary
         );
 
-        var initialState = WorkflowExecutionState.Create(
+        var state = WorkflowExecutionState.Create(
             applicationId: query.ApplicationId > 0 ? query.ApplicationId : 1001,
             citizenNic: query.CitizenNic ?? "199512345678",
             serviceName: request.ServiceName
         );
 
-        var updatedState = await _orchestrator.ExecuteEligibilityStageAsync(initialState, request);
-        return Ok(updatedState);
+        state.CurrentStage = "EligibilityAndDocumentAnalysis";
+        state.UpdatedAt = DateTime.UtcNow;
+
+        var result = await _eligibilityAgent.EvaluateEligibilityAsync(request);
+        state.EligibilityResult = result;
+
+        if (result.IsEligible)
+        {
+            state.CurrentStage = "DraftingPreFill";
+        }
+        else
+        {
+            state.CurrentStage = "IneligibleRequirementGap";
+        }
+
+        state.UpdatedAt = DateTime.UtcNow;
+        return Ok(state);
     }
 }
 

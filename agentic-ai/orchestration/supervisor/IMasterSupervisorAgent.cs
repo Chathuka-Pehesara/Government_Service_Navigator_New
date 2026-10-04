@@ -61,6 +61,8 @@ namespace Government_Service_Navigator.AgenticAi.Orchestration
         public List<AgentExecutionTraceItem> CollaborationTrace { get; set; } = new();
         public SupervisorRecommendation? Recommendation { get; set; }
         public List<string> SuggestedFollowups { get; set; } = new();
+        public string? ServiceName { get; set; }
+        public int? ServiceProcedureId { get; set; }
         public DateTime Timestamp { get; set; } = DateTime.UtcNow;
     }
 

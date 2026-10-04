@@ -73,8 +73,96 @@ namespace Government_Service_Navigator.AgenticAi.Orchestration
 
             IntakePlanResponse? agent1Result = null;
 
-            // ── Pre-Step: If inquiring generally without an active application AND without a specific service pre-selected
-            if (caseContext == null && !request.ServiceProcedureId.HasValue)
+            List<string> availableServices = new();
+            if (_contextProvider != null)
+            {
+                try
+                {
+                    availableServices = await _contextProvider.GetAvailableServiceNamesAsync(cancellationToken);
+                }
+                catch
+                {
+                    availableServices = new List<string>();
+                }
+            }
+
+            var validActiveServices = availableServices
+                .Where(s => !s.StartsWith("test", StringComparison.OrdinalIgnoreCase) && !s.Contains("testing", StringComparison.OrdinalIgnoreCase))
+                .ToList();
+
+            // Resolve service name and ID from Query or History if not provided
+            if (string.IsNullOrWhiteSpace(serviceName) || serviceName.Equals("Government Service", StringComparison.OrdinalIgnoreCase))
+            {
+                // 1. Direct match in current query
+                string? matchedInQuery = validActiveServices.FirstOrDefault(s => queryLower.Contains(s.ToLowerInvariant()));
+                if (matchedInQuery == null)
+                {
+                    if (queryLower.Contains("police") || queryLower.Contains("clearance"))
+                        matchedInQuery = validActiveServices.FirstOrDefault(s => s.Contains("Police", StringComparison.OrdinalIgnoreCase)) ?? "Certificate of Police Clearance";
+                    else if (queryLower.Contains("nic") || queryLower.Contains("identity"))
+                        matchedInQuery = validActiveServices.FirstOrDefault(s => s.Contains("Identity", StringComparison.OrdinalIgnoreCase) || s.Contains("NIC", StringComparison.OrdinalIgnoreCase)) ?? "National Identity Card (NIC) Issuance & Replacement";
+                    else if (queryLower.Contains("passport"))
+                        matchedInQuery = validActiveServices.FirstOrDefault(s => s.Contains("Passport", StringComparison.OrdinalIgnoreCase)) ?? "Passport Application & Renewal";
+                    else if (queryLower.Contains("license") || queryLower.Contains("licence"))
+                        matchedInQuery = validActiveServices.FirstOrDefault(s => s.Contains("License", StringComparison.OrdinalIgnoreCase)) ?? "Driving License Examination & Renewal";
+                }
+
+                if (matchedInQuery != null)
+                {
+                    serviceName = matchedInQuery;
+                }
+                // 2. Check conversation history (from most recent to oldest)
+                else if (request.History != null && request.History.Count > 0)
+                {
+                    for (int i = request.History.Count - 1; i >= 0; i--)
+                    {
+                        var content = request.History[i].Content ?? string.Empty;
+                        var contentLower = content.ToLowerInvariant();
+                        var matchedInHist = validActiveServices.FirstOrDefault(s => contentLower.Contains(s.ToLowerInvariant()));
+                        if (matchedInHist != null)
+                        {
+                            serviceName = matchedInHist;
+                            break;
+                        }
+                        if (contentLower.Contains("police clearance") || contentLower.Contains("police"))
+                        {
+                            serviceName = validActiveServices.FirstOrDefault(s => s.Contains("Police", StringComparison.OrdinalIgnoreCase)) ?? "Certificate of Police Clearance";
+                            break;
+                        }
+                        if (contentLower.Contains("identity card") || contentLower.Contains("nic"))
+                        {
+                            serviceName = validActiveServices.FirstOrDefault(s => s.Contains("Identity", StringComparison.OrdinalIgnoreCase) || s.Contains("NIC", StringComparison.OrdinalIgnoreCase)) ?? "National Identity Card (NIC) Issuance & Replacement";
+                            break;
+                        }
+                    }
+                }
+
+                // 3. Fallback: if exactly 1 active service exists in DB, default to it
+                if ((string.IsNullOrWhiteSpace(serviceName) || serviceName.Equals("Government Service", StringComparison.OrdinalIgnoreCase)) && validActiveServices.Count == 1)
+                {
+                    serviceName = validActiveServices[0];
+                }
+            }
+
+            // Map serviceName to database serviceId if unset or invalid
+            if ((serviceId <= 0 || serviceId == 1) && !string.IsNullOrWhiteSpace(serviceName) && !serviceName.Equals("Government Service", StringComparison.OrdinalIgnoreCase))
+            {
+                if (_contextProvider != null)
+                {
+                    try
+                    {
+                        var resolvedDbId = await _contextProvider.FindServiceProcedureIdAsync(serviceName, cancellationToken);
+                        if (resolvedDbId.HasValue && resolvedDbId.Value > 0)
+                        {
+                            serviceId = resolvedDbId.Value;
+                        }
+                    }
+                    catch { }
+                }
+            }
+
+            // If still completely unresolved and user query is purely generic without context, ask citizen to pick service
+            if (caseContext == null && !request.ServiceProcedureId.HasValue && serviceName.Equals("Government Service", StringComparison.OrdinalIgnoreCase))
             {
                 bool isGenericInquiry = queryLower.Contains("what documents")
                     || queryLower.Contains("which documents")
@@ -82,168 +170,103 @@ namespace Government_Service_Navigator.AgenticAi.Orchestration
                     || queryLower.Contains("how much is the")
                     || queryLower.Contains("total statutory fee")
                     || queryLower.Contains("counter appointment")
-                    || queryLower.Contains("what happens after");
+                    || queryLower.Contains("eligib")
+                    || queryLower.Contains("hello")
+                    || queryLower.Contains("hi");
 
-                bool mentionsService = queryLower.Contains("passport") || queryLower.Contains("nic") || queryLower.Contains("identity")
-                    || queryLower.Contains("license") || queryLower.Contains("licence") || queryLower.Contains("birth")
-                    || queryLower.Contains("marriage") || queryLower.Contains("certificate") || queryLower.Contains("vehicle");
-
-                if (isGenericInquiry && !mentionsService)
+                if (isGenericInquiry && validActiveServices.Count > 1)
                 {
-                    List<string> availableServices = new();
-                    if (_contextProvider != null)
-                    {
-                        try
-                        {
-                            availableServices = await _contextProvider.GetAvailableServiceNamesAsync(cancellationToken);
-                        }
-                        catch
-                        {
-                            availableServices = new List<string>();
-                        }
-                    }
-
-                    var validServices = availableServices
-                        .Where(s => !s.StartsWith("test", StringComparison.OrdinalIgnoreCase) && !s.Contains("testing", StringComparison.OrdinalIgnoreCase))
-                        .ToList();
-
-                    string serviceListText = validServices.Any()
-                        ? string.Join("\n", validServices.Select(s => $"- **{s}**"))
-                        : "- **National Identity Card (NIC) Issuance**\n- **Passport Renewal / Application**\n- **Driving License Examination & Renewal**";
-
+                    string serviceListText = string.Join("\n", validActiveServices.Select(s => $"- **{s}**"));
                     return new SupervisorChatResponse
                     {
                         Answer = $"### Which service would you like guidance for?\n\n" +
-                                 $"To provide you with the exact mandatory documents, statutory eligibility criteria, and fee schedules, please specify which government service you need:\n\n" +
+                                 $"To provide you with verified statutory eligibility criteria, mandatory document checklists, and fee schedules, please specify which government service you need:\n\n" +
                                  $"{serviceListText}\n\n" +
-                                 $"*You can also navigate to any service in the catalog and tap **\"Ask AI Guide\"** or **\"Audit Eligibility\"** directly.*",
+                                 $"*You can also navigate to any service in the catalog and tap **\"Ask AI Guide\"** directly.*",
                         Tone = isWeb ? "StatutoryOfficial" : "CitizenSupportive",
                         CollaborationTrace = trace,
                         Recommendation = new SupervisorRecommendation
                         {
                             ActionType = "ExploreCatalog",
-                            Title = "Select Service for Document Checklist",
+                            Title = "Select Service for Guidance",
                             Rationale = "Document requirements and eligibility rules depend on the specific government service.",
                             RiskLevel = "Low"
                         },
-                        SuggestedFollowups = validServices.Any()
-                            ? validServices.Take(3).Select(s => $"What documents for {s}?").ToList()
-                            : new List<string>
-                            {
-                                "What documents for Passport Renewal?",
-                                "What documents for National Identity Card?",
-                                "What documents for Driving License?"
-                            },
-                        Timestamp = DateTime.UtcNow
-                    };
-                }
-
-                var intakeOutcome = await _intakeTool.ProcessIntakeAsync(request.Query ?? "Public service inquiry", cancellationToken);
-                trace.Add(intakeOutcome.Trace);
-                agent1Result = intakeOutcome.Data;
-
-                if (agent1Result != null)
-                {
-                    bool isNotFound = string.IsNullOrWhiteSpace(agent1Result.RecommendedService)
-                        || agent1Result.RecommendedService.Equals("Service Not Found", StringComparison.OrdinalIgnoreCase)
-                        || agent1Result.RecommendedService.Contains("Not Found", StringComparison.OrdinalIgnoreCase);
-
-                    if (isNotFound)
-                    {
-                        List<string> availableServices = new();
-                        if (_contextProvider != null)
-                        {
-                            try
-                            {
-                                availableServices = await _contextProvider.GetAvailableServiceNamesAsync(cancellationToken);
-                            }
-                            catch
-                            {
-                                availableServices = new List<string>();
-                            }
-                        }
-
-                        var validActiveServices = availableServices
-                            .Where(s => !s.StartsWith("test", StringComparison.OrdinalIgnoreCase) && !s.Contains("testing", StringComparison.OrdinalIgnoreCase))
-                            .ToList();
-
-                        string servicesSection = validActiveServices.Any()
-                            ? $"**Officially Supported Services in our Registry:**\n{string.Join("\n", validActiveServices.Select(s => $"- {s}"))}\n\n"
-                            : string.Empty;
-
-                        string notFoundAnswer = isWeb
-                            ? $"### Service Policy Not Registered\n\n" +
-                              $"The inquiry query: *\"{request.Query}\"* does not correspond to any active statutory policy circular in the vector knowledge base.\n\n" +
-                              servicesSection +
-                              $"**Administrative Guidance:**\n" +
-                              $"- Procedural guidance requires an active, gazetted policy circular registered in the vector database.\n" +
-                              $"- Departmental administrators can ingest official service circulars via the Service Catalog configuration panel."
-                            : $"### Official Policy Not Found\n\n" +
-                              $"I could not locate an official policy, procedure, or document rules for **\"{request.Query}\"** in the GovNavigator knowledge base.\n\n" +
-                              servicesSection +
-                              $"**Official Notice:**\n" +
-                              $"- Our digital assistants provide guidance verified strictly against official policy circulars registered in the system.\n" +
-                              $"- Because this service does not yet have an active policy registered in the database, automated document requirements and fee breakdowns cannot be generated.\n\n" +
-                              $"**What you can do:**\n" +
-                              $"- For immediate assistance, please visit the relevant issuing department or local Divisional Secretariat.\n" +
-                              $"- Check back soon as more government service policies are actively onboarded.";
-
-                        return new SupervisorChatResponse
-                        {
-                            Answer = notFoundAnswer,
-                            Tone = isWeb ? "StatutoryOfficial" : "CitizenSupportive",
-                            CollaborationTrace = trace,
-                            Recommendation = new SupervisorRecommendation
-                            {
-                                ActionType = "ExploreCatalog",
-                                Title = "Policy Not Yet Registered",
-                                Rationale = "Official policy documentation has not yet been onboarded for this service.",
-                                RiskLevel = "Low"
-                            },
-                            SuggestedFollowups = validActiveServices.Any()
-                                ? validActiveServices.Take(3).Select(s => $"How do I apply for {s}?").ToList()
-                                : new List<string>
-                                {
-                                    "Where can I find counter contact details?",
-                                    "Check available digital services"
-                                },
-                            Timestamp = DateTime.UtcNow
-                        };
-                    }
-                    else
-                    {
-                        serviceName = agent1Result.RecommendedService;
-                    }
-                }
-                else
-                {
-                    // agent1Result is null (no policy found)
-                    return new SupervisorChatResponse
-                    {
-                        Answer = $"### Official Policy Not Found\n\n" +
-                                 $"I could not locate official policy rules or procedures for **\"{request.Query}\"** in the GovNavigator knowledge base.\n\n" +
-                                 $"Guidance can only be provided when verified statutory policies exist in the database.",
-                        Tone = isWeb ? "StatutoryOfficial" : "CitizenSupportive",
-                        CollaborationTrace = trace,
-                        Recommendation = new SupervisorRecommendation
-                        {
-                            ActionType = "ExploreCatalog",
-                            Title = "Policy Not Yet Registered",
-                            Rationale = "No policy document found in the knowledge base.",
-                            RiskLevel = "Low"
-                        },
-                        SuggestedFollowups = new List<string> { "Check available digital services" },
+                        SuggestedFollowups = validActiveServices.Take(3).Select(s => $"Check eligibility for {s}").ToList(),
                         Timestamp = DateTime.UtcNow
                     };
                 }
             }
 
-            // 2. Multi-Agent Decision Engine: Dispatch to specialized delegate tools
-            EligibilityPlanResponse? agent2Result = null;
-            FeeCalculationResult? feeResult = null;
-            DuplicateCheckOutcome? duplicateResult = null;
+            // ── Step 1: Agent 1 Intake & Procedure Discovery
+            // Enriches query with the active service name so Vector DB retrieval accurately finds the policy circular
+            string intakeQuery = request.Query ?? "Public service inquiry";
+            if (!string.IsNullOrWhiteSpace(serviceName) && !serviceName.Equals("Government Service", StringComparison.OrdinalIgnoreCase)
+                && !intakeQuery.Contains(serviceName, StringComparison.OrdinalIgnoreCase))
+            {
+                intakeQuery = $"{serviceName} {intakeQuery}";
+            }
 
-            // ── Step A: Agent 4 Safety & Duplicate Check (Crucial for Web Officers & Form Submission)
+            var intakeOutcome = await _intakeTool.ProcessIntakeAsync(intakeQuery, cancellationToken);
+            trace.Add(intakeOutcome.Trace);
+            agent1Result = intakeOutcome.Data;
+
+            if (agent1Result != null && !string.IsNullOrWhiteSpace(agent1Result.RecommendedService)
+                && !agent1Result.RecommendedService.Contains("Not Found", StringComparison.OrdinalIgnoreCase)
+                && serviceName.Equals("Government Service", StringComparison.OrdinalIgnoreCase))
+            {
+                serviceName = agent1Result.RecommendedService;
+            }
+
+            // ── Step 2: Agent 2 Statutory Eligibility & Evidentiary Document Analysis
+            // Runs only when citizen explicitly asks about eligibility/documents/criteria, or for web officer verification
+            EligibilityPlanResponse? agent2Result = null;
+            bool checkEligibilityOrDocs = isWeb
+                                         || queryLower.Contains("document") || queryLower.Contains("evidence")
+                                         || queryLower.Contains("eligible") || queryLower.Contains("eligib")
+                                         || queryLower.Contains("check") || queryLower.Contains("qualify") || queryLower.Contains("qualif")
+                                         || queryLower.Contains("requirement") || queryLower.Contains("criteria") || queryLower.Contains("criterion")
+                                         || queryLower.Contains("photo") || queryLower.Contains("receipt")
+                                         || queryLower.Contains("bring") || queryLower.Contains("upload");
+
+            if (checkEligibilityOrDocs)
+            {
+                var eligibilityOutcome = await _eligibilityTool.EvaluateEligibilityAndEvidenceAsync(
+                    caseContext,
+                    serviceId,
+                    serviceName,
+                    currentStage,
+                    cancellationToken);
+
+                trace.Add(eligibilityOutcome.Trace);
+                agent2Result = eligibilityOutcome.Data;
+            }
+
+            // ── Step 3: Agent 3 Action Tools (Statutory Fee Schedule & Appointment Slot Lookup)
+            // Strictly invoked only when citizen asks about fees, costs, appointments, or counter slots (or web officer)
+            FeeCalculationResult? feeResult = null;
+            AppointmentSlotResult? slotResult = null;
+            bool checkFee = isWeb
+                            || queryLower.Contains("fee") || queryLower.Contains("cost") || queryLower.Contains("pay") || queryLower.Contains("charge") || queryLower.Contains("price");
+
+            bool checkSlot = queryLower.Contains("slot") || queryLower.Contains("appointment") || queryLower.Contains("book") || queryLower.Contains("counter") || queryLower.Contains("schedule") || queryLower.Contains("visit");
+
+            if (checkFee)
+            {
+                var feeOutcome = await _actionTool.CalculateFeeAsync(serviceId, currentStage, expressProcessing: false, cancellationToken: cancellationToken);
+                trace.Add(feeOutcome.Trace);
+                feeResult = feeOutcome.Data;
+            }
+
+            if (checkSlot)
+            {
+                var slotOutcome = await _actionTool.FindAppointmentSlotAsync(serviceId, cancellationToken);
+                trace.Add(slotOutcome.Trace);
+                slotResult = slotOutcome.Data;
+            }
+
+            // ── Step 4: Agent 4 Safety & Duplicate Check (For Web Officers & Cases)
+            DuplicateCheckOutcome? duplicateResult = null;
             bool checkDuplicateOrSafety = isWeb || queryLower.Contains("duplicate") || queryLower.Contains("safety") || queryLower.Contains("fraud") || queryLower.Contains("valid");
             if (caseContext != null && checkDuplicateOrSafety)
             {
@@ -258,49 +281,6 @@ namespace Government_Service_Navigator.AgenticAi.Orchestration
 
                 trace.Add(safetyOutcome.Trace);
                 duplicateResult = safetyOutcome.Data;
-            }
-
-            // ── Step B: Agent 2 Statutory Eligibility & Evidentiary Document Analysis
-            bool checkEligibilityOrDocs = queryLower.Contains("document") || queryLower.Contains("evidence") || queryLower.Contains("eligible")
-                                         || queryLower.Contains("requirement") || queryLower.Contains("photo") || queryLower.Contains("receipt") || isWeb;
-            if (checkEligibilityOrDocs)
-            {
-                var eligibilityOutcome = await _eligibilityTool.EvaluateEligibilityAndEvidenceAsync(
-                    caseContext,
-                    serviceId,
-                    serviceName,
-                    currentStage,
-                    cancellationToken);
-
-                trace.Add(eligibilityOutcome.Trace);
-                agent2Result = eligibilityOutcome.Data;
-            }
-
-            // ── Step C: Agent 3 Action Tools (Statutory Fee Schedule & Appointment Slot Lookup)
-            bool checkFeeOrAction = queryLower.Contains("fee") || queryLower.Contains("cost") || queryLower.Contains("pay") || queryLower.Contains("slot") || queryLower.Contains("appointment") || queryLower.Contains("book") || queryLower.Contains("counter") || isWeb;
-            AppointmentSlotResult? slotResult = null;
-            if (checkFeeOrAction)
-            {
-                var feeOutcome = await _actionTool.CalculateFeeAsync(serviceId, currentStage, expressProcessing: false, cancellationToken: cancellationToken);
-                trace.Add(feeOutcome.Trace);
-                feeResult = feeOutcome.Data;
-
-                bool checkSlot = queryLower.Contains("slot") || queryLower.Contains("appointment") || queryLower.Contains("book") || queryLower.Contains("counter") || queryLower.Contains("schedule") || queryLower.Contains("visit");
-                if (checkSlot)
-                {
-                    var slotOutcome = await _actionTool.FindAppointmentSlotAsync(serviceId, cancellationToken);
-                    trace.Add(slotOutcome.Trace);
-                    slotResult = slotOutcome.Data;
-                }
-            }
-
-            // ── Step D: Agent 1 Intake & Procedure Discovery (If not already evaluated in Pre-Step)
-            bool checkIntake = agent1Result == null && !isWeb && (queryLower.Contains("how to") || queryLower.Contains("procedure") || queryLower.Contains("roadmap"));
-            if (checkIntake)
-            {
-                var intakeOutcome = await _intakeTool.ProcessIntakeAsync(request.Query ?? "Public service inquiry", cancellationToken);
-                trace.Add(intakeOutcome.Trace);
-                agent1Result = intakeOutcome.Data;
             }
 
             // 3. Supervisor Cognitive Synthesis (Role-specific tone & strict grounding)
@@ -332,6 +312,7 @@ namespace Government_Service_Navigator.AgenticAi.Orchestration
                     caseContext,
                     serviceName,
                     trace,
+                    agent1Result,
                     agent2Result,
                     feeResult,
                     slotResult,
@@ -398,7 +379,17 @@ namespace Government_Service_Navigator.AgenticAi.Orchestration
             else
             {
                 // Mobile Citizen Recommendation
-                if (agent2Result?.MissingDocuments.Count > 0)
+                if (queryLower.Contains("eligib") || queryLower.Contains("qualif") || queryLower.Contains("check") || queryLower.Contains("audit"))
+                {
+                    recommendation = new SupervisorRecommendation
+                    {
+                        ActionType = "CheckEligibility",
+                        Title = "Interactive Statutory Eligibility Check",
+                        Rationale = "Verify your age, citizenship status, and evidentiary documents with our interactive statutory auditor.",
+                        RiskLevel = "Low"
+                    };
+                }
+                else if (agent2Result?.MissingDocuments.Count > 0)
                 {
                     recommendation = new SupervisorRecommendation
                     {
@@ -408,15 +399,48 @@ namespace Government_Service_Navigator.AgenticAi.Orchestration
                         RiskLevel = "Low"
                     };
                 }
-                else if (slotResult != null && slotResult.IsSlotFound && (queryLower.Contains("appointment") || queryLower.Contains("slot") || queryLower.Contains("book")))
+                else if (queryLower.Contains("appointment") || queryLower.Contains("slot") || queryLower.Contains("book"))
                 {
-                    recommendation = new SupervisorRecommendation
+                    if (caseContext != null)
                     {
-                        ActionType = "BookAppointment",
-                        Title = "Book Counter Appointment",
-                        Rationale = $"Earliest available slot proposed for {slotResult.LocalDisplay}.",
-                        RiskLevel = "Low"
-                    };
+                        bool isStageReadyForBooking = caseContext.StageStatus.Equals("Completed", StringComparison.OrdinalIgnoreCase)
+                            || caseContext.StageStatus.Equals("Approved", StringComparison.OrdinalIgnoreCase)
+                            || caseContext.StageStatus.Equals("ReadyForCollection", StringComparison.OrdinalIgnoreCase)
+                            || caseContext.CurrentStage >= caseContext.MaxStages;
+
+                        if (isStageReadyForBooking)
+                        {
+                            recommendation = new SupervisorRecommendation
+                            {
+                                ActionType = "BookAppointment",
+                                Title = "Book Counter Appointment",
+                                Rationale = slotResult != null && slotResult.IsSlotFound
+                                    ? $"Your application #{caseContext.ApplicationId} has completed departmental review. Earliest available counter slot: {slotResult.LocalDisplay}."
+                                    : $"Your application #{caseContext.ApplicationId} is ready for collection or counter verification. Please schedule your appointment.",
+                                RiskLevel = "Low"
+                            };
+                        }
+                        else
+                        {
+                            recommendation = new SupervisorRecommendation
+                            {
+                                ActionType = "Proceed",
+                                Title = "Complete Application Verification First",
+                                Rationale = $"Application #{caseContext.ApplicationId} is currently under departmental review ({caseContext.StageStatus}, Stage {caseContext.CurrentStage}/{caseContext.MaxStages}). You must complete official processing before booking a collection appointment.",
+                                RiskLevel = "Low"
+                            };
+                        }
+                    }
+                    else
+                    {
+                        recommendation = new SupervisorRecommendation
+                        {
+                            ActionType = "CheckEligibility",
+                            Title = "Application Required for Booking",
+                            Rationale = "You must verify your eligibility and submit your application first before you can book an official counter appointment.",
+                            RiskLevel = "Low"
+                        };
+                    }
                 }
                 else if (caseContext != null && !caseContext.IsPaymentVerified && feeResult != null && feeResult.TotalAmount > 0)
                 {
@@ -428,13 +452,23 @@ namespace Government_Service_Navigator.AgenticAi.Orchestration
                         RiskLevel = "Low"
                     };
                 }
-                else
+                else if (caseContext != null)
                 {
                     recommendation = new SupervisorRecommendation
                     {
                         ActionType = "Proceed",
                         Title = "Proceed to Next Stage",
                         Rationale = "Your application is on track and awaiting departmental review.",
+                        RiskLevel = "Low"
+                    };
+                }
+                else
+                {
+                    recommendation = new SupervisorRecommendation
+                    {
+                        ActionType = "CheckEligibility",
+                        Title = "Eligibility Verification Required",
+                        Rationale = "Verify your statutory criteria (age, citizenship, and evidentiary documents) before starting your application.",
                         RiskLevel = "Low"
                     };
                 }
@@ -448,13 +482,21 @@ namespace Government_Service_Navigator.AgenticAi.Orchestration
                     "Verify duplicate applications in registry",
                     "Draft official determination remarks"
                 }
-                : new List<string>
-                {
-                    "What documents do I need to bring?",
-                    "How much is the total statutory fee?",
-                    "Can I book a counter appointment?",
-                    "What happens after I submit?"
-                };
+                : (!string.IsNullOrWhiteSpace(serviceName) && !serviceName.Equals("Government Service", StringComparison.OrdinalIgnoreCase))
+                    ? new List<string>
+                    {
+                        $"Am I eligible for {serviceName}?",
+                        $"What are the fees for {serviceName}?",
+                        $"What documents do I need for {serviceName}?",
+                        $"Can I book a counter appointment for {serviceName}?"
+                    }
+                    : new List<string>
+                    {
+                        "What documents do I need to bring?",
+                        "How much is the total statutory fee?",
+                        "Can I book a counter appointment?",
+                        "What happens after I submit?"
+                    };
 
             return new SupervisorChatResponse
             {
@@ -463,6 +505,8 @@ namespace Government_Service_Navigator.AgenticAi.Orchestration
                 CollaborationTrace = trace,
                 Recommendation = recommendation,
                 SuggestedFollowups = followups,
+                ServiceName = serviceName,
+                ServiceProcedureId = serviceId,
                 Timestamp = DateTime.UtcNow
             };
         }
@@ -530,19 +574,62 @@ namespace Government_Service_Navigator.AgenticAi.Orchestration
                 ? (caseContext.IsPaymentVerified ? " (Payment Confirmed)" : " (Deposit Slip Uploaded — Awaiting Finance Audit)")
                 : "";
 
-            var userPrompt =
-                $"PLATFORM: {(isWeb ? "Government Verification Officer Workspace" : "Citizen Mobile Application")}\n" +
-                $"SERVICE: {serviceName} (Stage {currentStage})\n" +
-                $"CITIZEN NIC: {caseContext?.CitizenNic ?? "N/A"} | APPLICANT: {caseContext?.CitizenName ?? "N/A"}\n" +
-                $"ACTIVE STAGE STATUTORY FEE: LKR {activeStageFee:N2}{paymentStatusNote}\n" +
-                $"VERIFICATION AUDIT FINDINGS:\n{findingsSummary}\n" +
-                intakeSummary + "\n" +
-                $"OFFICER QUERY: \"{request.Query}\"\n\n" +
-                $"Respond to the officer query adhering strictly to your human-friendly advisory directives:\n" +
-                $"- CASE OVERVIEW: State applicant name, NIC, service, and immediate status. If any document is a generic camera/WhatsApp capture needing visual audit, or payment is pending finance audit, report status as '⚠️ Action Required — Manual Document Verification & Finance Audit Required'. Never claim Ready for Approval if generic uploads or unverified payments exist.\n" +
-                $"- STATUTORY FEE: State the exact Stage Statutory Fee given above: LKR {activeStageFee:N2}{paymentStatusNote}. Never state LKR 0.00 unless the active stage fee is truly 0.00. Never say fee exemption or zero fee.\n" +
-                $"- FINDINGS: Explicitly distinguish between documents whose filenames match the requirement (e.g. NIC) and generic uploads that require officer visual verification (e.g. Birth Certificate uploaded as a camera/WhatsApp capture).\n" +
-                $"- RECOMMENDED ACTION: Provide practical, concrete next steps (e.g. '1. Visually inspect the attached file to confirm it is an authentic Birth Certificate. 2. Verify statutory fee payment of LKR {activeStageFee:N2}.').";
+            string userPrompt;
+            if (isWeb)
+            {
+                userPrompt =
+                    $"PLATFORM: Government Verification Officer Workspace\n" +
+                    $"SERVICE: {serviceName} (Stage {currentStage})\n" +
+                    $"CITIZEN NIC: {caseContext?.CitizenNic ?? "N/A"} | APPLICANT: {caseContext?.CitizenName ?? "N/A"}\n" +
+                    $"ACTIVE STAGE STATUTORY FEE: LKR {activeStageFee:N2}{paymentStatusNote}\n" +
+                    $"VERIFICATION AUDIT FINDINGS:\n{findingsSummary}\n" +
+                    intakeSummary + "\n" +
+                    $"OFFICER QUERY: \"{request.Query}\"\n\n" +
+                    $"Respond to the officer query adhering strictly to your human-friendly advisory directives:\n" +
+                    $"- CASE OVERVIEW: State applicant name, NIC, service, and immediate status. If any document is a generic camera/WhatsApp capture needing visual audit, or payment is pending finance audit, report status as '⚠️ Action Required — Manual Document Verification & Finance Audit Required'. Never claim Ready for Approval if generic uploads or unverified payments exist.\n" +
+                    $"- STATUTORY FEE: State the exact Stage Statutory Fee given above: LKR {activeStageFee:N2}{paymentStatusNote}. Never state LKR 0.00 unless the active stage fee is truly 0.00. Never say fee exemption or zero fee.\n" +
+                    $"- FINDINGS: Explicitly distinguish between documents whose filenames match the requirement (e.g. NIC) and generic uploads that require officer visual verification (e.g. Birth Certificate uploaded as a camera/WhatsApp capture).\n" +
+                    $"- RECOMMENDED ACTION: Provide practical, concrete next steps (e.g. '1. Visually inspect the attached file to confirm it is an authentic Birth Certificate. 2. Verify statutory fee payment of LKR {activeStageFee:N2}.').";
+            }
+            else
+            {
+                // CITIZEN MOBILE ASSISTANT:
+                // Primary agent is Agent 1 (Intake & Planning Agent) grounded in Vector DB policies.
+                string vectorPolicyContext = agent1 != null && agent1.RetrievedContextSnippets.Count > 0
+                    ? string.Join("\n\n", agent1.RetrievedContextSnippets.Take(4))
+                    : "No specific policy text retrieved.";
+
+                string eligibilitySummary = agent2 != null
+                    ? $"\nSTATUTORY ELIGIBILITY & DOCUMENT AUDIT (Agent 2):\n" +
+                      $"- Eligible: {agent2.IsEligible} ({agent2.MatchPercentage}% criteria match)\n" +
+                      $"- Mandatory Documents: {string.Join(", ", agent2.RequiredDocuments)}\n" +
+                      $"- Missing Criteria: {(agent2.MissingCriteria.Count > 0 ? string.Join(", ", agent2.MissingCriteria) : "None")}\n" +
+                      $"- Missing Documents: {(agent2.MissingDocuments.Count > 0 ? string.Join(", ", agent2.MissingDocuments) : "None")}\n" +
+                      $"- Reasoning: {agent2.Reasoning}\n"
+                    : "";
+
+                userPrompt =
+                    $"PLATFORM: Citizen Mobile Application (GovNavigator Service Guide)\n" +
+                    $"CITIZEN QUERY: \"{request.Query}\"\n" +
+                    $"IDENTIFIED SERVICE: {serviceName}\n\n" +
+                    $"OFFICIAL VECTOR DATABASE POLICY CONTEXT (Agent 1 RAG Retrieval):\n" +
+                    $"{vectorPolicyContext}\n\n" +
+                    $"INTAKE ROADMAP FINDINGS (Agent 1):\n" +
+                    $"- Step-by-Step Pathway: {(agent1 != null && agent1.StepByStepPlan.Count > 0 ? string.Join(" -> ", agent1.StepByStepPlan) : "None specified")}\n" +
+                    eligibilitySummary +
+                    (fee != null && fee.TotalAmount > 0 ? $"- Statutory Fee (Agent 3): {fee.Currency} {fee.TotalAmount:N2}\n" : "") +
+                    (slot != null && slot.IsSlotFound ? $"- Earliest Appointment Slot (Agent 3): {slot.LocalDisplay}\n" : "") +
+                    $"\nRespond directly to the CITIZEN with a warm, reassuring, and well-structured answer adhering strictly to this role division:\n" +
+                    $"1. Service Availability & High-Level Rules (Agent 1): State clearly that '{serviceName}' is available in GovNavigator. Explain what the official policy circular says regarding the purpose of the service, who can apply (e.g. minimum age, citizen status), and the high-level procedural roadmap steps.\n" +
+                    $"2. Document Specification Policy (Agent 1 -> Agent 2): In general inquiries, DO NOT dump the full detailed document checklist. Instead, guide the citizen to run the interactive 'Eligibility Check UI' (Agent 2) to audit their personal age, residency, and required documents.\n" +
+                    $"3. Eligibility Check Inquiries (Agent 2): When the citizen asks how to check eligibility or whether they qualify:\n" +
+                    $"   - Explain the official statutory criteria (e.g. minimum age requirement of 16 years, Sri Lankan citizenship/residency).\n" +
+                    $"   - State clearly that they can verify their personal qualifications and evidentiary attachments interactively using our dedicated statutory auditor.\n" +
+                    $"   - CRITICAL: DO NOT assume or fabricate personal applicant attributes (e.g. NEVER state 'Age 25' or declare 'You are eligible') if the citizen has not entered their profile yet. Instruct them to tap 'Launch Eligibility Check UI' below.\n" +
+                    $"4. Fees & Appointment Slots (Agent 3): ONLY discuss fees or appointment slots if the citizen explicitly asked about fees, costs, appointments, or counter booking. If the citizen only asked about service availability, discovery, or roadmap, DO NOT proactively inject appointment dates or fee schedules.\n" +
+                    $"5. Clean Output: DO NOT output fake markdown bracket buttons (e.g., '[Launch Eligibility Check UI]') in your text; native interactive buttons are rendered directly by the app below your message.\n" +
+                    $"6. Encouragement: Reassure the citizen and invite them to tap the interactive action buttons below.";
+            }
 
             var aiContent = await _llmService!.GenerateChatCompletionAsync(systemPrompt, userPrompt, jsonMode: false, cancellationToken);
             if (!string.IsNullOrWhiteSpace(aiContent))
@@ -550,7 +637,7 @@ namespace Government_Service_Navigator.AgenticAi.Orchestration
                 return aiContent.Trim();
             }
 
-            return GenerateFallbackSupervisorAnswer(request, isWeb, caseContext, serviceName, trace, agent2, fee, slot, dup);
+            return GenerateFallbackSupervisorAnswer(request, isWeb, caseContext, serviceName, trace, agent1, agent2, fee, slot, dup);
         }
 
         private static string GenerateFallbackSupervisorAnswer(
@@ -559,6 +646,7 @@ namespace Government_Service_Navigator.AgenticAi.Orchestration
             ApplicationCaseContext? caseContext,
             string serviceName,
             List<AgentExecutionTraceItem> trace,
+            IntakePlanResponse? agent1,
             EligibilityPlanResponse? agent2,
             FeeCalculationResult? fee,
             AppointmentSlotResult? slot,
@@ -604,30 +692,164 @@ namespace Government_Service_Navigator.AgenticAi.Orchestration
             else
             {
                 var sb = new System.Text.StringBuilder();
-                sb.AppendLine($"Hello {caseContext?.CitizenName ?? "Citizen"}! Here is the official status and guidance for your **{serviceName}** application:");
+                var queryLower = (request.Query ?? string.Empty).ToLowerInvariant();
+
+                bool isEligibilityFocused = queryLower.Contains("eligib") || queryLower.Contains("qualif") || queryLower.Contains("criteri") || queryLower.Contains("check");
+                bool isFeeFocused = queryLower.Contains("fee") || queryLower.Contains("cost") || queryLower.Contains("pay") || queryLower.Contains("price");
+                bool isAppointmentFocused = queryLower.Contains("slot") || queryLower.Contains("appointment") || queryLower.Contains("book") || queryLower.Contains("counter");
+
+                // Case 1: Citizen is specifically inquiring about statutory eligibility / qualifications
+                if (isEligibilityFocused)
+                {
+                    sb.AppendLine($"Hello! Here is the official **Statutory Eligibility Guidance** for **{serviceName}**:");
+                    sb.AppendLine();
+
+                    if (agent2 != null)
+                    {
+                        sb.AppendLine("🛡️ **Statutory Eligibility Assessment:**");
+                        if (agent2.IsEligible)
+                        {
+                            sb.AppendLine($"✅ **Eligible to Apply** — Your profile satisfies the statutory eligibility criteria ({agent2.MatchPercentage}% match).");
+                        }
+                        else
+                        {
+                            sb.AppendLine($"⚠️ **Eligibility Review Required** ({agent2.MatchPercentage}% criteria match).");
+                        }
+                        sb.AppendLine();
+
+                        if (agent2.MissingCriteria.Count > 0)
+                        {
+                            sb.AppendLine("**Statutory Criteria to Note:**");
+                            foreach (var c in agent2.MissingCriteria)
+                            {
+                                sb.AppendLine($"- {c}");
+                            }
+                            sb.AppendLine();
+                        }
+
+                        if (!string.IsNullOrWhiteSpace(agent2.Reasoning))
+                        {
+                            sb.AppendLine($"*Policy Rule:* {agent2.Reasoning}");
+                            sb.AppendLine();
+                        }
+                    }
+
+                    // Mandatory Documents from Agent 2 or Agent 1
+                    var docs = agent2?.RequiredDocuments.Count > 0
+                        ? agent2.RequiredDocuments
+                        : agent1?.RequiredDocuments;
+
+                    if (docs != null && docs.Count > 0)
+                    {
+                        sb.AppendLine("📋 **Mandatory Documents Checklist:**");
+                        foreach (var doc in docs)
+                        {
+                            sb.AppendLine($"- {doc}");
+                        }
+                        sb.AppendLine();
+                    }
+
+                    if (agent1 != null && agent1.RetrievedContextSnippets.Count > 0)
+                    {
+                        sb.AppendLine("📜 **What the Official Policy Says:**");
+                        sb.AppendLine(agent1.RetrievedContextSnippets.First());
+                        sb.AppendLine();
+                    }
+
+                    if (fee != null && fee.TotalAmount > 0)
+                    {
+                        sb.AppendLine($"💳 **Statutory Fee:** **{fee.Currency} {fee.TotalAmount:N2}**.");
+                        sb.AppendLine();
+                    }
+
+                    sb.AppendLine("You can begin your application right here in the app whenever you are ready!");
+                    return sb.ToString();
+                }
+
+                // Case 2: Citizen is inquiring specifically about statutory fees
+                if (isFeeFocused)
+                {
+                    sb.AppendLine($"Hello! Here is the statutory fee schedule for **{serviceName}**:");
+                    sb.AppendLine();
+
+                    if (fee != null && fee.TotalAmount > 0)
+                    {
+                        sb.AppendLine($"💳 **Total Statutory Fee:** **{fee.Currency} {fee.TotalAmount:N2}**");
+                        sb.AppendLine($"- Application Stage: Stage {request.Stage ?? 1}");
+                        sb.AppendLine();
+                    }
+
+                    if (slot != null && slot.IsSlotFound)
+                    {
+                        sb.AppendLine($"📅 **Available Counter Appointments:** {slot.LocalDisplay}");
+                        sb.AppendLine();
+                    }
+
+                    sb.AppendLine("Fees can be settled via official government deposit or online card payment during submission.");
+                    return sb.ToString();
+                }
+
+                // Case 3: Citizen is inquiring specifically about appointment booking
+                if (isAppointmentFocused)
+                {
+                    sb.AppendLine($"Hello! Here is the counter appointment availability for **{serviceName}**:");
+                    sb.AppendLine();
+
+                    if (slot != null && slot.IsSlotFound)
+                    {
+                        sb.AppendLine($"📅 **Next Available Counter Slot:** **{slot.LocalDisplay}**");
+                        sb.AppendLine("- Office Hours: 09:00 - 15:00 SLT (Monday to Friday)");
+                        sb.AppendLine();
+                    }
+
+                    if (fee != null && fee.TotalAmount > 0)
+                    {
+                        sb.AppendLine($"💳 **Statutory Fee Due at Counter:** **{fee.Currency} {fee.TotalAmount:N2}**");
+                        sb.AppendLine();
+                    }
+
+                    sb.AppendLine("Please ensure all mandatory documents are brought along for physical verification.");
+                    return sb.ToString();
+                }
+
+                // Case 4: General Service Guidance (Synthesizes Agent 1, Agent 2, and Agent 3)
+                sb.AppendLine($"Hello! Yes, **{serviceName}** is an official service registered in the GovNavigator directory.");
                 sb.AppendLine();
 
-                if (agent2 != null && agent2.MissingDocuments.Count > 0)
+                if (agent1 != null && agent1.RetrievedContextSnippets.Count > 0)
                 {
-                    sb.AppendLine($"📄 **Action Required:** Please attach or re-upload: **{string.Join(", ", agent2.MissingDocuments)}**.");
-                }
-                else
-                {
-                    sb.AppendLine("📄 **Documents:** All submitted documents for this stage are in order.");
+                    sb.AppendLine("📜 **What the Official Policy Says:**");
+                    sb.AppendLine(agent1.RetrievedContextSnippets.First());
+                    sb.AppendLine();
                 }
 
-                if (fee != null)
+                sb.AppendLine("🛡️ **Personal Eligibility & Evidentiary Verification:**");
+                sb.AppendLine("Statutory eligibility depends on your age, citizenship status, and evidentiary documents. To verify your exact qualification and required attachments in real time, please tap **\"Launch Eligibility Check UI\"** below.");
+                sb.AppendLine();
+
+                if (agent1 != null && agent1.StepByStepPlan.Count > 0)
+                {
+                    sb.AppendLine("🗺️ **Step-by-Step Pathway:**");
+                    for (int i = 0; i < agent1.StepByStepPlan.Count; i++)
+                    {
+                        sb.AppendLine($"{i + 1}. {agent1.StepByStepPlan[i]}");
+                    }
+                    sb.AppendLine();
+                }
+
+                if (fee != null && fee.TotalAmount > 0)
                 {
                     sb.AppendLine($"💳 **Statutory Fee:** **{fee.Currency} {fee.TotalAmount:N2}**.");
+                    sb.AppendLine();
                 }
 
                 if (slot != null && slot.IsSlotFound)
                 {
-                    sb.AppendLine($"📅 **Next Available Appointment:** {slot.LocalDisplay}.");
+                    sb.AppendLine($"📅 **Next Available Counter Slot:** {slot.LocalDisplay}.");
+                    sb.AppendLine();
                 }
 
-                sb.AppendLine();
-                sb.AppendLine("We are here to assist you through every milestone. Feel free to ask any questions!");
+                sb.AppendLine("You can begin your application right here in the app whenever you are ready!");
                 return sb.ToString();
             }
         }

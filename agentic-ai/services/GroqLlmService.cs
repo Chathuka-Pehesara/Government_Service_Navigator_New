@@ -31,7 +31,7 @@ public class GroqLlmService : ILlmService
         _apiKey = apiKey ?? Environment.GetEnvironmentVariable("GROQ_API_KEY");
         _model = !string.IsNullOrWhiteSpace(model) ? model : (Environment.GetEnvironmentVariable("GROQ_MODEL") ?? DefaultModel);
         _endpoint = !string.IsNullOrWhiteSpace(endpoint) ? endpoint : DefaultEndpoint;
-        _httpClient = httpClient ?? new HttpClient { Timeout = TimeSpan.FromSeconds(30) };
+        _httpClient = httpClient ?? new HttpClient { Timeout = TimeSpan.FromSeconds(5) };
     }
 
     public async Task<string?> GenerateChatCompletionAsync(

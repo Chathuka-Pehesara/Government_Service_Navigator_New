@@ -32,5 +32,6 @@ namespace Government_Service_Navigator.AgenticAi.Orchestration
     {
         Task<ApplicationCaseContext?> GetApplicationContextAsync(int applicationId, CancellationToken cancellationToken = default);
         Task<List<string>> GetAvailableServiceNamesAsync(CancellationToken cancellationToken = default);
+        Task<int?> FindServiceProcedureIdAsync(string serviceName, CancellationToken cancellationToken = default);
     }
 }

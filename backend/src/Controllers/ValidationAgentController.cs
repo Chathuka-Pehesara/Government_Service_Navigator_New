@@ -21,7 +21,6 @@ namespace Government_Service_Navigator.Backend.Controllers;
 public class ValidationAgentController : ControllerBase
 {
     private readonly IValidationSafetyAgent _safetyAgent;
-    private readonly IValidationOrchestrator _orchestrator;
     private readonly IDuplicateCheckTool _duplicateTool;
     private readonly AppDbContext _context;
     private readonly ILlmService? _llmService;
@@ -29,14 +28,12 @@ public class ValidationAgentController : ControllerBase
 
     public ValidationAgentController(
         IValidationSafetyAgent safetyAgent,
-        IValidationOrchestrator orchestrator,
         IDuplicateCheckTool duplicateTool,
         AppDbContext context,
         ValidationSafetyConfig config,
         ILlmService? llmService = null)
     {
         _safetyAgent = safetyAgent;
-        _orchestrator = orchestrator;
         _duplicateTool = duplicateTool;
         _context = context;
         _config = config;
@@ -107,8 +104,25 @@ public class ValidationAgentController : ControllerBase
             citizenNic: request.CitizenNic ?? "ANONYMOUS",
             serviceName: request.ServiceName ?? "Procedure");
 
-        var updatedState = await _orchestrator.ExecuteStageAsync(state, draft, request.RequiredDocuments);
-        return Ok(updatedState);
+        state.CurrentStage = "ValidationAndSafety";
+        state.UpdatedAt = DateTime.UtcNow;
+
+        var result = await _safetyAgent.ValidateAndEnqueueAsync(draft, request.RequiredDocuments);
+        state.ValidationResult = result;
+
+        if (result.IsValid)
+        {
+            state.CurrentStage = "PendingHumanApproval";
+            state.HumanApprovalStatus = "AwaitingOfficerReview";
+        }
+        else
+        {
+            state.CurrentStage = "Rejected";
+            state.HumanApprovalStatus = "BlockedBySafetyAgent";
+        }
+
+        state.UpdatedAt = DateTime.UtcNow;
+        return Ok(state);
     }
 
     /// <summary>

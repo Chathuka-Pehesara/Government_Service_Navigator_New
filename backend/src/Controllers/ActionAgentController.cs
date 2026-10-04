@@ -21,18 +21,15 @@ namespace Government_Service_Navigator.Backend.Controllers;
 public class ActionAgentController : ControllerBase
 {
     private readonly IActionToolAgent _actionAgent;
-    private readonly IAgent3WorkflowOrchestrator _orchestrator;
     private readonly IEligibilityDocumentAgent _eligibilityAgent;
     private readonly AppDbContext _context;
 
     public ActionAgentController(
         IActionToolAgent actionAgent,
-        IAgent3WorkflowOrchestrator orchestrator,
         IEligibilityDocumentAgent eligibilityAgent,
         AppDbContext context)
     {
         _actionAgent = actionAgent;
-        _orchestrator = orchestrator;
         _eligibilityAgent = eligibilityAgent;
         _context = context;
     }
@@ -76,8 +73,28 @@ public class ActionAgentController : ControllerBase
             serviceName: request.ServiceName);
         state.EligibilityResult = request.Eligibility;
 
-        var updatedState = await _orchestrator.ExecuteDraftingStageAsync(state, request);
-        return Ok(updatedState);
+        state.CurrentStage = "DraftingPreFill";
+        state.UpdatedAt = DateTime.UtcNow;
+
+        var result = await _actionAgent.PrepareDraftAsync(request);
+        state.ActionResult = result;
+        state.DraftApplication = result.Draft;
+
+        if (result.Draft == null)
+        {
+            state.CurrentStage = "IneligibleRequirementGap";
+        }
+        else if (result.IsReadyForValidation)
+        {
+            state.CurrentStage = "ValidationAndSafety";
+        }
+        else
+        {
+            state.CurrentStage = "DraftIncompleteAwaitingCitizen";
+        }
+
+        state.UpdatedAt = DateTime.UtcNow;
+        return Ok(state);
     }
 
     private async Task<ActionDraftRequest> BuildRequestAsync(ActionAgentQueryDto query)

@@ -154,5 +154,36 @@ namespace Government_Service_Navigator.Backend.Services
                 .Distinct()
                 .ToListAsync(cancellationToken);
         }
+
+        public async Task<int?> FindServiceProcedureIdAsync(string serviceName, CancellationToken cancellationToken = default)
+        {
+            if (string.IsNullOrWhiteSpace(serviceName)) return null;
+
+            var services = await _context.ServiceProcedures
+                .Where(s => s.Status == "Active")
+                .Select(s => new { s.Id, s.Name })
+                .ToListAsync(cancellationToken);
+
+            var exact = services.FirstOrDefault(s => s.Name.Equals(serviceName, StringComparison.OrdinalIgnoreCase));
+            if (exact != null) return exact.Id;
+
+            var contains = services.FirstOrDefault(s =>
+                s.Name.Contains(serviceName, StringComparison.OrdinalIgnoreCase) ||
+                serviceName.Contains(s.Name, StringComparison.OrdinalIgnoreCase));
+            if (contains != null) return contains.Id;
+
+            if (serviceName.Contains("Police", StringComparison.OrdinalIgnoreCase))
+            {
+                var police = services.FirstOrDefault(s => s.Name.Contains("Police", StringComparison.OrdinalIgnoreCase));
+                if (police != null) return police.Id;
+            }
+            else if (serviceName.Contains("Identity", StringComparison.OrdinalIgnoreCase) || serviceName.Contains("NIC", StringComparison.OrdinalIgnoreCase))
+            {
+                var nic = services.FirstOrDefault(s => s.Name.Contains("Identity", StringComparison.OrdinalIgnoreCase) || s.Name.Contains("NIC", StringComparison.OrdinalIgnoreCase));
+                if (nic != null) return nic.Id;
+            }
+
+            return null;
+        }
     }
 }
