@@ -54,9 +54,27 @@ public class ValidationAgentController : ControllerBase
         if (request == null)
             return BadRequest(new { message = "Draft request payload cannot be empty." });
 
+        int effectiveAppId = request.ApplicationId;
+        if (effectiveAppId <= 0 && !string.IsNullOrWhiteSpace(request.CitizenNic))
+        {
+            var nic = request.CitizenNic.Trim().ToLowerInvariant();
+            var existingDraftId = await _context.ApplicationSubmissions
+                .Where(s => s.CitizenNic.Trim().ToLower() == nic &&
+                            s.ServiceProcedureId == request.ServiceProcedureId &&
+                            (s.StageStatus == "Draft" || s.StageStatus == "AwaitingFeePayment"))
+                .OrderByDescending(s => s.Id)
+                .Select(s => s.Id)
+                .FirstOrDefaultAsync(cancellationToken);
+
+            if (existingDraftId > 0)
+            {
+                effectiveAppId = existingDraftId;
+            }
+        }
+
         var draft = new DraftApplication
         {
-            ApplicationId = request.ApplicationId,
+            ApplicationId = effectiveAppId,
             ServiceProcedureId = request.ServiceProcedureId,
             ServiceName = request.ServiceName ?? "Government Procedure",
             CitizenNic = request.CitizenNic ?? string.Empty,

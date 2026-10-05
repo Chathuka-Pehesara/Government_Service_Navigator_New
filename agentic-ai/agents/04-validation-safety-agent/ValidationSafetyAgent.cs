@@ -220,7 +220,9 @@ namespace Government_Service_Navigator.AgenticAi.Agents.ValidationSafety
                                 flag.Contains("stage number", StringComparison.OrdinalIgnoreCase) ||
                                 flag.Contains("AttachedDocumentNames", StringComparison.OrdinalIgnoreCase) ||
                                 flag.Contains("ambiguous", StringComparison.OrdinalIgnoreCase) ||
-                                (flag.Contains("duplicate", StringComparison.OrdinalIgnoreCase) && flag.Contains("entries", StringComparison.OrdinalIgnoreCase))
+                                flag.Contains("DUP-", StringComparison.OrdinalIgnoreCase) ||
+                                flag.Contains("duplicate", StringComparison.OrdinalIgnoreCase) ||
+                                flag.Contains("already exists", StringComparison.OrdinalIgnoreCase)
                             );
 
                             if (distinctFlags.Any())

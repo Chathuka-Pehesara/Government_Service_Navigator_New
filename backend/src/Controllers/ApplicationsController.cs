@@ -309,7 +309,9 @@ namespace Government_Service_Navigator.Backend.Controllers
                     }
 
                     // Any in-progress or under review submission is an active duplicate
-                    if (existingSubmission.StageStatus != "Draft" && existingSubmission.StageStatus != "Rejected")
+                    if (existingSubmission.StageStatus != "Draft" && 
+                        existingSubmission.StageStatus != "AwaitingFeePayment" && 
+                        existingSubmission.StageStatus != "Rejected")
                     {
                         return BadRequest(new 
                         { 
