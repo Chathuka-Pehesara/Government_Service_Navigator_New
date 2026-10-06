@@ -10,8 +10,8 @@ namespace Government_Service_Navigator.Backend.Tests.Security;
 /// </summary>
 public class AuthorizationMatrixTests
 {
-    // Callable with no token. Known gaps (docs/api.md): the admin, department, catalog, template, agent
-    // and RAG endpoints, Applications.RaiseConcern / SubmitRevision, and the dev-only Verification.SeedTasks.
+    // Callable with no token. Known gaps (docs/api.md): the admin, department, catalog, template, agent,
+    // orchestrator and RAG endpoints, Applications.RaiseConcern / SubmitRevision, and the dev-only Verification.SeedTasks.
     private static readonly string[] Unauthenticated =
     {
         "ActionAgent.BookAppointment",
@@ -43,6 +43,8 @@ public class AuthorizationMatrixTests
         "EligibilityAgent.EvaluateEligibility",
         "EligibilityAgent.OrchestrateEligibility",
         "IntakeAgent.AskAgent",
+        "Orchestrator.Chat",
+        "Orchestrator.RunCitizenPipeline",
         "RagSetup.ClearServiceKnowledge",
         "RagSetup.GetServiceKnowledge",
         "RagSetup.IngestLocalDocuments",
@@ -139,6 +141,13 @@ public class AuthorizationMatrixTests
     // [Authorize(Roles = ...)], grouped by the exact role list.
     private static readonly Dictionary<string, string[]> RoleProtected = new()
     {
+        // Known gap (docs/api.md): no token carries "Verification Officer" or "SuperAdmin",
+        // so only Department Admins get through
+        ["Department Admin,SuperAdmin,Verification Officer"] = new[]
+        {
+            "Orchestrator.AuditCase",
+            "Orchestrator.RunOfficerVerification",
+        },
         ["Admin,Department Admin,DepartmentAdmin,Finance Officer,Officer,SuperAdmin,System Admin,Verifying Officer"] = new[]
         {
             "CollectionSlots.AddHoliday",

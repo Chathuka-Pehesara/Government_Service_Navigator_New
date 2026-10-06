@@ -18,7 +18,7 @@ Use `-c Release` for the API tests while the API is running locally. The running
 **`AgenticAi.Tests`**
 - Every deterministic tool: schema validation (NIC formats, age bounds, document matching, injection patterns), the duplicate check and its registry, eligibility rules, fee calculation (revisions, express fees), appointment slots (lead time, weekends, office hours), form prefill and document requirements.
 - The text utilities: tokenizer, catalog chunk parser and document chunker.
-- The four agents, including the golden cases and the LLM paths with a stub model: Agent 4's consistency-flag filter, duplicates as a flag rather than a block, PII masking and task enqueueing.
+- The four agents, including the golden cases and the LLM paths with a stub model: Agent 4's consistency-flag filter, duplicates always being rejected, PII masking and task enqueueing.
 
 **`Backend.Tests`**
 - **Validation rules:** NIC parsing, the data-annotation attributes, the service catalog validator, the answer validator and upload type detection.

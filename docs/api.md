@@ -20,9 +20,9 @@ The JWT middleware is registered globally, but that only makes `Authorization: B
 
 | Tier | Meaning | Where |
 |---|---|---|
-| **None** | Callable with no token at all | `AuthController` (except `logout`), `AdminController`, `DepartmentsController`, `ServicesController`, `TemplateController`, `IntakeAgentController`, `EligibilityAgentController`, `ActionAgentController`, `ValidationAgentController`, `RagSetupController`, `GET /api/verification/seed`, the `GET` actions of `CollectionSlotsController`, `POST /api/applications/{id}/raise-concern`, `POST /api/applications/{id}/submit-revision` |
+| **None** | Callable with no token at all | `AuthController` (except `logout`), `AdminController`, `DepartmentsController`, `ServicesController`, `TemplateController`, `IntakeAgentController`, `EligibilityAgentController`, `ActionAgentController`, `ValidationAgentController`, `RagSetupController`, `POST /api/orchestrator/chat`, `POST /api/orchestrator/workflows/citizen-pipeline`, `GET /api/verification/seed`, the `GET` actions of `CollectionSlotsController`, `POST /api/applications/{id}/raise-concern`, `POST /api/applications/{id}/submit-revision` |
 | **Any token** | `[Authorize]` - any valid, non-revoked token (citizen, officer or admin) | `ApplicationsController`, `NotificationsController`, `AuditLogsController`, `AnalyticsController`, `AnomalyDetectionController`, the citizen side of `RefundsController`, most of `PaymentsController` and `InstallmentPlansController`, `GET /api/verification/my-applications` |
-| **Role** | `[Authorize(Roles = "...")]` - checked against the token's `ClaimTypes.Role` claim | Every other `VerificationController` action, finance actions in `PaymentsController` and `RefundsController`, staff actions in `InstallmentPlansController`, writes in `CollectionSlotsController` |
+| **Role** | `[Authorize(Roles = "...")]` - checked against the token's `ClaimTypes.Role` claim | Every other `VerificationController` action, finance actions in `PaymentsController` and `RefundsController`, staff actions in `InstallmentPlansController`, writes in `CollectionSlotsController`, the officer actions in `OrchestratorController` |
 
 The role lists used are:
 
@@ -30,6 +30,7 @@ The role lists used are:
 - `FinanceRoles` (Payments, Refunds): `Finance Officer, Department Admin, Admin, System Admin`
 - `StaffRoles` (Installments): `Finance Officer, Department Admin, Verifying Officer, Officer, Admin, System Admin`
 - Collection slot writes: `Admin, System Admin, Officer, SuperAdmin, Department Admin, DepartmentAdmin, Verifying Officer, Finance Officer`
+- Orchestrator officer actions (`workflows/officer-verification`, `audit-case/{applicationId}`): `Verification Officer, Department Admin, SuperAdmin`. No token carries `Verification Officer` or `SuperAdmin` (officers get `Verifying Officer`, admins `Admin` or `System Admin`), so only Department Admins can call them.
 
 Citizens' tokens carry role `User`, so they are excluded from all of these.
 

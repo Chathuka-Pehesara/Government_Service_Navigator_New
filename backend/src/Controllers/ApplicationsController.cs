@@ -288,9 +288,10 @@ namespace Government_Service_Navigator.Backend.Controllers
             if (submission == null)
             {
                 // Check if citizen already has a completed or active application for this service
+                var normalizedNic = nic.Trim().ToUpperInvariant();
                 var existingSubmission = await _context.ApplicationSubmissions
                     .Include(s => s.ServiceProcedure)
-                    .Where(s => (s.CitizenNic == nic || EF.Functions.ILike(s.CitizenNic, nic) || s.CitizenNic.Trim() == nic.Trim()) &&
+                    .Where(s => s.CitizenNic.Trim().ToUpper() == normalizedNic &&
                                 (s.ServiceProcedureId == service.Id || (s.ServiceProcedure != null && s.ServiceProcedure.Name == service.Name)) &&
                                 s.StageStatus != "Deleted")
                     .OrderByDescending(s => s.Id)
