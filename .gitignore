@@ -1141,3 +1141,6 @@ backend/src/App_Data
 1.jpeg
 2.jpeg
 3.png
+
+# make test summary (test/runner.mjs)
+test/.make-results.json
