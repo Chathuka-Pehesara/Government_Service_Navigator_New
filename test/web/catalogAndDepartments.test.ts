@@ -29,9 +29,32 @@ describe("departments", () => {
     expect(getCategoryForDepartment("Police Department")).toBe("Police");
   });
 
-  it("unknown names give null", () => {
-    expect(getDepartmentSlug("Ministry of Magic")).toBeNull();
-    expect(getDepartmentLabel("nowhere")).toBeNull();
+  // Departments registered at runtime are not in DEPARTMENTS, so their names are slugified
+  it("unknown names are slugified and labelled from the slug", () => {
+    vi.stubGlobal("localStorage", { getItem: () => null });
+    try {
+      expect(getDepartmentSlug("Ministry of Magic")).toBe("ministry-of-magic");
+      expect(getDepartmentLabel("ministry-of-magic")).toBe("Ministry Of Magic");
+    } finally {
+      vi.unstubAllGlobals();
+    }
+  });
+
+  it("the signed-in officer's department supplies the label for its own slug", () => {
+    vi.stubGlobal("localStorage", {
+      getItem: () => JSON.stringify({ department: "Ministry of Magic" }),
+    });
+    try {
+      expect(getDepartmentLabel("ministry-of-magic")).toBe("Ministry of Magic");
+    } finally {
+      vi.unstubAllGlobals();
+    }
+  });
+
+  it("empty names give null", () => {
+    expect(getDepartmentSlug("")).toBeNull();
+    expect(getDepartmentSlug(" & ")).toBeNull();
+    expect(getDepartmentLabel("")).toBeNull();
     expect(getCategoryForDepartment("Ministry of Magic")).toBeNull();
   });
 

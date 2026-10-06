@@ -146,7 +146,9 @@ describe("current user", () => {
 
   it("overview link goes to the department dashboard when there is one", () => {
     expect(getAdminOverviewHref({ department: "Police Department" })).toBe("/admin/police/dashboard");
-    expect(getAdminOverviewHref({ department: "Unknown Dept" })).toBe("/admin/dashboard");
+    // Departments registered at runtime get a slug from their name
+    expect(getAdminOverviewHref({ department: "Unknown Dept" })).toBe("/admin/unknown-dept/dashboard");
+    expect(getAdminOverviewHref({ department: "" })).toBe("/admin/dashboard");
     expect(getAdminOverviewHref(null)).toBe("/admin/dashboard");
   });
 });
