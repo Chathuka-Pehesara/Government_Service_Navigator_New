@@ -23,11 +23,15 @@ public class DuplicateApplicationRepositoryTests
         return (new DuplicateApplicationRepository(db), existing);
     }
 
+    // Active and officially completed applications both block a new one for the same service
     [Theory]
     [InlineData("StageApproved")]
     [InlineData("ActionRequired")]
     [InlineData("UnderVerification")]
-    public async Task InProgressApplication_IsADuplicate(string stageStatus)
+    [InlineData("PendingReview")]
+    [InlineData("AwaitingFeePayment")]
+    [InlineData("Completed")]
+    public async Task ActiveOrCompletedApplication_IsADuplicate(string stageStatus)
     {
         var (repo, _) = await Seed(stageStatus);
 
@@ -35,37 +39,37 @@ public class DuplicateApplicationRepositoryTests
     }
 
     [Theory]
-    [InlineData("Completed")]
     [InlineData("Rejected")]
     [InlineData("Deleted")]
     [InlineData("Draft")]
-    [InlineData("AwaitingFeePayment")]
-    public async Task FinishedOrUnsubmittedApplication_IsNotADuplicate(string stageStatus)
+    public async Task RejectedOrUnsubmittedApplication_IsNotADuplicate(string stageStatus)
     {
         var (repo, _) = await Seed(stageStatus);
 
         Assert.False(await repo.HasDuplicateAsync(Nic, 1));
     }
 
+    // A Draft or Deleted row still counts once it reached the officer queue
     [Theory]
     [InlineData("Pending", true)]
-    [InlineData("Revised", true)]
-    [InlineData("Revision Requested", true)]
-    [InlineData("Approved", false)]
+    [InlineData("Approved", true)]
     [InlineData("Rejected", false)]
-    public async Task PendingReview_DependsOnTheVerificationTask(string taskStatus, bool duplicate)
+    [InlineData("Cancelled", false)]
+    public async Task DraftWithAVerificationTask_DependsOnTheTask(string taskStatus, bool duplicate)
     {
-        var (repo, _) = await Seed("PendingReview", taskStatus);
+        var (repo, _) = await Seed("Draft", taskStatus);
 
         Assert.Equal(duplicate, await repo.HasDuplicateAsync(Nic, 1));
     }
 
     [Fact]
-    public async Task PendingReview_WithNoTask_IsNotADuplicate()
+    public async Task NicMatch_IgnoresCase()
     {
-        var (repo, _) = await Seed("PendingReview");
+        var db = TestDb.Create();
+        db.ApplicationSubmissions.Add(new ApplicationSubmission { CitizenNic = "881234567V", ServiceProcedureId = 1, StageStatus = "StageApproved" });
+        await db.SaveChangesAsync();
 
-        Assert.False(await repo.HasDuplicateAsync(Nic, 1));
+        Assert.True(await new DuplicateApplicationRepository(db).HasDuplicateAsync("881234567v", 1));
     }
 
     [Fact]

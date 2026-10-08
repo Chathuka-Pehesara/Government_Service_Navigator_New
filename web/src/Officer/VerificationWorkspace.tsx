@@ -47,6 +47,7 @@ interface TaskDetail {
     serviceName?: string | null;
     department?: string | null;
     currentStage?: number;
+    stageNumber?: number;
     maxStages?: number;
   };
   submittedAt?: string | null;

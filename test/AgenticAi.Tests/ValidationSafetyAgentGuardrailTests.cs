@@ -131,8 +131,9 @@ public class ValidationSafetyAgentGuardrailTests
         Assert.Contains(result.RejectionReasons, r => r.StartsWith("DUP-002"));
     }
 
+    // Duplicates are always rejected; BlockDuplicateSubmissions no longer changes that
     [Fact]
-    public async Task Duplicate_IsOnlyFlagged_WhenBlockingIsOff_AsConfiguredInTheApi()
+    public async Task Duplicate_IsRejected_EvenWhenBlockingIsOff()
     {
         var repo = new FakeDuplicateRepository();
         repo.Active.Add(("199012345678", 3));
@@ -140,7 +141,7 @@ public class ValidationSafetyAgentGuardrailTests
 
         var result = await Agent(config: config, repository: repo).ValidateAndEnqueueAsync(Draft(), RequiredDocs);
 
-        Assert.True(result.IsValid);
+        Assert.False(result.IsValid);
         Assert.Contains(result.ComplianceChecks, c => c.CheckType == "Anti-Fraud Duplicate Application Check" && !c.IsPassed);
     }
 

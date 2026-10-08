@@ -246,34 +246,33 @@ public class ApplicationsControllerTests
     }
 
     [Fact]
-    public async Task Submit_ReusesARowThatNeverReachedTheQueue_AndRetiresOlderPlaceholders()
-    {
-        var olderPlaceholder = new ApplicationSubmission { CitizenNic = Nic, ServiceProcedureId = _service.Id, StageStatus = "AwaitingFeePayment" };
-        var orphan = new ApplicationSubmission { CitizenNic = Nic, ServiceProcedureId = _service.Id, StageStatus = "PendingReview" };
-        _db.ApplicationSubmissions.AddRange(olderPlaceholder, orphan);
-        await _db.SaveChangesAsync();
-
-        await Controller().Submit(Request());
-
-        await _db.Entry(olderPlaceholder).ReloadAsync();
-        Assert.Equal("Deleted", olderPlaceholder.StageStatus);
-        var live = await _db.ApplicationSubmissions.Where(s => s.StageStatus != "Deleted").ToListAsync();
-        Assert.Equal(orphan.Id, Assert.Single(live).Id);
-    }
-
-    [Fact]
-    public async Task Submit_SecondApplicationWhileOneIsInReview_IsAcceptedButFlaggedAsDuplicate()
+    public async Task Submit_SecondApplicationWhileOneIsInReview_IsRejectedAsDuplicate()
     {
         await Controller().Submit(Request());
+        var first = await _db.ApplicationSubmissions.SingleAsync();
         DuplicateCheckTool.ClearRegistry();
 
         var second = await Controller().Submit(Request());
 
-        Assert.False(Body(second).GetProperty("paymentRequired").GetBoolean());
-        Assert.Equal(2, await _db.VerificationTasks.CountAsync());
-        var secondTask = await _db.VerificationTasks.OrderByDescending(t => t.Id).FirstAsync();
-        var checks = await _db.ComplianceChecks.Where(c => c.TaskId == secondTask.Id).ToListAsync();
-        Assert.Contains(checks, c => c.CheckType == "Anti-Fraud Duplicate Application Check" && !c.IsPassed);
+        Assert.IsType<BadRequestObjectResult>(second);
+        Assert.True(Body(second).GetProperty("duplicate").GetBoolean());
+        Assert.Equal(first.Id, Body(second).GetProperty("existingApplicationId").GetInt32());
+        Assert.Equal(1, await _db.ApplicationSubmissions.CountAsync());
+        Assert.Equal(1, await _db.VerificationTasks.CountAsync());
+    }
+
+    [Fact]
+    public async Task Submit_AfterAnApprovedApplication_IsRejectedAsDuplicate()
+    {
+        var approved = new ApplicationSubmission { CitizenNic = Nic, ServiceProcedureId = _service.Id, StageStatus = "Completed" };
+        _db.ApplicationSubmissions.Add(approved);
+        await _db.SaveChangesAsync();
+
+        var result = await Controller().Submit(Request());
+
+        Assert.IsType<BadRequestObjectResult>(result);
+        Assert.Equal(approved.Id, Body(result).GetProperty("existingApplicationId").GetInt32());
+        Assert.Equal("Completed", (await _db.ApplicationSubmissions.SingleAsync()).StageStatus);
     }
 
     [Fact]

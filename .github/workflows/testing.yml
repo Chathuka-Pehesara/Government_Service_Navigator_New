@@ -1,0 +1,88 @@
+name: Testing
+
+# Runs every suite under test/ (see test/README.md).
+# The mobile tests live in mobile/test and run in mobile-ci.yml.
+
+on:
+  push:
+    branches: [ "main", "Backend-Dev", "Front-Dev" ]
+  pull_request:
+    branches: [ "main", "Backend-Dev", "Front-Dev" ]
+  workflow_dispatch:
+
+concurrency:
+  group: testing-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  dotnet-tests:
+    name: ${{ matrix.suite }}
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        suite: [ "AgenticAi.Tests", "Backend.Tests" ]
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Setup .NET 10
+        uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: '10.0.x'
+
+      - name: Cache NuGet packages
+        uses: actions/cache@v4
+        with:
+          path: ~/.nuget/packages
+          key: ${{ runner.os }}-nuget-${{ hashFiles('backend/**/*.csproj', 'agentic-ai/**/*.csproj', 'test/**/*.csproj') }}
+          restore-keys: |
+            ${{ runner.os }}-nuget-
+
+      - name: Restore
+        run: dotnet restore test/${{ matrix.suite }}/${{ matrix.suite }}.csproj
+
+      - name: Build
+        run: dotnet build test/${{ matrix.suite }}/${{ matrix.suite }}.csproj --no-restore --configuration Release
+
+      - name: Run tests
+        run: >
+          dotnet test test/${{ matrix.suite }}/${{ matrix.suite }}.csproj
+          --no-build --configuration Release
+          --logger "trx;LogFileName=${{ matrix.suite }}.trx"
+          --logger "console;verbosity=normal"
+          --results-directory TestResults
+
+      - name: Upload test results
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: ${{ matrix.suite }}-results
+          path: TestResults
+          retention-days: 7
+
+  web-tests:
+    name: Web Tests
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: web
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Use Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '22.x'
+          cache: 'npm'
+          cache-dependency-path: 'web/package-lock.json'
+
+      - name: Install dependencies
+        run: npm ci
+
+      # vitest.config.ts points at ../test/web
+      - name: Run tests
+        run: npm test

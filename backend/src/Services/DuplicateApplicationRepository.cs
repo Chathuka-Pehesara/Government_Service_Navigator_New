@@ -16,7 +16,7 @@ public class DuplicateApplicationRepository : IDuplicateApplicationRepository
     public async Task<bool> HasDuplicateAsync(string citizenNic, int serviceProcedureId, int excludeApplicationId = 0)
     {
         if (string.IsNullOrWhiteSpace(citizenNic)) return false;
-        var normalizedNic = citizenNic.Trim().ToLowerInvariant();
+        var normalizedNic = citizenNic.Trim().ToUpperInvariant();
 
         string? targetServiceName = null;
         if (serviceProcedureId > 0)
@@ -33,7 +33,8 @@ public class DuplicateApplicationRepository : IDuplicateApplicationRepository
         // A PendingReview submission is only an active duplicate if it has an ACTIVE VerificationTask
         // (Pending, Revised, or Revision Requested).
         return await _db.ApplicationSubmissions.AnyAsync(s =>
-            s.CitizenNic.Trim().ToLower() == normalizedNic &&
+            // Case-insensitive and trimmed; translates on PostgreSQL and the in-memory test provider alike
+            s.CitizenNic.Trim().ToUpper() == normalizedNic &&
             (s.ServiceProcedureId == serviceProcedureId || (targetServiceName != null && s.ServiceProcedure != null && s.ServiceProcedure.Name == targetServiceName)) &&
             (excludeApplicationId == 0 || s.Id != excludeApplicationId) &&
             s.StageStatus != "Draft" &&

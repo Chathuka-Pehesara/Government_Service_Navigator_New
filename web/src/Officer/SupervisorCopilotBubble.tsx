@@ -129,7 +129,7 @@ function renderFormattedMessageContent(content: string, isOfficer: boolean) {
       if (tableLines.length >= 2) {
         const rawHeaders = tableLines[0].split("|").slice(1, -1).map(h => h.trim());
         // Skip separator row (second line)
-        const startIndex = tableLines[1].replace(/[\s\-\|:]/g, "").length === 0 ? 2 : 1;
+        const startIndex = tableLines[1].replace(/[\s\-|:]/g, "").length === 0 ? 2 : 1;
         const rawRows = tableLines.slice(startIndex).map(r => r.split("|").slice(1, -1).map(c => c.trim()));
 
         elements.push(
@@ -378,13 +378,13 @@ export default function SupervisorCopilotBubble({
       };
 
       setMessages((prev) => [...prev, supMsg]);
-    } catch (err: any) {
+    } catch (err: unknown) {
       setMessages((prev) => [
         ...prev,
         {
           id: `err-${Date.now()}`,
           sender: "supervisor",
-          content: `⚠️ Statutory Advisory encountered an error: ${err?.message || "Unable to reach Supervisor Orchestrator."}`,
+          content: `⚠️ Statutory Advisory encountered an error: ${err instanceof Error && err.message ? err.message : "Unable to reach Supervisor Orchestrator."}`,
           timestamp: new Date(),
         },
       ]);
