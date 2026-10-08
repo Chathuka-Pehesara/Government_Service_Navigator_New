@@ -8,6 +8,8 @@
 *.DS_Store
 appsettings.Development.json
 SUGGESTIONS.txt
+hs_err_pid*.log
+replay_pid*.log
 
 # Flutter / Dart
 .dart_tool/

@@ -105,7 +105,7 @@ namespace Government_Service_Navigator.AgenticAi.Agents.ValidationSafety
                 CalledAt: DateTime.UtcNow
             ));
 
-            if (duplicateResult.IsDuplicate)
+            if (duplicateResult.IsDuplicate && _config.BlockDuplicateSubmissions)
             {
                 rejectionReasons.Add(duplicateResult.Message);
             }
