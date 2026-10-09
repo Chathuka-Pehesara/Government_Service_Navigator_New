@@ -112,8 +112,7 @@ namespace Government_Service_Navigator.Backend.Services
             var payments = await _context.Payments
                 .AsNoTracking()
                 .Where(p => appIds.Contains(p.ApplicationId))
-                .OrderByDescending(p => p.Status == "Paid" || p.Status == "Verified" ? 2 : (p.Status == "PendingVerification" ? 1 : 0))
-                .ThenByDescending(p => p.Id)
+                .OrderByDescending(p => p.Id)
                 .Select(p => new { p.ApplicationId, p.Status, p.Method, p.Amount })
                 .ToListAsync(cancellationToken);
             var paymentByApp = payments

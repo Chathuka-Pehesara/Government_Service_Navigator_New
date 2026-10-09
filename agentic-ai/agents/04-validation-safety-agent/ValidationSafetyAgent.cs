@@ -48,7 +48,8 @@ namespace Government_Service_Navigator.AgenticAi.Agents.ValidationSafety
         public async Task<ValidationResult> ValidateAndEnqueueAsync(
             DraftApplication draft, 
             List<string>? requiredDocuments = null,
-            CancellationToken cancellationToken = default)
+            CancellationToken cancellationToken = default,
+            bool enqueueTask = true)
         {
             var complianceChecks = new List<ComplianceCheckItem>();
             var rejectionReasons = new List<string>();
@@ -303,7 +304,7 @@ namespace Government_Service_Navigator.AgenticAi.Agents.ValidationSafety
             // =========================================================================
             int taskId = draft.ApplicationId > 0 ? draft.ApplicationId : new Random().Next(1000, 9999);
 
-            if (_taskEnqueuer != null && draft.ApplicationId > 0)
+            if (enqueueTask && _taskEnqueuer != null && draft.ApplicationId > 0)
             {
                 try
                 {
@@ -315,9 +316,12 @@ namespace Government_Service_Navigator.AgenticAi.Agents.ValidationSafety
                 }
             }
 
-            // Register in duplicate registry to protect against immediate duplicate re-submissions
-            int regAppId = draft.ApplicationId > 0 ? draft.ApplicationId : taskId;
-            _duplicateTool.RegisterApplication(draft.CitizenNic, draft.ServiceProcedureId, $"APP-2026-{regAppId}");
+            // Register in duplicate registry only upon actual final submission enqueuing
+            if (enqueueTask)
+            {
+                int regAppId = draft.ApplicationId > 0 ? draft.ApplicationId : taskId;
+                _duplicateTool.RegisterApplication(draft.CitizenNic, draft.ServiceProcedureId, $"APP-2026-{regAppId}");
+            }
 
             string successAppRef = draft.ApplicationId > 0 ? $"Application #{draft.ApplicationId}" : "Draft application";
             var success = ValidationResult.Success(

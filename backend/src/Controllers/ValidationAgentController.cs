@@ -144,7 +144,8 @@ public class ValidationAgentController : ControllerBase
         var result = await _safetyAgent.ValidateAndEnqueueAsync(
             draft, 
             request.RequiredDocuments, 
-            cancellationToken);
+            cancellationToken,
+            enqueueTask: false);
 
         return Ok(result);
     }
@@ -234,7 +235,7 @@ public class ValidationAgentController : ControllerBase
             AttachedDocumentNames = docs
         };
 
-        var result = await _safetyAgent.ValidateAndEnqueueAsync(draft, null, cancellationToken);
+        var result = await _safetyAgent.ValidateAndEnqueueAsync(draft, null, cancellationToken, enqueueTask: false);
         return Ok(result);
     }
 

@@ -361,6 +361,24 @@ namespace Government_Service_Navigator.Backend.Controllers
             }
 
             var appIds = payments.Select(p => p.ApplicationId).Distinct().ToList();
+
+            // Do not surface pending payments for unsubmitted draft/stage applications to Finance Officer queue
+            var unsubmittedAppIds = await _context.ApplicationSubmissions
+                .Where(s => appIds.Contains(s.Id) && (s.StageStatus == "Draft" || s.StageStatus == "StageApproved"))
+                .Select(s => s.Id)
+                .ToListAsync();
+
+            if (unsubmittedAppIds.Any())
+            {
+                payments = payments.Where(p => 
+                    p.ApplicationId == 0 
+                    || p.Status == "Paid" 
+                    || p.Status == "Verified" 
+                    || !unsubmittedAppIds.Contains(p.ApplicationId)
+                ).ToList();
+                appIds = payments.Select(p => p.ApplicationId).Distinct().ToList();
+            }
+
             var submissions = await _context.ApplicationSubmissions
                 .Include(s => s.ServiceProcedure)
                 .Where(s => appIds.Contains(s.Id))

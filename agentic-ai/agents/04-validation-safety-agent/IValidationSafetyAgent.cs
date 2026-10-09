@@ -13,7 +13,8 @@ namespace Government_Service_Navigator.AgenticAi.Agents.ValidationSafety
         Task<ValidationResult> ValidateAndEnqueueAsync(
             DraftApplication draft, 
             List<string>? requiredDocuments = null,
-            CancellationToken cancellationToken = default);
+            CancellationToken cancellationToken = default,
+            bool enqueueTask = true);
 
         /// <summary>
         /// Agent Action 1: Compiles an official Verification Case Dossier with cryptographic integrity seal
