@@ -27,23 +27,15 @@ public class DuplicateApplicationRepository : IDuplicateApplicationRepository
                 .FirstOrDefaultAsync();
         }
 
-        // Detect any active conflicting application for this citizen and service.
-        // Finished or unsubmitted applications (Draft, AwaitingFeePayment, Completed, Rejected, Deleted)
-        // are NEVER duplicate active submissions.
-        // A PendingReview submission is only an active duplicate if it has an ACTIVE VerificationTask
-        // (Pending, Revised, or Revision Requested).
+        // Detect any active or officially completed application for this citizen and service
         return await _db.ApplicationSubmissions.AnyAsync(s =>
             // Case-insensitive and trimmed; translates on PostgreSQL and the in-memory test provider alike
             s.CitizenNic.Trim().ToUpper() == normalizedNic &&
             (s.ServiceProcedureId == serviceProcedureId || (targetServiceName != null && s.ServiceProcedure != null && s.ServiceProcedure.Name == targetServiceName)) &&
             (excludeApplicationId == 0 || s.Id != excludeApplicationId) &&
-            s.StageStatus != "Draft" &&
-            s.StageStatus != "AwaitingFeePayment" &&
-            s.StageStatus != "Completed" &&
             s.StageStatus != "Rejected" &&
-            s.StageStatus != "Deleted" &&
-            (s.StageStatus != "PendingReview" ||
-             _db.VerificationTasks.Any(t => t.ApplicationId == s.Id &&
-                                           (t.Status == "Pending" || t.Status == "Revised" || t.Status == "Revision Requested"))));
+            ((s.StageStatus != "Deleted" && s.StageStatus != "Draft") || 
+             _db.VerificationTasks.Any(t => t.ApplicationId == s.Id && t.Status != "Rejected" && t.Status != "Cancelled") ||
+             _db.Payments.Any(p => p.ApplicationId == s.Id && p.Status != "Failed")));
     }
 }

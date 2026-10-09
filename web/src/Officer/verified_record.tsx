@@ -286,6 +286,7 @@ export default function VerifiedRecords() {
     a.click();
   };
 
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
   const exportDossierPdf = (rec: any, det: any) => {
     if (!rec) return;
     const doc = new jsPDF();
