@@ -246,7 +246,11 @@ export default function VerificationWorkspace() {
           headers: { ...(token ? { Authorization: `Bearer ${token}` } : {}) }
         });
         if (response.ok) {
-          setDetail(await response.json());
+          const data: TaskDetail = await response.json();
+          setDetail(data);
+          if (data.task?.status && data.task.status !== "Pending") {
+            setDecision(data.task.status === "Revised" ? "Revision Requested" : data.task.status);
+          }
         } else {
           setDetailError(response.status === 404 ? "Application not found." : "Failed to load application.");
         }
@@ -298,6 +302,7 @@ export default function VerificationWorkspace() {
       return;
     }
     setDecision(status);
+    setWorkspaceTab("decision");
     if (status === "Approved") {
       await submitDecision(status);
     }
@@ -352,6 +357,18 @@ export default function VerificationWorkspace() {
       });
 
       if (response.ok) {
+        const nextStageNum = (isMultiStage && status === "Approved") ? activeStage + 1 : activeStage;
+        const finalStatus = status === "Revision Requested" ? "Revised" : status;
+        setDetail(prev => prev ? {
+          ...prev,
+          task: {
+            ...prev.task,
+            status: finalStatus,
+            currentStage: nextStageNum,
+            stageNumber: nextStageNum,
+          },
+        } : prev);
+        setDecision(status);
         setSubmitStatus("success");
         setTimeout(() => navigate('/officer/pending-reviews'), 2000);
       } else {
@@ -738,8 +755,50 @@ export default function VerificationWorkspace() {
                         Stage {detail.task.currentStage ?? 1} of {detail.task.maxStages}
                       </Tag>
                     )}
+                    {detail?.task.status && (
+                      <Tag
+                        type={
+                          detail.task.status === "Approved"
+                            ? "green"
+                            : detail.task.status === "Rejected"
+                              ? "red"
+                              : detail.task.status === "Revised" || detail.task.status === "Revision Requested"
+                                ? "warm-gray"
+                                : "blue"
+                        }
+                        style={{ fontWeight: 700, fontSize: "0.8125rem" }}
+                      >
+                        {detail.task.status === "Approved"
+                          ? "✓ Approved"
+                          : detail.task.status === "Rejected"
+                            ? "✕ Rejected"
+                            : detail.task.status === "Revised" || detail.task.status === "Revision Requested"
+                              ? "⚠ Revision Requested"
+                              : "● Pending Review"}
+                      </Tag>
+                    )}
                   </div>
                 </div>
+
+                {submitStatus === "success" && (
+                  <InlineNotification
+                    kind="success"
+                    title="Official Determination Recorded"
+                    subtitle={`Determination "${detail?.task.status || decision}" saved successfully. Returning to review queue in a moment...`}
+                    hideCloseButton
+                    style={{ marginBottom: "1rem" }}
+                  />
+                )}
+                {submitStatus === "error" && (
+                  <InlineNotification
+                    kind="error"
+                    title="Error Saving Determination"
+                    subtitle="Failed to record determination on the server. Please check your connection or officer permissions and try again."
+                    hideCloseButton
+                    style={{ marginBottom: "1rem" }}
+                  />
+                )}
+
                 <div style={{ marginBottom: '1.25rem', backgroundColor: '#fff', padding: '0.875rem 1rem', border: '1px solid #e0e0e0', borderRadius: '4px' }}>
                   <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(200px, 1fr))', gap: '0.5rem', fontSize: '0.875rem' }}>
                     <div><span style={{ color: '#525252' }}>App ID:</span> <strong>{detail?.task.referenceNumber ?? "—"}</strong></div>
@@ -982,7 +1041,77 @@ export default function VerificationWorkspace() {
 
                 {/* Tab 3: Decision Panel */}
                 {workspaceTab === 'decision' && (
-                  <div style={{ backgroundColor: '#fff', padding: '1.5rem', border: '1px solid #e0e0e0', marginBottom: '1.5rem', animation: "fadeIn 0.2s ease-in" }}>
+                  detail?.task.status && detail.task.status !== "Pending" ? (
+                    <div style={{ backgroundColor: '#fff', padding: '1.5rem', border: '1px solid #e0e0e0', marginBottom: '1.5rem', animation: "fadeIn 0.2s ease-in" }}>
+                      <div style={{
+                        padding: '1.25rem 1.5rem',
+                        backgroundColor: detail.task.status === 'Approved' ? '#f6fbf7' : (detail.task.status === 'Rejected' ? '#fff8f8' : '#fcfaf0'),
+                        border: `1px solid ${detail.task.status === 'Approved' ? '#a7f0ba' : (detail.task.status === 'Rejected' ? '#ffb3b8' : '#fddc69')}`,
+                        borderRadius: '4px',
+                        marginBottom: '1.25rem',
+                      }}>
+                        <div style={{ display: 'flex', alignItems: 'center', gap: '0.75rem', marginBottom: '0.75rem' }}>
+                          {detail.task.status === 'Approved' ? (
+                            <CheckmarkFilled size={28} color="#198038" />
+                          ) : detail.task.status === 'Rejected' ? (
+                            <Close size={28} color="#da1e28" />
+                          ) : (
+                            <Warning size={28} color="#b28600" />
+                          )}
+                          <div>
+                            <h3 style={{ fontSize: '1.25rem', fontWeight: 600, color: '#161616', margin: 0 }}>
+                              Official Determination: {detail.task.status}
+                            </h3>
+                            <p style={{ fontSize: '0.875rem', color: '#525252', marginTop: '2px' }}>
+                              {detail.task.status === 'Approved'
+                                ? ((detail.task.maxStages ?? 1) > ((detail.task.stageNumber && detail.task.stageNumber > 0) ? detail.task.stageNumber : (detail.task.currentStage ?? 1))
+                                    ? `Stage ${(detail.task.stageNumber && detail.task.stageNumber > 0) ? detail.task.stageNumber : (detail.task.currentStage ?? 1)} milestone verified and approved. Citizen progress unlocked for next stage.`
+                                    : "Final Statutory Decree verified and approved. All workflow stages complete.")
+                                : detail.task.status === 'Rejected'
+                                  ? "Application rejected by department officer for statutory defect."
+                                  : "Application returned to citizen for statutory revisions and document resubmission."}
+                            </p>
+                          </div>
+                        </div>
+
+                        <div style={{
+                          backgroundColor: '#fff',
+                          border: '1px solid #e0e0e0',
+                          borderRadius: '4px',
+                          padding: '0.875rem 1rem',
+                          display: 'grid',
+                          gridTemplateColumns: 'repeat(auto-fit, minmax(180px, 1fr))',
+                          gap: '0.5rem 1rem',
+                          fontSize: '0.8125rem',
+                          marginTop: '0.75rem',
+                        }}>
+                          <div><span style={{ color: '#525252' }}>Application:</span> <strong>{detail.task.referenceNumber || `APP-${detail.task.applicationId}`}</strong></div>
+                          <div><span style={{ color: '#525252' }}>Department:</span> <strong>{detail.task.department || 'Government Department'}</strong></div>
+                          <div><span style={{ color: '#525252' }}>Citizen:</span> <strong>{detail.task.citizenName || 'Citizen'}</strong></div>
+                          <div><span style={{ color: '#525252' }}>Statutory Payment:</span> <strong>{detail.payment?.isVerified ? `Verified (LKR ${detail.payment.amount})` : 'Exempt / Not Required'}</strong></div>
+                          {comments && <div style={{ gridColumn: '1 / -1' }}><span style={{ color: '#525252' }}>Recorded Finding:</span> <em>"{comments}"</em></div>}
+                        </div>
+                      </div>
+
+                      <div style={{ display: 'flex', gap: '0.75rem', flexWrap: 'wrap' }}>
+                        <Button
+                          kind="primary"
+                          renderIcon={ChevronLeft}
+                          onClick={() => navigate('/officer/pending-reviews')}
+                        >
+                          Return to Pending Reviews Queue
+                        </Button>
+                        <Button
+                          kind="secondary"
+                          renderIcon={Document}
+                          onClick={handleExportPdf}
+                        >
+                          Export Audit Dossier (PDF)
+                        </Button>
+                      </div>
+                    </div>
+                  ) : (
+                    <div style={{ backgroundColor: '#fff', padding: '1.5rem', border: '1px solid #e0e0e0', marginBottom: '1.5rem', animation: "fadeIn 0.2s ease-in" }}>
                      <h3 style={{ fontSize: '1.25rem', marginBottom: '1rem' }}>Record Determination</h3>
                      
                      <div style={{ display: 'flex', flexWrap: 'wrap', gap: '0.75rem', marginBottom: '1rem' }}>
@@ -1086,6 +1215,7 @@ export default function VerificationWorkspace() {
                        <InlineNotification kind="error" title="Error" subtitle="Failed to save decision. Try again." hideCloseButton style={{ marginTop: '1rem' }} />
                      )}
                   </div>
+                  )
                 )}
 
                 {/* Docked Quick Action Bar: Only shown on Copilot and Application tabs (hidden on Official Determination to prevent duplicate buttons) */}
@@ -1103,36 +1233,58 @@ export default function VerificationWorkspace() {
                     marginBottom: '1.5rem'
                   }}>
                     <div style={{ fontSize: '0.8125rem', color: '#525252' }}>
-                      <strong>Action:</strong> {decision ? `Selected: ${decision}` : 'Review above and record determination'}
+                      <strong>Action:</strong> {detail?.task.status && detail.task.status !== "Pending" ? `Official Determination: ${detail.task.status}` : (decision ? `Selected: ${decision}` : 'Review above and record determination')}
                     </div>
                     <div style={{ display: 'flex', gap: '0.5rem', flexWrap: 'wrap' }}>
-                      <Button
-                        kind={decision === "Approved" ? "primary" : "tertiary"}
-                        size="sm"
-                        renderIcon={Checkmark}
-                        onClick={() => { handleDecision("Approved"); setWorkspaceTab("decision"); }}
-                        disabled={isSubmitting || (detail?.payment != null && !detail.payment.isVerified)}
-                      >
-                        Approve
-                      </Button>
-                      <Button
-                        kind={decision === "Revision Requested" ? "primary" : "tertiary"}
-                        size="sm"
-                        renderIcon={Warning}
-                        onClick={() => { handleDecision("Revision Requested"); setWorkspaceTab("decision"); }}
-                        disabled={isSubmitting}
-                      >
-                        Request Revision
-                      </Button>
-                      <Button
-                        kind={decision === "Rejected" ? "danger" : "danger--tertiary"}
-                        size="sm"
-                        renderIcon={Close}
-                        onClick={() => { handleDecision("Rejected"); setWorkspaceTab("decision"); }}
-                        disabled={isSubmitting}
-                      >
-                        Reject
-                      </Button>
+                      {detail?.task.status && detail.task.status !== "Pending" ? (
+                        <>
+                          <Button
+                            kind="primary"
+                            size="sm"
+                            onClick={() => setWorkspaceTab("decision")}
+                          >
+                            View Determination
+                          </Button>
+                          <Button
+                            kind="ghost"
+                            size="sm"
+                            renderIcon={ChevronLeft}
+                            onClick={() => navigate('/officer/pending-reviews')}
+                          >
+                            Back to Queue
+                          </Button>
+                        </>
+                      ) : (
+                        <>
+                          <Button
+                            kind={decision === "Approved" ? "primary" : "tertiary"}
+                            size="sm"
+                            renderIcon={Checkmark}
+                            onClick={() => { handleDecision("Approved"); }}
+                            disabled={isSubmitting || (detail?.payment != null && !detail.payment.isVerified)}
+                          >
+                            {isSubmitting && decision === "Approved" ? "Approving..." : "Approve"}
+                          </Button>
+                          <Button
+                            kind={decision === "Revision Requested" ? "primary" : "tertiary"}
+                            size="sm"
+                            renderIcon={Warning}
+                            onClick={() => { handleDecision("Revision Requested"); }}
+                            disabled={isSubmitting}
+                          >
+                            Request Revision
+                          </Button>
+                          <Button
+                            kind={decision === "Rejected" ? "danger" : "danger--tertiary"}
+                            size="sm"
+                            renderIcon={Close}
+                            onClick={() => { handleDecision("Rejected"); }}
+                            disabled={isSubmitting}
+                          >
+                            Reject
+                          </Button>
+                        </>
+                      )}
                     </div>
                   </div>
                 )}

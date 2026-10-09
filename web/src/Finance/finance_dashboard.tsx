@@ -252,6 +252,7 @@ export default function FinanceDashboard() {
     kind: "success" | "error" | "info";
     message: string;
   } | null>(null);
+  const [isSubmittingDecision, setIsSubmittingDecision] = useState(false);
 
   // Load live payments for this department from the backend with citizen details
   useEffect(() => {
@@ -670,6 +671,8 @@ export default function FinanceDashboard() {
     if (!checkNotes(editStatusValue === "Rejected")) return;
     const currentNotes = notesRef.current;
     const officerName = getDisplayName(getStoredUser());
+    const paymentId = selectedPayment.id;
+    const targetRef = selectedPayment.referenceNumber || `APP-${selectedPayment.applicationId}`;
     const backendStatus =
       editStatusValue === "Verified"
         ? "Paid"
@@ -677,89 +680,130 @@ export default function FinanceDashboard() {
           ? "Failed"
           : "PendingVerification";
 
+    setIsSubmittingDecision(true);
     try {
-      await updatePaymentStatusApi(selectedPayment.id, backendStatus, currentNotes);
+      await updatePaymentStatusApi(paymentId, backendStatus, currentNotes);
+
+      const updated = payments.map((p) =>
+        p.id === paymentId
+          ? {
+              ...p,
+              status: editStatusValue,
+              verifiedAt:
+                editStatusValue !== "Pending"
+                  ? new Date().toISOString()
+                  : undefined,
+              verifiedByOfficerName:
+                editStatusValue !== "Pending" ? officerName : undefined,
+              verificationNotes: currentNotes,
+            }
+          : p,
+      );
+
+      setPayments(updated);
+      setBanner({
+        kind: editStatusValue === "Verified" ? "success" : "info",
+        message: `Payment status for ${targetRef} successfully updated to "${editStatusValue}".`,
+      });
+
+      // Close modal cleanly and reset fields
+      setSelectedPayment(null);
+      setNotes("");
+      notesRef.current = "";
+      setNotesError(null);
+      setIsEditingStatus(false);
+
+      // Re-fetch department payments in background to ensure all counters & stats synchronize
+      getDepartmentPayments()
+        .then((backendPayments) => {
+          if (backendPayments && backendPayments.length > 0) {
+            setPayments(backendPayments.map(mapBackendPayment));
+          }
+        })
+        .catch(() => {});
     } catch (err) {
-      // A validation failure means nothing was saved, so don't show the change
       if (err instanceof ApiError && err.status === 400) {
         setBanner({ kind: "error", message: err.message });
         return;
       }
       console.warn("Backend updatePaymentStatus API notice:", err);
+      setBanner({ kind: "error", message: "Failed to update payment status on server." });
+    } finally {
+      setIsSubmittingDecision(false);
     }
-
-    const updated = payments.map((p) =>
-      p.id === selectedPayment.id
-        ? {
-            ...p,
-            status: editStatusValue,
-            verifiedAt:
-              editStatusValue !== "Pending"
-                ? new Date().toISOString()
-                : undefined,
-            verifiedByOfficerName:
-              editStatusValue !== "Pending" ? officerName : undefined,
-            verificationNotes: currentNotes,
-          }
-        : p,
-    );
-
-    setPayments(updated);
-    setSelectedPayment(
-      updated.find((p) => p.id === selectedPayment.id) || null,
-    );
-    setIsEditingStatus(false);
-    setBanner({
-      kind: editStatusValue === "Verified" ? "success" : "info",
-      message: `Payment status successfully updated to "${editStatusValue}".`,
-    });
   }
 
   async function handleDecision(decision: "Verified" | "Rejected") {
     if (!selectedPayment) return;
     const isApproved = decision === "Verified";
-    if (!checkNotes(!isApproved)) return;
+    if (!checkNotes(!isApproved)) {
+      setBanner({
+        kind: "error",
+        message: "Please enter verification notes or a reason before rejecting this payment.",
+      });
+      return;
+    }
     const currentNotes = notesRef.current;
     const officerName = getDisplayName(getStoredUser());
+    const paymentId = selectedPayment.id;
+    const targetRef = selectedPayment.referenceNumber || `APP-${selectedPayment.applicationId}`;
+    const amountFmt = formatCurrency(selectedPayment.amount);
+    const category = selectedPayment.paymentCategory;
 
-    // Call live backend endpoint
+    setIsSubmittingDecision(true);
     try {
-      await verifyPaymentApi(selectedPayment.id, isApproved, currentNotes);
+      await verifyPaymentApi(paymentId, isApproved, currentNotes);
+
+      const updated = payments.map((p) =>
+        p.id === paymentId
+          ? {
+              ...p,
+              status: decision,
+              verifiedAt: new Date().toISOString(),
+              verifiedByOfficerName: officerName,
+              verificationNotes: currentNotes,
+            }
+          : p,
+      );
+
+      setPayments(updated);
+      setBanner({
+        kind: decision === "Verified" ? "success" : "info",
+        message:
+          decision === "Verified"
+            ? category === "DirectMobile"
+              ? `Direct Payment ${targetRef} (${amountFmt}) verified! Treasury receipt issued and recorded in ledger.`
+              : `Statutory Payment ${targetRef} (${amountFmt}) verified! Receipt recorded and Stage unlocked for Verification Officer.`
+            : category === "DirectMobile"
+              ? `Direct Payment ${targetRef} (${amountFmt}) rejected.`
+              : `Statutory Payment ${targetRef} (${amountFmt}) rejected. Stage verification remains locked for the Verification Officer.`,
+      });
+
+      // Close modal cleanly so user returns to the updated table immediately
+      setSelectedPayment(null);
+      setNotes("");
+      notesRef.current = "";
+      setNotesError(null);
+      setIsEditingStatus(false);
+
+      // Re-fetch department payments in background to ensure all counters & stats synchronize
+      getDepartmentPayments()
+        .then((backendPayments) => {
+          if (backendPayments && backendPayments.length > 0) {
+            setPayments(backendPayments.map(mapBackendPayment));
+          }
+        })
+        .catch(() => {});
     } catch (err) {
       if (err instanceof ApiError && err.status === 400) {
         setBanner({ kind: "error", message: err.message });
         return;
       }
       console.warn("Backend verify API returned notice:", err);
+      setBanner({ kind: "error", message: "Failed to record payment verification on server." });
+    } finally {
+      setIsSubmittingDecision(false);
     }
-
-    const updated = payments.map((p) =>
-      p.id === selectedPayment.id
-        ? {
-            ...p,
-            status: decision,
-            verifiedAt: new Date().toISOString(),
-            verifiedByOfficerName: officerName,
-            verificationNotes: currentNotes,
-          }
-        : p,
-    );
-
-    setPayments(updated);
-    setSelectedPayment(
-      updated.find((p) => p.id === selectedPayment.id) || null,
-    );
-    setBanner({
-      kind: decision === "Verified" ? "success" : "error",
-      message:
-        decision === "Verified"
-          ? selectedPayment.paymentCategory === "DirectMobile"
-            ? "Payment verified! Treasury receipt issued and recorded in the departmental ledger."
-            : "Payment verified! Statutory receipt recorded and Stage unlocked for the Department Verification Officer."
-          : selectedPayment.paymentCategory === "DirectMobile"
-            ? "Payment rejected."
-            : "Payment rejected. Stage verification remains locked for the Verification Officer.",
-    });
   }
 
   return (
@@ -774,6 +818,16 @@ export default function FinanceDashboard() {
           the account ledger.
         </p>
       </div>
+
+      {banner && !selectedPayment && (
+        <InlineNotification
+          kind={banner.kind}
+          title={banner.message}
+          lowContrast
+          onCloseButtonClick={() => setBanner(null)}
+          style={{ marginBottom: "1.5rem" }}
+        />
+      )}
 
       {/* 2-Section Navigation: Application Stage Fees vs Direct Mobile Payments */}
       <div
@@ -2158,11 +2212,16 @@ export default function FinanceDashboard() {
                   invalidText={notesError ?? undefined}
                 />
                 <div style={{ display: "flex", gap: "0.75rem" }}>
-                  <Button kind="primary" onClick={handleSaveEditedStatus}>
-                    Save Status Changes
+                  <Button
+                    kind="primary"
+                    disabled={isSubmittingDecision}
+                    onClick={handleSaveEditedStatus}
+                  >
+                    {isSubmittingDecision ? "Saving..." : "Save Status Changes"}
                   </Button>
                   <Button
                     kind="ghost"
+                    disabled={isSubmittingDecision}
                     onClick={() => {
                       setNotesError(null);
                       setIsEditingStatus(false);
@@ -2186,7 +2245,7 @@ export default function FinanceDashboard() {
                     notesRef.current = e.target.value;
                     if (notesError) setNotesError(null);
                   }}
-                  disabled={selectedPayment.status !== "Pending"}
+                  disabled={selectedPayment.status !== "Pending" || isSubmittingDecision}
                   rows={3}
                   maxCount={1000}
                   enableCounter
@@ -2206,21 +2265,26 @@ export default function FinanceDashboard() {
                   >
                     <Button
                       kind="primary"
+                      disabled={isSubmittingDecision}
                       onClick={() => handleDecision("Verified")}
                     >
-                      {selectedPayment.paymentCategory === "DirectMobile"
+                      {isSubmittingDecision
+                        ? "Verifying..."
+                        : selectedPayment.paymentCategory === "DirectMobile"
                         ? "Verify & Issue Treasury Receipt"
                         : "Verify Payment & Unlock Officer Review"}
                     </Button>
                     <Button
                       kind="danger--tertiary"
+                      disabled={isSubmittingDecision}
                       onClick={() => handleDecision("Rejected")}
                     >
-                      Reject Payment
+                      {isSubmittingDecision ? "Rejecting..." : "Reject Payment"}
                     </Button>
                     <Button
                       kind="secondary"
                       renderIcon={Edit}
+                      disabled={isSubmittingDecision}
                       onClick={() => {
                         setNotesError(null);
                         setIsEditingStatus(true);
