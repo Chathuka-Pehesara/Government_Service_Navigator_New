@@ -55,12 +55,7 @@ import {
   updatePaymentStatus as updatePaymentStatusApi,
 } from "./paymentsApi";
 
-const METHOD_FILTERS: { key: "All" | PaymentMethod; label: string }[] = [
-  { key: "All", label: "All Methods" },
-  { key: "OnlineBankTransfer", label: "Online Bank Transfer" },
-  { key: "BankDeposit", label: "Bank Deposit" },
-  { key: "OnlinePay", label: "Online Pay" },
-];
+export type SimplifiedMethodFilter = "All" | "BankTransfer" | "OnlinePay";
 
 export type SectionTab = "application-stage" | "direct-mobile" | "all";
 
@@ -106,9 +101,8 @@ function statusTagType(status: PaymentStatus): "blue" | "green" | "red" {
   return "blue";
 }
 
-function methodTagType(method: PaymentMethod): "purple" | "teal" | "cyan" {
-  if (method === "OnlineBankTransfer") return "purple";
-  if (method === "BankDeposit") return "teal";
+function methodTagType(method: PaymentMethod): "purple" | "cyan" {
+  if (method === "OnlineBankTransfer" || method === "BankDeposit") return "purple";
   return "cyan";
 }
 
@@ -245,9 +239,8 @@ export default function FinanceDashboard() {
   const [payments, setPayments] = useState<Payment[]>([]);
   const [activeSection, setActiveSection] =
     useState<SectionTab>("application-stage");
-  const [methodFilter, setMethodFilter] = useState<"All" | PaymentMethod>(
-    "All",
-  );
+  const [methodFilter, setMethodFilter] =
+    useState<SimplifiedMethodFilter>("All");
   const [statusFilter, setStatusFilter] = useState<"All" | PaymentStatus>(
     "All",
   );
@@ -333,6 +326,23 @@ export default function FinanceDashboard() {
     return { pending, verifiedToday, rejected, collectedThisMonth };
   }, [payments, activeSection]);
 
+  const methodCounts = useMemo(() => {
+    let pool = payments;
+    if (activeSection === "application-stage") {
+      pool = pool.filter((p) => p.paymentCategory !== "DirectMobile");
+    } else if (activeSection === "direct-mobile") {
+      pool = pool.filter((p) => p.paymentCategory === "DirectMobile");
+    }
+
+    return {
+      All: pool.length,
+      BankTransfer: pool.filter(
+        (p) => p.method === "OnlineBankTransfer" || p.method === "BankDeposit",
+      ).length,
+      OnlinePay: pool.filter((p) => p.method === "OnlinePay").length,
+    };
+  }, [payments, activeSection]);
+
   const filteredPayments = useMemo(() => {
     let pool = payments;
     if (activeSection === "application-stage") {
@@ -342,7 +352,18 @@ export default function FinanceDashboard() {
     }
 
     return pool
-      .filter((p) => methodFilter === "All" || p.method === methodFilter)
+      .filter((p) => {
+        if (methodFilter === "All") return true;
+        if (methodFilter === "BankTransfer") {
+          return (
+            p.method === "OnlineBankTransfer" || p.method === "BankDeposit"
+          );
+        }
+        if (methodFilter === "OnlinePay") {
+          return p.method === "OnlinePay";
+        }
+        return true;
+      })
       .filter((p) => statusFilter === "All" || p.status === statusFilter)
       .filter((p) => {
         if (!searchTerm.trim()) return true;
@@ -440,11 +461,18 @@ export default function FinanceDashboard() {
           ? "Direct Mobile Department Payments Report"
           : "Consolidated Revenue Transactions Report";
 
+    const methodLabel =
+      methodFilter === "BankTransfer"
+        ? "Bank Transfer"
+        : methodFilter === "OnlinePay"
+          ? "Online Payment"
+          : "All Methods";
+
     doc.setFontSize(9);
     doc.setFont("helvetica", "normal");
     doc.setTextColor(82, 82, 82);
     doc.text(
-      `${sectionTitle} | Method: ${methodFilter} | Status: ${statusFilter} | Generated: ${new Date().toLocaleString()}`,
+      `${sectionTitle} | Method: ${methodLabel} | Status: ${statusFilter} | Generated: ${new Date().toLocaleString()}`,
       marginX,
       y,
     );
@@ -743,9 +771,9 @@ export default function FinanceDashboard() {
           Payment Verification
         </h1>
         <p style={{ color: "#525252", marginTop: "0.5rem" }}>
-          Review fee payments submitted by online bank transfer, bank deposit,
-          or online pay, and verify each one against its supporting details
-          before it is posted to the account ledger.
+          Review fee payments submitted by bank transfer or online payment, and
+          verify each one against its supporting details before it is posted to
+          the account ledger.
         </p>
       </div>
 
@@ -1084,19 +1112,158 @@ export default function FinanceDashboard() {
         </div>
       )}
 
-      <div style={{ marginBottom: "1rem", maxWidth: "640px" }}>
-        <ContentSwitcher
-          selectedIndex={METHOD_FILTERS.findIndex(
-            (m) => m.key === methodFilter,
-          )}
-          onChange={({ index }) =>
-            setMethodFilter(METHOD_FILTERS[index as number].key)
-          }
+      {/* Simplified Payment Method Filter Bar */}
+      <div
+        style={{
+          display: "flex",
+          alignItems: "center",
+          justifyContent: "space-between",
+          gap: "1rem",
+          marginBottom: "1.25rem",
+          flexWrap: "wrap",
+        }}
+      >
+        <div
+          style={{
+            display: "inline-flex",
+            alignItems: "center",
+            backgroundColor: "#f4f4f4",
+            borderRadius: "8px",
+            padding: "4px",
+            gap: "4px",
+            border: "1px solid #e0e0e0",
+            boxShadow: "inset 0 1px 2px rgba(0,0,0,0.03)",
+          }}
         >
-          {METHOD_FILTERS.map((m) => (
-            <Switch key={m.key} name={m.key} text={m.label} />
-          ))}
-        </ContentSwitcher>
+          <button
+            type="button"
+            id="filter-method-all"
+            onClick={() => setMethodFilter("All")}
+            style={{
+              display: "flex",
+              alignItems: "center",
+              gap: "0.5rem",
+              padding: "0.5rem 1.125rem",
+              borderRadius: "6px",
+              border: "none",
+              backgroundColor:
+                methodFilter === "All" ? "#161616" : "transparent",
+              color: methodFilter === "All" ? "#ffffff" : "#525252",
+              fontWeight: methodFilter === "All" ? 600 : 500,
+              fontSize: "0.875rem",
+              cursor: "pointer",
+              transition: "all 0.18s ease-in-out",
+              boxShadow:
+                methodFilter === "All"
+                  ? "0 2px 5px rgba(0,0,0,0.15)"
+                  : "none",
+            }}
+          >
+            <Wallet size={16} />
+            <span>All Methods</span>
+            <span
+              style={{
+                fontSize: "0.75rem",
+                padding: "2px 8px",
+                borderRadius: "10px",
+                backgroundColor:
+                  methodFilter === "All"
+                    ? "rgba(255,255,255,0.22)"
+                    : "#e0e0e0",
+                color: methodFilter === "All" ? "#ffffff" : "#393939",
+                fontWeight: 600,
+              }}
+            >
+              {methodCounts.All}
+            </span>
+          </button>
+
+          <button
+            type="button"
+            id="filter-method-bank"
+            onClick={() => setMethodFilter("BankTransfer")}
+            style={{
+              display: "flex",
+              alignItems: "center",
+              gap: "0.5rem",
+              padding: "0.5rem 1.125rem",
+              borderRadius: "6px",
+              border: "none",
+              backgroundColor:
+                methodFilter === "BankTransfer" ? "#0f62fe" : "transparent",
+              color: methodFilter === "BankTransfer" ? "#ffffff" : "#525252",
+              fontWeight: methodFilter === "BankTransfer" ? 600 : 500,
+              fontSize: "0.875rem",
+              cursor: "pointer",
+              transition: "all 0.18s ease-in-out",
+              boxShadow:
+                methodFilter === "BankTransfer"
+                  ? "0 2px 6px rgba(15,98,254,0.3)"
+                  : "none",
+            }}
+          >
+            <Document size={16} />
+            <span>Bank Transfer</span>
+            <span
+              style={{
+                fontSize: "0.75rem",
+                padding: "2px 8px",
+                borderRadius: "10px",
+                backgroundColor:
+                  methodFilter === "BankTransfer"
+                    ? "rgba(255,255,255,0.25)"
+                    : "#e0e0e0",
+                color: methodFilter === "BankTransfer" ? "#ffffff" : "#393939",
+                fontWeight: 600,
+              }}
+            >
+              {methodCounts.BankTransfer}
+            </span>
+          </button>
+
+          <button
+            type="button"
+            id="filter-method-online"
+            onClick={() => setMethodFilter("OnlinePay")}
+            style={{
+              display: "flex",
+              alignItems: "center",
+              gap: "0.5rem",
+              padding: "0.5rem 1.125rem",
+              borderRadius: "6px",
+              border: "none",
+              backgroundColor:
+                methodFilter === "OnlinePay" ? "#0043ce" : "transparent",
+              color: methodFilter === "OnlinePay" ? "#ffffff" : "#525252",
+              fontWeight: methodFilter === "OnlinePay" ? 600 : 500,
+              fontSize: "0.875rem",
+              cursor: "pointer",
+              transition: "all 0.18s ease-in-out",
+              boxShadow:
+                methodFilter === "OnlinePay"
+                  ? "0 2px 6px rgba(0,67,206,0.3)"
+                  : "none",
+            }}
+          >
+            <Money size={16} />
+            <span>Online Payment</span>
+            <span
+              style={{
+                fontSize: "0.75rem",
+                padding: "2px 8px",
+                borderRadius: "10px",
+                backgroundColor:
+                  methodFilter === "OnlinePay"
+                    ? "rgba(255,255,255,0.25)"
+                    : "#e0e0e0",
+                color: methodFilter === "OnlinePay" ? "#ffffff" : "#393939",
+                fontWeight: 600,
+              }}
+            >
+              {methodCounts.OnlinePay}
+            </span>
+          </button>
+        </div>
       </div>
 
       <DataTable rows={rows} headers={currentHeaders}>

@@ -44,9 +44,9 @@ export interface Payment {
 }
 
 export const PAYMENT_METHOD_LABELS: Record<PaymentMethod, string> = {
-  OnlineBankTransfer: "Online Bank Transfer",
-  BankDeposit: "Bank Deposit",
-  OnlinePay: "Online Pay",
+  OnlineBankTransfer: "Bank Transfer",
+  BankDeposit: "Bank Transfer",
+  OnlinePay: "Online Payment",
 };
 
 // Shapes a backend payment row into the view model the finance pages use
