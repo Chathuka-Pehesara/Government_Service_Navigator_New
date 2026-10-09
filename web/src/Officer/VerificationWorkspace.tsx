@@ -483,12 +483,24 @@ export default function VerificationWorkspace() {
           doc.addPage();
           y = 20;
         }
-        doc.setFont("helvetica", "bold");
-        doc.text(`${key}:`, marginX + 4, y);
-        doc.setFont("helvetica", "normal");
+        const label = `${key}:`;
         const strVal = String(val || "-");
-        doc.text(strVal.length > 55 ? strVal.substring(0, 52) + "..." : strVal, marginX + 60, y);
-        y += 5.5;
+        if (label.length > 25) {
+          doc.setFont("helvetica", "bold");
+          doc.text(label, marginX + 4, y);
+          y += 4.5;
+          doc.setFont("helvetica", "normal");
+          const lines = doc.splitTextToSize(strVal, 125);
+          doc.text(lines, marginX + 8, y);
+          y += (lines.length * 4.5) + 1.5;
+        } else {
+          doc.setFont("helvetica", "bold");
+          doc.text(label, marginX + 4, y);
+          doc.setFont("helvetica", "normal");
+          const lines = doc.splitTextToSize(strVal, 125);
+          doc.text(lines, marginX + 60, y);
+          y += Math.max(5.5, (lines.length * 4.5) + 1.5);
+        }
       }
       y += 4;
     }
@@ -516,12 +528,25 @@ export default function VerificationWorkspace() {
           doc.addPage();
           y = 20;
         }
-        doc.setFont("helvetica", "bold");
-        doc.text(`• ${d.fieldLabel || d.fileName}:`, marginX + 4, y);
-        doc.setFont("helvetica", "normal");
+        const label = `• ${d.fieldLabel || d.fileName}:`;
         const sizeKb = (d.sizeBytes / 1024).toFixed(1);
-        doc.text(`${d.fileName} (${sizeKb} KB, Category: ${d.category})`, marginX + 62, y);
-        y += 5.5;
+        const val = `${d.fileName} (${sizeKb} KB, Category: ${d.category})`;
+        if (label.length > 25) {
+          doc.setFont("helvetica", "bold");
+          doc.text(label, marginX + 4, y);
+          y += 4.5;
+          doc.setFont("helvetica", "normal");
+          const lines = doc.splitTextToSize(val, 125);
+          doc.text(lines, marginX + 8, y);
+          y += (lines.length * 4.5) + 1.5;
+        } else {
+          doc.setFont("helvetica", "bold");
+          doc.text(label, marginX + 4, y);
+          doc.setFont("helvetica", "normal");
+          const lines = doc.splitTextToSize(val, 125);
+          doc.text(lines, marginX + 60, y);
+          y += Math.max(5.5, (lines.length * 4.5) + 1.5);
+        }
       }
       y += 6;
     }

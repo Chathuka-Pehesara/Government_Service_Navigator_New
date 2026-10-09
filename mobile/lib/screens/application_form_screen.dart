@@ -201,6 +201,7 @@ class _ApplicationFormScreenState extends ConsumerState<ApplicationFormScreen> {
       }
       final parsedAge = int.tryParse(answers['age'] ?? answers['Age'] ?? '');
       final effectiveAge = parsedAge ?? derivedAge ?? 0;
+      final effectiveFee = _currentStatutoryFee;
 
       final response = await http.post(
         Uri.parse('${AppConfig.baseUrl}/validationagent/validate'),
@@ -212,6 +213,7 @@ class _ApplicationFormScreenState extends ConsumerState<ApplicationFormScreen> {
           'citizenNic': userNic,
           'citizenName': session.fullName ?? (session.user?['fullName']?.toString() ?? answers['name'] ?? answers['fullName'] ?? ''),
           'citizenAge': effectiveAge,
+          'calculatedFee': effectiveFee,
           'formFields': answers,
           'attachedDocumentNames': attachedDocs,
           'requiredDocuments': _fields
@@ -539,6 +541,52 @@ class _ApplicationFormScreenState extends ConsumerState<ApplicationFormScreen> {
     final hasFileField = _fields.any((f) => f['type'] == 'file');
     if (hasFileField) return const [];
     return _formState.value?.requiredDocs ?? const [];
+  }
+
+  double get _currentStatutoryFee {
+    for (final field in _fields) {
+      if (field['type'] == 'payment') {
+        final rawOptions = field['options'];
+        if (rawOptions is Map) {
+          final amt = (rawOptions['amount'] as num?)?.toDouble() ??
+                      (rawOptions['feeAmount'] as num?)?.toDouble();
+          if (amt != null && amt > 0) return amt;
+        } else if (rawOptions is String && rawOptions.trim().startsWith('{')) {
+          try {
+            final parsed = jsonDecode(rawOptions);
+            if (parsed is Map) {
+              final amt = (parsed['amount'] as num?)?.toDouble() ??
+                          (parsed['feeAmount'] as num?)?.toDouble();
+              if (amt != null && amt > 0) return amt;
+            }
+          } catch (_) {}
+        } else if (rawOptions is num && rawOptions > 0) {
+          return rawOptions.toDouble();
+        }
+      }
+    }
+    if (_stageFormResponse != null) {
+      final stageFee = (_stageFormResponse!['fee'] as num?)?.toDouble() ??
+                       (_stageFormResponse!['statutoryFee'] as num?)?.toDouble() ??
+                       (_stageFormResponse!['amount'] as num?)?.toDouble();
+      if (stageFee != null && stageFee > 0) return stageFee;
+    }
+    final formVal = _formState.value;
+    if (formVal != null) {
+      for (final field in formVal.fields) {
+        if (field['type'] == 'payment') {
+          final rawOptions = field['options'];
+          if (rawOptions is Map) {
+            final amt = (rawOptions['amount'] as num?)?.toDouble() ??
+                        (rawOptions['feeAmount'] as num?)?.toDouble();
+            if (amt != null && amt > 0) return amt;
+          } else if (rawOptions is num && rawOptions > 0) {
+            return rawOptions.toDouble();
+          }
+        }
+      }
+    }
+    return 0.0;
   }
 
   int get _currentStage => _isStageMode

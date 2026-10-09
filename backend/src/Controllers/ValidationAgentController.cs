@@ -14,6 +14,7 @@ using Government_Service_Navigator.Backend.Services;
 using DA = System.ComponentModel.DataAnnotations;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.EntityFrameworkCore;
+using System.Text.Json;
 
 namespace Government_Service_Navigator.Backend.Controllers;
 
@@ -39,6 +40,53 @@ public class ValidationAgentController : ControllerBase
         _context = context;
         _config = config;
         _llmService = llmService;
+    }
+
+    private async Task<decimal> ResolveEffectiveFeeAsync(int serviceProcedureId, int stage, decimal incomingFee, CancellationToken cancellationToken = default)
+    {
+        if (incomingFee > 0 || serviceProcedureId <= 0)
+            return incomingFee;
+
+        int targetStage = stage > 0 ? stage : 1;
+        var stageTemplate = await _context.Templates
+            .Include(t => t.Fields)
+            .Where(t => t.ServiceProcedureId == serviceProcedureId && t.StageOrder == targetStage && t.Status == "Active")
+            .OrderByDescending(t => t.CreatedAt)
+            .FirstOrDefaultAsync(cancellationToken);
+
+        if (stageTemplate != null)
+        {
+            var paymentField = stageTemplate.Fields.FirstOrDefault(f => f.Type == "payment");
+            if (paymentField != null && !string.IsNullOrWhiteSpace(paymentField.Options))
+            {
+                try
+                {
+                    using var pDoc = JsonDocument.Parse(paymentField.Options);
+                    if (pDoc.RootElement.TryGetProperty("amount", out var amt))
+                    {
+                        if (amt.ValueKind == JsonValueKind.Number) return amt.GetDecimal();
+                        if (amt.ValueKind == JsonValueKind.String && decimal.TryParse(amt.GetString(), System.Globalization.NumberStyles.Any, System.Globalization.CultureInfo.InvariantCulture, out var parsed)) return parsed;
+                    }
+                    else if (pDoc.RootElement.TryGetProperty("feeAmount", out var famt))
+                    {
+                        if (famt.ValueKind == JsonValueKind.Number) return famt.GetDecimal();
+                        if (famt.ValueKind == JsonValueKind.String && decimal.TryParse(famt.GetString(), System.Globalization.NumberStyles.Any, System.Globalization.CultureInfo.InvariantCulture, out var parsed)) return parsed;
+                    }
+                }
+                catch { }
+            }
+        }
+
+        if (targetStage <= 1)
+        {
+            var fee = await _context.FeeSchedules
+                .Where(f => f.ServiceProcedureId == serviceProcedureId)
+                .Select(f => (decimal?)f.Amount)
+                .FirstOrDefaultAsync(cancellationToken);
+            if (fee.HasValue && fee.Value > 0) return fee.Value;
+        }
+
+        return 0m;
     }
 
     /// <summary>
@@ -72,6 +120,12 @@ public class ValidationAgentController : ControllerBase
             }
         }
 
+        decimal calculatedFee = await ResolveEffectiveFeeAsync(
+            request.ServiceProcedureId,
+            request.Stage,
+            request.CalculatedFee,
+            cancellationToken);
+
         var draft = new DraftApplication
         {
             ApplicationId = effectiveAppId,
@@ -81,7 +135,7 @@ public class ValidationAgentController : ControllerBase
             CitizenName = request.CitizenName ?? string.Empty,
             CitizenAge = request.CitizenAge,
             CitizenIncome = request.CitizenIncome,
-            CalculatedFee = request.CalculatedFee,
+            CalculatedFee = calculatedFee,
             Stage = request.Stage > 0 ? request.Stage : 1,
             FormFields = request.FormFields ?? new Dictionary<string, string>(),
             AttachedDocumentNames = request.AttachedDocumentNames ?? new List<string>()
@@ -103,6 +157,12 @@ public class ValidationAgentController : ControllerBase
         [FromBody] ValidateDraftDto request,
         CancellationToken cancellationToken)
     {
+        decimal calculatedFee = await ResolveEffectiveFeeAsync(
+            request.ServiceProcedureId,
+            request.Stage,
+            request.CalculatedFee,
+            cancellationToken);
+
         var draft = new DraftApplication
         {
             ApplicationId = request.ApplicationId,
@@ -112,7 +172,7 @@ public class ValidationAgentController : ControllerBase
             CitizenName = request.CitizenName ?? string.Empty,
             CitizenAge = request.CitizenAge,
             CitizenIncome = request.CitizenIncome,
-            CalculatedFee = request.CalculatedFee,
+            CalculatedFee = calculatedFee,
             Stage = request.Stage > 0 ? request.Stage : 1,
             FormFields = request.FormFields ?? new Dictionary<string, string>(),
             AttachedDocumentNames = request.AttachedDocumentNames ?? new List<string>()
