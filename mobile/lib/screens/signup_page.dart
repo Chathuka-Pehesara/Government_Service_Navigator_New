@@ -5,7 +5,7 @@ import '../theme/glass_theme.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import '../providers/auth_provider.dart';
 import '../utils/validators.dart';
-import 'dashboard_screen.dart';
+import 'login_page.dart';
 
 class SignUpPage extends ConsumerStatefulWidget {
   const SignUpPage({super.key});
@@ -38,17 +38,28 @@ class _SignUpPageState extends ConsumerState<SignUpPage> {
   Future<void> _handleSignUp() async {
     if (!_formKey.currentState!.validate()) return;
 
-    final signedIn = await ref.read(authControllerProvider.notifier).signUp(
+    final email = _emailController.text.trim();
+    final registered = await ref.read(authControllerProvider.notifier).signUp(
           fullName: _fullNameController.text.trim(),
-          email: _emailController.text.trim(),
+          email: email,
           password: _passwordController.text,
           nicNumber: SriLankaNic.normalize(_nicController.text),
         );
 
-    if (!signedIn || !mounted) return;
-    // TODO: persist the session token (e.g. flutter_secure_storage)
+    if (!registered || !mounted) return;
+
+    ScaffoldMessenger.of(context).showSnackBar(
+      const SnackBar(
+        content: Text('Account created successfully! Please sign in with your password.'),
+        backgroundColor: AppColors.success,
+        duration: Duration(seconds: 4),
+      ),
+    );
+
     Navigator.of(context).pushAndRemoveUntil(
-      CupertinoPageRoute(builder: (_) => const DashboardScreen()),
+      CupertinoPageRoute(
+        builder: (_) => LoginPage(initialEmail: email),
+      ),
       (route) => false,
     );
   }

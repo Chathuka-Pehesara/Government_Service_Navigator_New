@@ -1372,15 +1372,17 @@ class _Agent2StatutoryAuditorScreenState
                 ),
                 onPressed: () {
                   int effectiveId = _serviceId;
+                  String effectiveName = _selectedService;
                   if (_availableServices.isNotEmpty) {
                     final matchingService = _availableServices.firstWhere(
-                      (s) => s.id == _serviceId ||
-                             s.name.trim().toLowerCase() == _selectedService.trim().toLowerCase() ||
-                             s.name.toLowerCase().contains(_selectedService.toLowerCase()) ||
-                             _selectedService.toLowerCase().contains(s.name.toLowerCase()),
-                      orElse: () => _availableServices.first,
+                      (s) => s.id == _serviceId,
+                      orElse: () => _availableServices.firstWhere(
+                        (s) => s.name.trim().toLowerCase() == _selectedService.trim().toLowerCase(),
+                        orElse: () => (id: _serviceId, name: _selectedService),
+                      ),
                     );
                     effectiveId = matchingService.id;
+                    effectiveName = matchingService.name;
                   }
 
                   Navigator.push(
@@ -1388,7 +1390,7 @@ class _Agent2StatutoryAuditorScreenState
                     MaterialPageRoute(
                       builder: (context) => ApplicationFormScreen(
                         serviceId: effectiveId,
-                        serviceName: _selectedService,
+                        serviceName: effectiveName,
                         stageNumber: 1,
                       ),
                     ),

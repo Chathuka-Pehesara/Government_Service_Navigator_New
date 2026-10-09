@@ -331,6 +331,7 @@ namespace Government_Service_Navigator.Backend.Controllers
 
             if (submission != null)
             {
+                submission.ServiceProcedureId = service.Id;
                 submission.TemplateId = request.TemplateId;
                 submission.UserEmail = User.FindFirstValue(ClaimTypes.Email) ?? submission.UserEmail;
                 submission.FormDataJson = JsonSerializer.Serialize(request.Answers);

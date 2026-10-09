@@ -60,6 +60,19 @@ interface EligibilityRule {
   isStrict?: boolean;
 }
 
+const PREDEFINED_FIELDS = [
+  "Age",
+  "Citizenship",
+  "Income",
+  "Employment",
+  "Residency",
+  "Medical Fitness",
+  "Criminal Record",
+  "Registration Record Status",
+  "Marital Status",
+  "Minimum Qualifications",
+];
+
 export default function EligibilityRuleBuilder() {
   const [currentUser] = useState(getStoredUser);
   const [overviewHref] = useState(() => getAdminOverviewHref(currentUser));
@@ -598,66 +611,97 @@ function EligibilityRuleBuilderContent() {
               No eligibility rules configured for this service yet.
             </p>
           ) : (
-            filteredRules.map((rule) => (
-              <Grid
-                key={rule.id}
-                style={{
-                  marginBottom: "1rem",
-                  alignItems: "flex-end",
-                  paddingLeft: 0,
-                  paddingRight: 0,
-                }}
-              >
-                <Column sm={4} md={3} lg={4}>
-                  <Select
-                    id={`field-${rule.id}`}
-                    labelText="Field"
-                    value={rule.field}
-                    onChange={(e) =>
-                      handleRuleChange(rule.id, "field", e.target.value)
-                    }
-                  >
-                    <SelectItem value="Age" text="Age" />
-                    <SelectItem value="Citizenship" text="Citizenship" />
-                    <SelectItem value="Income" text="Income" />
-                  </Select>
-                </Column>
-                <Column sm={4} md={2} lg={3}>
-                  <Select
-                    id={`operator-${rule.id}`}
-                    labelText="Operator"
-                    value={rule.operator}
-                    onChange={(e) =>
-                      handleRuleChange(rule.id, "operator", e.target.value)
-                    }
-                  >
-                    <SelectItem value=">=" text=">=" />
-                    <SelectItem value="<=" text="<=" />
-                    <SelectItem value="==" text="==" />
-                    <SelectItem value="!=" text="!=" />
-                  </Select>
-                </Column>
-                <Column sm={4} md={2} lg={4}>
-                  <TextInput
-                    id={`value-${rule.id}`}
-                    labelText="Value"
-                    value={rule.value}
-                    onChange={(e) =>
-                      handleRuleChange(rule.id, "value", e.target.value)
-                    }
-                  />
-                </Column>
-                <Column sm={4} md={1} lg={1} className="flex justify-end min-[66rem]:justify-start">
-                  <Button
-                    kind="danger--ghost"
-                    renderIcon={TrashCan}
-                    iconDescription="Remove"
-                    hasIconOnly
-                    onClick={() => handleDeleteRule(rule.id)}
-                  />
-                </Column>
-              </Grid>
-            ))
+            filteredRules.map((rule) => {
+              const isCustom = !PREDEFINED_FIELDS.includes(rule.field);
+              const selectValue = isCustom ? "__OTHER__" : rule.field;
+
+              return (
+                <Grid
+                  key={rule.id}
+                  style={{
+                    marginBottom: "1.25rem",
+                    alignItems: "flex-start",
+                    paddingLeft: 0,
+                    paddingRight: 0,
+                  }}
+                >
+                  <Column sm={4} md={3} lg={4}>
+                    <Select
+                      id={`field-${rule.id}`}
+                      labelText="Field"
+                      value={selectValue}
+                      onChange={(e) => {
+                        const val = e.target.value;
+                        if (val === "__OTHER__") {
+                          handleRuleChange(rule.id, "field", "");
+                        } else {
+                          handleRuleChange(rule.id, "field", val);
+                        }
+                      }}
+                    >
+                      {PREDEFINED_FIELDS.map((f) => (
+                        <SelectItem key={f} value={f} text={f} />
+                      ))}
+                      <SelectItem
+                        value="__OTHER__"
+                        text="Other (Custom Field)..."
+                      />
+                    </Select>
+
+                    {isCustom && (
+                      <div style={{ marginTop: "0.5rem" }}>
+                        <TextInput
+                          id={`custom-field-${rule.id}`}
+                          labelText="Custom Field Name"
+                          placeholder="e.g. Land Title, Medical Fitness..."
+                          value={rule.field}
+                          onChange={(e) =>
+                            handleRuleChange(rule.id, "field", e.target.value)
+                          }
+                          invalid={rule.field.trim() === ""}
+                          invalidText="Enter field name"
+                        />
+                      </div>
+                    )}
+                  </Column>
+                  <Column sm={4} md={2} lg={3}>
+                    <Select
+                      id={`operator-${rule.id}`}
+                      labelText="Operator"
+                      value={rule.operator}
+                      onChange={(e) =>
+                        handleRuleChange(rule.id, "operator", e.target.value)
+                      }
+                    >
+                      <SelectItem value=">=" text=">=" />
+                      <SelectItem value="<=" text="<=" />
+                      <SelectItem value="==" text="==" />
+                      <SelectItem value="!=" text="!=" />
+                    </Select>
+                  </Column>
+                  <Column sm={4} md={2} lg={4}>
+                    <TextInput
+                      id={`value-${rule.id}`}
+                      labelText="Value"
+                      value={rule.value}
+                      onChange={(e) =>
+                        handleRuleChange(rule.id, "value", e.target.value)
+                      }
+                    />
+                  </Column>
+                  <Column sm={4} md={1} lg={1} className="flex justify-end min-[66rem]:justify-start">
+                    <Button
+                      kind="danger--ghost"
+                      renderIcon={TrashCan}
+                      iconDescription="Remove"
+                      hasIconOnly
+                      onClick={() => handleDeleteRule(rule.id)}
+                      style={{ marginTop: "1.5rem" }}
+                    />
+                  </Column>
+                </Grid>
+              );
+            })
           )}
 
           <div

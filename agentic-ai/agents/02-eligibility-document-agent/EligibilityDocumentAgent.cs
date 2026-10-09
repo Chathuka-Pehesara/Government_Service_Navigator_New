@@ -75,12 +75,12 @@ public class EligibilityDocumentAgent : IEligibilityDocumentAgent
         var ruleResult = _rulesTool.EvaluateRules(serviceId, profile.Age, profile.CitizenshipStatus);
 
         // 3. Document requirements lookup
-        var fromVectorDb = serviceChunk != null && !request.Stage.HasValue;
-        var requiredDocs = (request.Stage.HasValue || !fromVectorDb)
-            ? await _docsTool.GetRequiredDocumentsForServiceAsync(serviceId, request.Stage, cancellationToken)
-            : serviceChunk!.RequiredDocuments;
+        var fromVectorDb = serviceChunk != null && serviceChunk.RequiredDocuments.Count > 0 && !request.Stage.HasValue;
+        var requiredDocs = fromVectorDb
+            ? serviceChunk!.RequiredDocuments
+            : await _docsTool.GetRequiredDocumentsForServiceAsync(serviceId, request.Stage, cancellationToken);
 
-        if (requiredDocs.Count == 0 && serviceChunk != null && serviceChunk.RequiredDocuments.Count > 0 && !request.Stage.HasValue)
+        if (requiredDocs.Count == 0 && serviceChunk != null && serviceChunk.RequiredDocuments.Count > 0)
         {
             requiredDocs = serviceChunk.RequiredDocuments;
         }
@@ -231,6 +231,15 @@ public class EligibilityDocumentAgent : IEligibilityDocumentAgent
             // If any document flagged as missing by LLM is actually provided in profile.ProvidedDocuments, remove it from missingDocs
             var providedDocs = profile.ProvidedDocuments ?? new List<string>();
             missingDocs.RemoveAll(md => providedDocs.Any(prov => DocumentMatches(md, prov)));
+
+            // Any required document that has not been provided MUST be flagged as missing
+            foreach (var req in requiredDocs)
+            {
+                if (!providedDocs.Any(prov => DocumentMatches(req, prov)) && !missingDocs.Any(md => DocumentMatches(req, md)))
+                {
+                    missingDocs.Add(req);
+                }
+            }
 
             // DETERMINISTIC GUARDRAILS:
             // 1. If any mandatory documents or criteria are missing, or rule tool failed, citizen cannot be eligible
