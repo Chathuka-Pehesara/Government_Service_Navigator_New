@@ -10,7 +10,7 @@ class AppConfig {
   AppConfig._();
 
   static const String _hostedUrl =
-      'https://gsn-api-dpa2agb6c5h7gyar.southeastasia-01.azurewebsites.net';
+      'https://gsn-backend-5j7n.onrender.com';
 
   static String get _defaultUrl {
     if (kDebugMode) {
