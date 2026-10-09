@@ -1,4 +1,5 @@
 using System.Text.Json;
+using System.Text.RegularExpressions;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.EntityFrameworkCore;
 using Government_Service_Navigator.Backend.Services.Interfaces;
@@ -26,23 +27,29 @@ namespace Government_Service_Navigator.Backend.Controllers
             _cache = cache;
         }
 
-       // Admin adds a new service/procedure
-[HttpPost]
-public async Task<IActionResult> CreateService([FromBody] ServiceProcedure service)
-{
-    var problems = ServiceCatalogValidator.Service(service);
-    if (problems.Count > 0) return BadRequest(ValidationError.Body(problems));
+        // Admin adds a new service/procedure
+        [HttpPost]
+        public async Task<IActionResult> CreateService([FromBody] ServiceProcedure service)
+        {
+            // Custom Validation: Name cannot be empty and must contain letters
+            if (string.IsNullOrWhiteSpace(service.Name))
+                return BadRequest(new { message = "Procedure Name cannot be empty." });
+            if (!Regex.IsMatch(service.Name, "[a-zA-Z]"))
+                return BadRequest(new { message = "Procedure Name must contain at least one letter and cannot be only numbers." });
 
-    try
-    {
-        var createdService = await _catalogService.CreateServiceAsync(service);
-        return CreatedAtAction(nameof(GetService), new { id = createdService.Id }, createdService);
-    }
-    catch (Exception ex)
-    {
-        return StatusCode(500, new { message = ex.Message, inner = ex.InnerException?.Message });
-    }
-}
+            var problems = ServiceCatalogValidator.Service(service);
+            if (problems.Count > 0) return BadRequest(ValidationError.Body(problems));
+
+            try
+            {
+                var createdService = await _catalogService.CreateServiceAsync(service);
+                return CreatedAtAction(nameof(GetService), new { id = createdService.Id }, createdService);
+            }
+            catch (Exception ex)
+            {
+                return StatusCode(500, new { message = ex.Message, inner = ex.InnerException?.Message });
+            }
+        }
 
 
         // Fetch procedure details + document checklist
@@ -100,6 +107,12 @@ public async Task<IActionResult> CreateService([FromBody] ServiceProcedure servi
         [HttpPut("{id}")]
         public async Task<IActionResult> UpdateService(int id, [FromBody] ServiceProcedure updatedService)
         {
+            // Custom Validation: Name cannot be empty and must contain letters
+            if (string.IsNullOrWhiteSpace(updatedService.Name))
+                return BadRequest(new { message = "Procedure Name cannot be empty." });
+            if (!Regex.IsMatch(updatedService.Name, "[a-zA-Z]"))
+                return BadRequest(new { message = "Procedure Name must contain at least one letter and cannot be only numbers." });
+
             var problems = ServiceCatalogValidator.Service(updatedService);
             if (problems.Count > 0) return BadRequest(ValidationError.Body(problems));
 
@@ -108,7 +121,6 @@ public async Task<IActionResult> CreateService([FromBody] ServiceProcedure servi
 
             return Ok(service);
         }
-
 
         // Scores a citizen profile against a service's rules; returns match % + missing criteria
         [HttpPost("eligibility-score")]
@@ -129,6 +141,12 @@ public async Task<IActionResult> CreateService([FromBody] ServiceProcedure servi
         [HttpPut("{id}/documents")]
         public async Task<IActionResult> UpdateDocumentRequirements(int id, [FromBody] List<DocumentRequirement> documents)
         {
+            // Custom Validation: Check for empty fields and valid names
+            if (documents.Any(d => string.IsNullOrWhiteSpace(d.DocumentName) || string.IsNullOrWhiteSpace(d.Description)))
+                return BadRequest(new { message = "Document Name and Description cannot be empty." });
+            if (documents.Any(d => !Regex.IsMatch(d.DocumentName, "[a-zA-Z]")))
+                return BadRequest(new { message = "Document Type Name must contain at least one letter." });
+
             var problems = ServiceCatalogValidator.Documents(documents);
             if (problems.Count > 0) return BadRequest(ValidationError.Body(problems));
 
@@ -142,6 +160,7 @@ public async Task<IActionResult> CreateService([FromBody] ServiceProcedure servi
                 return NotFound("Service procedure not found.");
             }
         }
+
         // Delete a specific document requirement by its ID
         [HttpDelete("documents/{documentId}")]
         public async Task<IActionResult> DeleteDocumentRequirement(int documentId)
@@ -152,11 +171,15 @@ public async Task<IActionResult> CreateService([FromBody] ServiceProcedure servi
             return NoContent();
         }
 
-        
-
         [HttpPut("{id}/fees")]
         public async Task<IActionResult> UpdateFeeSchedules(int id, [FromBody] List<FeeSchedule> fees)
         {
+            // Custom Validation: Check for empty fields and valid fee types
+            if (fees.Any(f => string.IsNullOrWhiteSpace(f.FeeType)))
+                return BadRequest(new { message = "Fee Type cannot be empty." });
+            if (fees.Any(f => !Regex.IsMatch(f.FeeType, "[a-zA-Z]")))
+                return BadRequest(new { message = "Fee Type must contain at least one letter." });
+
             var problems = ServiceCatalogValidator.Fees(fees);
             if (problems.Count > 0) return BadRequest(ValidationError.Body(problems));
 
