@@ -51,8 +51,9 @@ namespace Government_Service_Navigator.Backend.Controllers
         {
             var email = User.FindFirst(System.Security.Claims.ClaimTypes.Email)?.Value 
                      ?? User.FindFirst("email")?.Value 
+                     ?? User.FindFirst(System.IdentityModel.Tokens.Jwt.JwtRegisteredClaimNames.Email)?.Value
                      ?? User.Identity?.Name 
-                     ?? "unknown@user";
+                     ?? string.Empty;
             var payments = await _paymentService.GetByUserAsync(email);
 
             // Department name lets the app show who handles a refund before it is requested

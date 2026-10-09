@@ -60,7 +60,6 @@ import {
   Launch,
 } from "@carbon/icons-react";
 import { parseApiError } from "../../utils/validation";
-import { documentError, feeError } from "./serviceCatalogValidation";
 import type { Department } from "../Department_Management/types";
 import { API_BASE_URL } from "../../utils/api";
 import { ServiceProcedurePickerModal } from "../../components/ServiceProcedurePickerModal";

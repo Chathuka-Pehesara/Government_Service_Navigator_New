@@ -58,10 +58,16 @@ class _VerificationDetailScreenState extends ConsumerState<VerificationDetailScr
   bool _isRevised(String s) =>
       s.toLowerCase() == 'revised' || s.toLowerCase() == 'revision requested';
 
+  bool _isApproved(String s) =>
+      s.toLowerCase() == 'approved' ||
+      s.toLowerCase() == 'completed' ||
+      _app.stageStatus.toLowerCase() == 'completed';
+
   Color _getStatusColor(String status) {
+    if (_isApproved(status)) {
+      return AppColors.success;
+    }
     switch (status.toLowerCase()) {
-      case 'approved':
-        return AppColors.success;
       case 'revised':
       case 'revision requested':
         return AppColors.warning;
@@ -73,9 +79,10 @@ class _VerificationDetailScreenState extends ConsumerState<VerificationDetailScr
   }
 
   String _getStatusLabel(String status) {
+    if (_isApproved(status)) {
+      return 'Verified & Approved';
+    }
     switch (status.toLowerCase()) {
-      case 'approved':
-        return 'Verified & Approved';
       case 'revised':
       case 'revision requested':
         return 'Action Required';
@@ -87,9 +94,10 @@ class _VerificationDetailScreenState extends ConsumerState<VerificationDetailScr
   }
 
   IconData _getStatusIcon(String status) {
+    if (_isApproved(status)) {
+      return CupertinoIcons.checkmark_seal_fill;
+    }
     switch (status.toLowerCase()) {
-      case 'approved':
-        return CupertinoIcons.checkmark_seal_fill;
       case 'revised':
       case 'revision requested':
         return CupertinoIcons.exclamationmark_triangle_fill;
@@ -145,13 +153,13 @@ class _VerificationDetailScreenState extends ConsumerState<VerificationDetailScr
             const SizedBox(height: 20),
 
             // 2. Action Required Banner (Only if status is Revised and not Completed/Approved)
-            if (_isRevised(_app.status) && _app.stageStatus != 'Completed' && _app.status.toLowerCase() != 'approved') ...[
+            if (_isRevised(_app.status) && !_isApproved(_app.status)) ...[
               _buildActionRequiredBanner(),
               const SizedBox(height: 20),
             ],
 
             // 3. Official Verification Pass & QR (If status == 'Approved' or stageStatus == 'Completed')
-            if (_app.status.toLowerCase() == 'approved' || _app.stageStatus == 'Completed') ...[
+            if (_isApproved(_app.status)) ...[
               _buildDigitalVerificationPass(),
               const SizedBox(height: 16),
               _buildBookingOptionsCard(),
@@ -651,7 +659,9 @@ class _VerificationDetailScreenState extends ConsumerState<VerificationDetailScr
   // --- WIDGET 4: Verification Progress Stepper ---
   Widget _buildVerificationProgressCard() {
     int currentStep = 2; // Default to Officer review
-    if (_app.status.toLowerCase() == 'approved') {
+    final isAppApproved = _isApproved(_app.status);
+
+    if (isAppApproved) {
       currentStep = 4;
     } else if (_app.status.toLowerCase() == 'rejected') {
       currentStep = 4;
@@ -712,7 +722,7 @@ class _VerificationDetailScreenState extends ConsumerState<VerificationDetailScr
                 : (_isRevised(_app.status)
                     ? 'Officer Decision: Revision Requested'
                     : 'Final Verification Sign-Off & Seal'),
-            description: _app.status.toLowerCase() == 'approved'
+            description: isAppApproved
                 ? 'Passed all compliance criteria. Certificate issued.'
                 : (_app.status.toLowerCase() == 'rejected'
                     ? 'Application failed mandatory criteria.'

@@ -66,10 +66,10 @@ class _ApplicationsTabState extends ConsumerState<ApplicationsTab> {
 
   List<ApplicationItemModel> get _filteredApplications {
     return _applications.where((app) {
-      if (_selectedFilter == 'In Review' && app.status.toLowerCase() != 'pending') {
+      if (_selectedFilter == 'In Review' && (app.status.toLowerCase() != 'pending' || app.stageStatus == 'Completed')) {
         return false;
       }
-      if (_selectedFilter == 'Approved' && app.status.toLowerCase() != 'approved') {
+      if (_selectedFilter == 'Approved' && app.status.toLowerCase() != 'approved' && app.status.toLowerCase() != 'completed' && app.stageStatus != 'Completed') {
         return false;
       }
       if (_selectedFilter == 'Needs Action' &&
@@ -221,12 +221,12 @@ class _ApplicationsTabState extends ConsumerState<ApplicationsTab> {
                         const SizedBox(width: 8),
                         _buildFilterChip(
                           'In Review',
-                          _applications.where((a) => a.status.toLowerCase() == 'pending').length,
+                          _applications.where((a) => a.status.toLowerCase() == 'pending' && a.stageStatus != 'Completed').length,
                         ),
                         const SizedBox(width: 8),
                         _buildFilterChip(
                           'Approved',
-                          _applications.where((a) => a.status.toLowerCase() == 'approved').length,
+                          _applications.where((a) => a.status.toLowerCase() == 'approved' || a.status.toLowerCase() == 'completed' || a.stageStatus == 'Completed').length,
                         ),
                         const SizedBox(width: 8),
                         _buildFilterChip(

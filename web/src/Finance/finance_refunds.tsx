@@ -501,7 +501,10 @@ export default function FinanceRefunds() {
                       labelText="Officer Note (required when rejecting)"
                       placeholder="Explain the decision to the citizen. A reason is required to reject."
                       value={note}
-                      onChange={(e) => setNote(e.target.value)}
+                      onChange={(e) => {
+                        setNote(e.target.value);
+                        if (noteError) setNoteError(null);
+                      }}
                       rows={2}
                       maxCount={1000}
                       enableCounter
@@ -537,7 +540,10 @@ export default function FinanceRefunds() {
                       labelText="Bank Transfer Reference Number *"
                       placeholder="e.g. TRF-2026-00142"
                       value={txRef}
-                      onChange={(e) => setTxRef(e.target.value)}
+                      onChange={(e) => {
+                        setTxRef(e.target.value);
+                        if (txRefError) setTxRefError(null);
+                      }}
                       maxLength={100}
                       invalid={!!txRefError}
                       invalidText={txRefError ?? undefined}

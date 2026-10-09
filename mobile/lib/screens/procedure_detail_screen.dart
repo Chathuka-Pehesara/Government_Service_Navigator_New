@@ -675,6 +675,7 @@ class _ProcedureDetailScreenState extends ConsumerState<ProcedureDetailScreen> {
     }
 
     final bool isAllCompleted = status == 'Completed' ||
+        activeApp.status.toLowerCase() == 'completed' ||
         (stage >= totalStages && (status == 'StageApproved' || activeApp.status.toLowerCase() == 'approved'));
 
     if (isAllCompleted) {

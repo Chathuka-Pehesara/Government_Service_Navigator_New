@@ -3,12 +3,22 @@ import '../models/installment_plan.dart';
 import '../models/ledger.dart';
 import '../models/payment.dart';
 import 'service_providers.dart';
+import 'session_provider.dart';
 
 part 'payment_providers.g.dart';
 
 /// The signed-in citizen's payments. Invalidate after anything that creates or settles a payment.
 @riverpod
-Future<List<Payment>> myPayments(Ref ref) => ref.watch(paymentServiceProvider).myPayments();
+Future<List<Payment>> myPayments(Ref ref) async {
+  final session = ref.watch(sessionProvider);
+  final payments = await ref.watch(paymentServiceProvider).myPayments();
+  final currentEmail = session.email.trim().toLowerCase();
+  if (currentEmail.isEmpty) return payments;
+  return payments.where((p) {
+    final pEmail = (p.userEmail ?? '').trim().toLowerCase();
+    return pEmail.isEmpty || pEmail == currentEmail;
+  }).toList();
+}
 
 /// Confirms a checkout with the backend (which checks Stripe) and returns the up-to-date payment.
 @riverpod

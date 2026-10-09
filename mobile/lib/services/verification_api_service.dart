@@ -59,19 +59,26 @@ class VerificationApiService {
       } catch (_) {}
     }
 
+    final resolvedStageStatus = json['stageStatus']?.toString() ??
+        (task.status == 'Approved' ? 'Completed' : 'PendingReview');
+    var resolvedStatus = json['status']?.toString() ?? task.status;
+    if (resolvedStageStatus == 'Completed' && resolvedStatus.toLowerCase() != 'rejected') {
+      resolvedStatus = 'Approved';
+    }
+
     return ApplicationItemModel(
       applicationId: task.applicationId,
       referenceNumber: json['referenceNumber']?.toString() ?? 'APP-${task.applicationId}',
       serviceName: json['serviceName']?.toString() ?? 'Application #${task.applicationId}',
       category: json['category']?.toString() ?? '',
       submittedDate: task.createdDate,
-      status: task.status,
+      status: resolvedStatus,
       applicantName: json['applicantName']?.toString(),
       verificationTask: task,
       installmentPlan: InstallmentSummary.fromJson(json['installmentPlan']),
       currentStage: (json['currentStage'] as num?)?.toInt() ?? 1,
       maxStages: (json['maxStages'] as num?)?.toInt() ?? 1,
-      stageStatus: json['stageStatus']?.toString() ?? (task.status == 'Approved' ? 'Completed' : 'PendingReview'),
+      stageStatus: resolvedStageStatus,
       amount: (json['amount'] as num?)?.toDouble() ?? 0.0,
       userEmail: json['userEmail']?.toString(),
       department: json['department']?.toString(),

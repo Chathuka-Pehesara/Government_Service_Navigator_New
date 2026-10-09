@@ -209,7 +209,11 @@ namespace Government_Service_Navigator.Backend.Services
                 var effectiveStatus = t.Status;
                 var isUnsubmittedStage = s != null && s.CurrentStage > t.StageNumber;
 
-                if (isUnsubmittedStage)
+                if (s?.StageStatus == "Completed")
+                {
+                    effectiveStatus = "Approved";
+                }
+                else if (isUnsubmittedStage)
                 {
                     effectiveStatus = s!.StageStatus == "StageApproved" ? "StageApproved" : "Draft";
                 }
@@ -223,7 +227,11 @@ namespace Government_Service_Navigator.Backend.Services
                 }
 
                 var resolvedStageStatus = s?.StageStatus;
-                if (isUnsubmittedStage)
+                if (s?.StageStatus == "Completed")
+                {
+                    resolvedStageStatus = "Completed";
+                }
+                else if (isUnsubmittedStage)
                 {
                     if (string.IsNullOrEmpty(resolvedStageStatus) || resolvedStageStatus == "UnderVerification" || resolvedStageStatus == "PendingReview")
                     {

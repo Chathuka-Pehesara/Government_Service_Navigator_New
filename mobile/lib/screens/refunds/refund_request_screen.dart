@@ -7,6 +7,7 @@ import '../../models/refund.dart';
 import '../../providers/payment_providers.dart';
 import '../../providers/refund_providers.dart';
 import '../../providers/service_providers.dart';
+import '../../providers/session_provider.dart';
 import '../../utils/validators.dart';
 import 'refund_detail_screen.dart';
 
@@ -137,6 +138,30 @@ class _RefundRequestScreenState extends ConsumerState<RefundRequestScreen> {
   Future<void> _onSubmitPressed() async {
     if (!_formKey.currentState!.validate()) return;
     if (!mounted) return;
+
+    final session = ref.read(sessionProvider);
+    final currentUserEmail = session.email.trim().toLowerCase();
+    if (!session.isSignedIn || currentUserEmail.isEmpty) {
+      setState(() {
+        _errorMessage = 'Please sign in to request a refund.';
+      });
+      return;
+    }
+
+    if (_selectedPayment == null) {
+      setState(() {
+        _errorMessage = 'Please select one of your eligible payments.';
+      });
+      return;
+    }
+
+    final pEmail = (_selectedPayment!.userEmail ?? '').trim().toLowerCase();
+    if (pEmail.isNotEmpty && pEmail != currentUserEmail) {
+      setState(() {
+        _errorMessage = 'You can only request refunds for your own payments.';
+      });
+      return;
+    }
 
     setState(() {
       _isLoading = true;
@@ -405,6 +430,15 @@ class _RefundRequestScreenState extends ConsumerState<RefundRequestScreen> {
   };
 
   Widget _buildPaymentPicker() {
+    final session = ref.watch(sessionProvider);
+    final currentUserEmail = session.email.trim().toLowerCase();
+
+    if (!session.isSignedIn || currentUserEmail.isEmpty) {
+      return _buildPickerMessage(
+        'Please sign in to view and request refunds for your payments.',
+      );
+    }
+
     final paymentsAsync = ref.watch(myPaymentsProvider);
     final refundsAsync = ref.watch(myRefundsProvider);
 
@@ -428,15 +462,21 @@ class _RefundRequestScreenState extends ConsumerState<RefundRequestScreen> {
       );
     }
 
-    final payments = paymentsAsync.value ?? const <Payment>[];
+    final allPayments = paymentsAsync.value ?? const <Payment>[];
     final blockedPaymentIds = {
       for (final r in refundsAsync.value ?? const <RefundRequest>[])
         if (_blockingRefundStatuses.contains(r.status)) r.paymentId,
     };
 
     final eligible =
-        payments
-            .where((p) => _isRefundable(p) && !blockedPaymentIds.contains(p.id))
+        allPayments
+            .where((p) {
+              final pEmail = (p.userEmail ?? '').trim().toLowerCase();
+              if (pEmail.isNotEmpty && pEmail != currentUserEmail) {
+                return false;
+              }
+              return _isRefundable(p) && !blockedPaymentIds.contains(p.id);
+            })
             .toList()
           ..sort((a, b) => (b.paidDate ?? '').compareTo(a.paidDate ?? ''));
 
@@ -446,6 +486,21 @@ class _RefundRequestScreenState extends ConsumerState<RefundRequestScreen> {
       if (match.isNotEmpty) {
         WidgetsBinding.instance.addPostFrameCallback((_) {
           if (mounted && _selectedPayment == null) _selectPayment(match.first);
+        });
+      } else if (!paymentsAsync.isLoading && !refundsAsync.isLoading) {
+        // The specified payment does not belong to the current user or is not eligible
+        WidgetsBinding.instance.addPostFrameCallback((_) {
+          if (mounted &&
+              _selectedPayment == null &&
+              _paymentIdController.text.isNotEmpty) {
+            setState(() {
+              _paymentIdController.clear();
+              _amountController.clear();
+              _departmentController.clear();
+              _errorMessage =
+                  'The specified payment does not belong to your account or is not eligible for refund.';
+            });
+          }
         });
       }
     }

@@ -204,14 +204,13 @@ public class PaymentServiceTests
         Assert.Single(mine);
     }
 
-    /// <summary>Known gap: a user with no payments gets every citizen's payments instead of an empty list.</summary>
     [Fact]
-    public async Task GetByUser_NoPaymentsOfTheirOwn_ReturnsEveryonesPayments()
+    public async Task GetByUser_NoPaymentsOfTheirOwn_ReturnsEmptyList()
     {
         await AddPayment(email: "someone@example.lk");
 
         var result = await _payments.GetByUserAsync("new.citizen@example.lk");
 
-        Assert.Single(result);
+        Assert.Empty(result);
     }
 }
