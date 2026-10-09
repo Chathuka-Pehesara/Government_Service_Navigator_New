@@ -256,6 +256,11 @@ function ServiceConfigurationTabsContent() {
     description: "",
     isMandatory: true,
   });
+  const [docErrors, setDocErrors] = useState<{
+    documentName?: string;
+    description?: string;
+    general?: string;
+  }>({});
 
   // Modal State for Adding/Editing Fees
   const [isFeeModalOpen, setIsFeeModalOpen] = useState(false);
@@ -266,6 +271,12 @@ function ServiceConfigurationTabsContent() {
     amount: "",
     effectiveDate: new Date().toISOString().split("T")[0],
   });
+  const [feeErrors, setFeeErrors] = useState<{
+    feeType?: string;
+    amount?: string;
+    effectiveDate?: string;
+    general?: string;
+  }>({});
 
   // Knowledge Base State
   const [knowledgeChunks, setKnowledgeChunks] = useState<Array<{ id: string; content: string; sourceCategory: string }>>([]);
@@ -705,6 +716,7 @@ function ServiceConfigurationTabsContent() {
     setIsDocEditMode(false);
     setCurrentDocId(null);
     setDocForm({ documentName: "", description: "", isMandatory: true });
+    setDocErrors({});
     setIsDocModalOpen(true);
   };
 
@@ -716,16 +728,46 @@ function ServiceConfigurationTabsContent() {
       description: doc.description === "—" ? "" : doc.description,
       isMandatory: doc.isMandatory,
     });
+    setDocErrors({});
     setIsDocModalOpen(true);
   };
 
   const handleSaveDocument = async () => {
-    const otherNames = documents.filter((d) => !isDocEditMode || d.id !== currentDocId).map((d) => d.documentName);
-    const problem = documentError(docForm, otherNames);
-    if (problem) {
-      setNotification({ type: "error", title: "Check the document", subtitle: problem });
+    const trimmedName = docForm.documentName.trim();
+    const trimmedDesc = docForm.description.trim();
+
+    const errors: { documentName?: string; description?: string; general?: string } = {};
+
+    if (!trimmedName) {
+      errors.documentName = "Document Type Name cannot be empty.";
+    } else if (!/[a-zA-Z]/.test(trimmedName)) {
+      errors.documentName = "Document Type Name must contain letters and cannot be only numbers.";
+    } else if (trimmedName.length > 200) {
+      errors.documentName = "Document Type Name must be at most 200 characters.";
+    } else {
+      const otherNames = documents
+        .filter((d) => !isDocEditMode || d.id !== currentDocId)
+        .map((d) => d.documentName);
+      if (otherNames.some((n) => n.trim().toLowerCase() === trimmedName.toLowerCase())) {
+        errors.documentName = "This document is already listed for the service.";
+      }
+    }
+
+    if (!trimmedDesc) {
+      errors.description = "Description cannot be empty.";
+    } else if (trimmedDesc.length > 1000) {
+      errors.description = "Description must be at most 1000 characters.";
+    }
+
+    if (Object.keys(errors).length > 0) {
+      const warningMessage = errors.documentName || errors.description || "Please resolve highlighted fields before submitting.";
+      errors.general = warningMessage;
+      setDocErrors(errors);
+      setNotification({ type: "warning", title: "Validation Warning", subtitle: warningMessage });
       return;
     }
+
+    setDocErrors({});
 
     let updatedDocs = [...documents];
     if (isDocEditMode) {
@@ -772,6 +814,7 @@ function ServiceConfigurationTabsContent() {
         );
         setIsDocModalOpen(false);
         setDocForm({ documentName: "", description: "", isMandatory: true });
+        setDocErrors({});
         setNotification({
           type: "success",
           title: "Success",
@@ -818,6 +861,7 @@ function ServiceConfigurationTabsContent() {
       amount: "",
       effectiveDate: new Date().toISOString().split("T")[0],
     });
+    setFeeErrors({});
     setIsFeeModalOpen(true);
   };
 
@@ -831,20 +875,56 @@ function ServiceConfigurationTabsContent() {
         ? fee.effectiveDate.split("T")[0]
         : new Date().toISOString().split("T")[0],
     });
+    setFeeErrors({});
     setIsFeeModalOpen(true);
   };
 
   const handleSaveFee = async () => {
-    const effective = new Date(feeForm.effectiveDate);
-    const problem =
-      feeError(feeForm) ??
-      (isNaN(effective.getTime()) || effective.getFullYear() < 2000 || effective.getFullYear() > 2100
-        ? "Effective date must be a valid date."
-        : null);
-    if (problem) {
-      setNotification({ type: "error", title: "Check the fee", subtitle: problem });
+    const trimmedFeeType = feeForm.feeType.trim();
+    const trimmedAmount = String(feeForm.amount ?? "").trim();
+    const trimmedDate = String(feeForm.effectiveDate ?? "").trim();
+
+    const errors: { feeType?: string; amount?: string; effectiveDate?: string; general?: string } = {};
+
+    if (!trimmedFeeType) {
+      errors.feeType = "Fee Type cannot be empty.";
+    } else if (!/[a-zA-Z]/.test(trimmedFeeType)) {
+      errors.feeType = "Fee Type must contain letters and cannot be only numbers.";
+    } else if (trimmedFeeType.length > 100) {
+      errors.feeType = "Fee Type must be at most 100 characters.";
+    }
+
+    if (!trimmedAmount) {
+      errors.amount = "Amount cannot be empty.";
+    } else if (!/^[0-9]+(\.[0-9]{1,2})?$/.test(trimmedAmount)) {
+      errors.amount = "Amount must be a valid number with at most 2 decimal places.";
+    } else {
+      const numAmount = Number(trimmedAmount);
+      if (numAmount < 0) {
+        errors.amount = "Amount must be 0 or more.";
+      } else if (numAmount > 10_000_000) {
+        errors.amount = "Amount must not exceed LKR 10,000,000.";
+      }
+    }
+
+    if (!trimmedDate) {
+      errors.effectiveDate = "Effective date cannot be empty.";
+    } else {
+      const effective = new Date(trimmedDate);
+      if (isNaN(effective.getTime()) || effective.getFullYear() < 2000 || effective.getFullYear() > 2100) {
+        errors.effectiveDate = "Effective date must be a valid date between years 2000 and 2100.";
+      }
+    }
+
+    if (Object.keys(errors).length > 0) {
+      const warningMessage = errors.feeType || errors.amount || errors.effectiveDate || "Please resolve highlighted fields before submitting.";
+      errors.general = warningMessage;
+      setFeeErrors(errors);
+      setNotification({ type: "warning", title: "Validation Warning", subtitle: warningMessage });
       return;
     }
+
+    setFeeErrors({});
     let updatedFees = [...fees];
     if (isFeeEditMode) {
       updatedFees = updatedFees.map((f) =>
@@ -893,6 +973,12 @@ function ServiceConfigurationTabsContent() {
           ),
         );
         setIsFeeModalOpen(false);
+        setFeeForm({
+          feeType: "",
+          amount: "",
+          effectiveDate: new Date().toISOString().split("T")[0],
+        });
+        setFeeErrors({});
         setNotification({
           type: "success",
           title: "Success",
@@ -2276,7 +2362,10 @@ function ServiceConfigurationTabsContent() {
           }
           primaryButtonText={isDocEditMode ? "Save Changes" : "Add Document"}
           secondaryButtonText="Cancel"
-          onRequestClose={() => setIsDocModalOpen(false)}
+          onRequestClose={() => {
+            setIsDocModalOpen(false);
+            setDocErrors({});
+          }}
           onRequestSubmit={handleSaveDocument}
         >
           <div
@@ -2287,23 +2376,52 @@ function ServiceConfigurationTabsContent() {
               paddingTop: "1rem",
             }}
           >
+            {docErrors.general && (
+              <InlineNotification
+                kind="warning"
+                lowContrast
+                title="Validation Warning"
+                subtitle={docErrors.general}
+                onCloseButtonClick={() =>
+                  setDocErrors((prev) => ({ ...prev, general: undefined }))
+                }
+              />
+            )}
             <TextInput
               id="docName"
-              labelText="Document Type Name"
+              labelText="Document Type Name *"
               placeholder="e.g., National Identity Card (NIC)"
               value={docForm.documentName}
-              onChange={(e) =>
-                setDocForm({ ...docForm, documentName: e.target.value })
-              }
+              invalid={Boolean(docErrors.documentName)}
+              invalidText={docErrors.documentName}
+              onChange={(e) => {
+                setDocForm({ ...docForm, documentName: e.target.value });
+                if (docErrors.documentName || docErrors.general) {
+                  setDocErrors((prev) => ({
+                    ...prev,
+                    documentName: undefined,
+                    general: undefined,
+                  }));
+                }
+              }}
             />
             <TextInput
               id="docDesc"
-              labelText="Description / Instructions"
+              labelText="Description / Instructions *"
               placeholder="e.g., Front and back copy required"
               value={docForm.description}
-              onChange={(e) =>
-                setDocForm({ ...docForm, description: e.target.value })
-              }
+              invalid={Boolean(docErrors.description)}
+              invalidText={docErrors.description}
+              onChange={(e) => {
+                setDocForm({ ...docForm, description: e.target.value });
+                if (docErrors.description || docErrors.general) {
+                  setDocErrors((prev) => ({
+                    ...prev,
+                    description: undefined,
+                    general: undefined,
+                  }));
+                }
+              }}
             />
             <Checkbox
               id="isMandatory"
@@ -2324,7 +2442,10 @@ function ServiceConfigurationTabsContent() {
           }
           primaryButtonText={isFeeEditMode ? "Save Changes" : "Add Fee"}
           secondaryButtonText="Cancel"
-          onRequestClose={() => setIsFeeModalOpen(false)}
+          onRequestClose={() => {
+            setIsFeeModalOpen(false);
+            setFeeErrors({});
+          }}
           onRequestSubmit={handleSaveFee}
         >
           <div
@@ -2335,33 +2456,71 @@ function ServiceConfigurationTabsContent() {
               paddingTop: "1rem",
             }}
           >
+            {feeErrors.general && (
+              <InlineNotification
+                kind="warning"
+                lowContrast
+                title="Validation Warning"
+                subtitle={feeErrors.general}
+                onCloseButtonClick={() =>
+                  setFeeErrors((prev) => ({ ...prev, general: undefined }))
+                }
+              />
+            )}
             <TextInput
               id="feeType"
-              labelText="Fee Type"
+              labelText="Fee Type *"
               placeholder="e.g., Standard Processing Fee"
               value={feeForm.feeType}
-              onChange={(e) =>
-                setFeeForm({ ...feeForm, feeType: e.target.value })
-              }
+              invalid={Boolean(feeErrors.feeType)}
+              invalidText={feeErrors.feeType}
+              onChange={(e) => {
+                setFeeForm({ ...feeForm, feeType: e.target.value });
+                if (feeErrors.feeType || feeErrors.general) {
+                  setFeeErrors((prev) => ({
+                    ...prev,
+                    feeType: undefined,
+                    general: undefined,
+                  }));
+                }
+              }}
             />
             <TextInput
               id="feeAmount"
-              labelText="Amount (LKR)"
+              labelText="Amount (LKR) *"
               type="number"
               placeholder="e.g., 1500"
               value={feeForm.amount}
-              onChange={(e) =>
-                setFeeForm({ ...feeForm, amount: e.target.value })
-              }
+              invalid={Boolean(feeErrors.amount)}
+              invalidText={feeErrors.amount}
+              onChange={(e) => {
+                setFeeForm({ ...feeForm, amount: e.target.value });
+                if (feeErrors.amount || feeErrors.general) {
+                  setFeeErrors((prev) => ({
+                    ...prev,
+                    amount: undefined,
+                    general: undefined,
+                  }));
+                }
+              }}
             />
             <TextInput
               id="feeEffectiveDate"
-              labelText="Effective Date"
+              labelText="Effective Date *"
               type="date"
               value={feeForm.effectiveDate}
-              onChange={(e) =>
-                setFeeForm({ ...feeForm, effectiveDate: e.target.value })
-              }
+              invalid={Boolean(feeErrors.effectiveDate)}
+              invalidText={feeErrors.effectiveDate}
+              onChange={(e) => {
+                setFeeForm({ ...feeForm, effectiveDate: e.target.value });
+                if (feeErrors.effectiveDate || feeErrors.general) {
+                  setFeeErrors((prev) => ({
+                    ...prev,
+                    effectiveDate: undefined,
+                    general: undefined,
+                  }));
+                }
+              }}
             />
           </div>
         </Modal>

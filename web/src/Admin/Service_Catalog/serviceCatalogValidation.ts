@@ -33,18 +33,28 @@ export function rulesError(rules: { field: string; operator: string; value: stri
 }
 
 export function documentError(doc: { documentName: string; description?: string }, existingNames: string[]): string | null {
-  const nameError = v.text("Document name", { max: 200 })(doc.documentName);
+  const name = (doc.documentName ?? "").trim();
+  if (!name) return "Document name is required and cannot be empty.";
+  if (!/[a-zA-Z]/.test(name)) return "Document name must contain letters and cannot be only numbers.";
+  const nameError = v.text("Document name", { max: 200 })(name);
   if (nameError) return nameError;
-  if (existingNames.some((n) => n.trim().toLowerCase() === doc.documentName.trim().toLowerCase())) {
+  if (existingNames.some((n) => n.trim().toLowerCase() === name.toLowerCase())) {
     return "This document is already listed for the service.";
   }
-  return v.text("Description", { max: 1000, required: false })(doc.description ?? "");
+  const desc = (doc.description ?? "").trim();
+  if (!desc) return "Description is required and cannot be empty.";
+  return v.text("Description", { max: 1000 })(desc);
 }
 
 export function feeError(fee: { feeType: string; amount: number | string }): string | null {
+  const type = (fee.feeType ?? "").trim();
+  if (!type) return "Fee type is required and cannot be empty.";
+  if (!/[a-zA-Z]/.test(type)) return "Fee type must contain letters and cannot be only numbers.";
+  const amtStr = String(fee.amount ?? "").trim();
+  if (!amtStr) return "Amount is required and cannot be empty.";
   return (
-    v.text("Fee type", { max: 100 })(fee.feeType) ??
+    v.text("Fee type", { max: 100 })(type) ??
     // A fee of 0 is allowed (free service)
-    v.amount("Amount", { allowZero: true })(String(fee.amount))
+    v.amount("Amount", { allowZero: true })(amtStr)
   );
 }
