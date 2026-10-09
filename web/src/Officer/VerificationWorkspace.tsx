@@ -14,10 +14,10 @@ import {
   InlineNotification,
   Tag,
   Pagination,
-  Toggle,
-  Modal
+  Toggle
 } from "@carbon/react";
-import { Checkmark, Close, Document, ChevronLeft, ArrowRight, Warning, Money, TrashCan, Security, Task, CheckmarkFilled, WarningAltFilled } from "@carbon/icons-react";
+import { Checkmark, Close, Document, ChevronLeft, ArrowRight, Warning, Money, Security, Task, CheckmarkFilled, WarningAltFilled } from "@carbon/icons-react";
+import jsPDF from "jspdf";
 import AgentDraftPanel from "./AgentDraftPanel";
 import DocumentPreview from "./DocumentPreview";
 import SupervisorCopilotBubble from "./SupervisorCopilotBubble";
@@ -116,10 +116,6 @@ export default function VerificationWorkspace() {
   const [reasonId, setReasonId] = useState("");
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [submitStatus, setSubmitStatus] = useState<"idle" | "success" | "error">("idle");
-  const [deleteModalOpen, setDeleteModalOpen] = useState(false);
-  const [deleteReason, setDeleteReason] = useState("Not required for review");
-  const [deleteNotes, setDeleteNotes] = useState("");
-  const [isDeleting, setIsDeleting] = useState(false);
   const [rejectionReasons, setRejectionReasons] = useState<{id: number, code: string, description: string}[]>([]);
   const [detail, setDetail] = useState<TaskDetail | null>(null);
   const [detailError, setDetailError] = useState("");
@@ -149,9 +145,9 @@ export default function VerificationWorkspace() {
         ? (paymentDocs.find(d => detail?.payment?.slipUrl && detail.payment.slipUrl.includes(d.id))
           ?? (paymentDocs.length > 0 ? paymentDocs[paymentDocs.length - 1] : null))
         : null;
-
-      const relevant = activeSlip ? [...stageDocs, activeSlip] : stageDocs;
-      const order: Record<string, number> = { stage: 0, payment: 1 };
+      const otherDocs = uploaded.filter(d => d.category !== 'stage' && d.category !== 'payment');
+      const relevant = activeSlip ? [...stageDocs, activeSlip, ...otherDocs] : [...stageDocs, ...otherDocs];
+      const order: Record<string, number> = { stage: 0, payment: 1, other: 2 };
       const sorted = [...relevant].sort((a, b) => (order[a.category] ?? 99) - (order[b.category] ?? 99));
 
       attached = sorted.map(d => ({
@@ -368,31 +364,190 @@ export default function VerificationWorkspace() {
     }
   };
 
-  const handleDeleteApplication = async () => {
-    if (!taskId) return;
-    setIsDeleting(true);
-    const token = localStorage.getItem("officerToken");
-    const fullReason = deleteNotes.trim() ? `${deleteReason}: ${deleteNotes.trim()}` : deleteReason;
-    try {
-      const response = await fetch(`${API_BASE_URL}/api/Verification/tasks/${taskId}?reason=${encodeURIComponent(fullReason)}`, {
-        method: "DELETE",
-        headers: {
-          ...(token ? { Authorization: `Bearer ${token}` } : {})
-        }
-      });
-      if (response.ok) {
-        setSubmitStatus("success");
-        setTimeout(() => navigate('/officer/pending-reviews'), 1200);
-      } else {
-        const err = await response.json().catch(() => ({}));
-        alert(err.message || "Failed to delete application.");
-      }
-    } catch (e) {
-      console.error("Delete failed", e);
-      alert("An error occurred while deleting the application.");
-    } finally {
-      setIsDeleting(false);
+  const handleExportPdf = () => {
+    if (!detail) return;
+    const doc = new jsPDF();
+    const marginX = 15;
+    let y = 18;
+
+    // Header banner
+    doc.setFillColor(15, 98, 254);
+    doc.rect(0, 0, 210, 10, 'F');
+
+    doc.setFontSize(15);
+    doc.setFont("helvetica", "bold");
+    doc.setTextColor(22, 22, 22);
+    doc.text("Government Service Navigator - Verification Dossier", marginX, y);
+    y += 6;
+
+    doc.setFontSize(9);
+    doc.setFont("helvetica", "normal");
+    doc.setTextColor(82, 82, 82);
+    doc.text(`Official Application Verification & Statutory Audit Dossier | Generated: ${new Date().toLocaleString()}`, marginX, y);
+    y += 6;
+
+    doc.setDrawColor(220, 220, 220);
+    doc.line(marginX, y, 195, y);
+    y += 8;
+
+    // Summary Box
+    doc.setFillColor(244, 244, 244);
+    doc.rect(marginX, y, 180, 44, 'F');
+    doc.setDrawColor(200, 200, 200);
+    doc.rect(marginX, y, 180, 44, 'S');
+
+    doc.setFontSize(9);
+    doc.setTextColor(22, 22, 22);
+
+    const refNo = detail.task.referenceNumber || `APP-${detail.task.applicationId}`;
+    const citName = detail.task.citizenName || "N/A";
+    const citNic = detail.task.citizenNic || "N/A";
+    const srvName = detail.task.serviceName || "Public Service";
+    const deptName = detail.task.department || "General Department";
+    const stageNum = detail.task.stageNumber || detail.task.currentStage || 1;
+    const maxStg = detail.task.maxStages || 1;
+    const statusText = detail.task.status || "Under Verification";
+
+    doc.setFont("helvetica", "bold");
+    doc.text("Reference No:", marginX + 4, y + 8);
+    doc.setFont("helvetica", "normal");
+    doc.text(refNo, marginX + 34, y + 8);
+
+    doc.setFont("helvetica", "bold");
+    doc.text("Citizen NIC:", marginX + 96, y + 8);
+    doc.setFont("helvetica", "normal");
+    doc.text(citNic, marginX + 124, y + 8);
+
+    doc.setFont("helvetica", "bold");
+    doc.text("Citizen Name:", marginX + 4, y + 17);
+    doc.setFont("helvetica", "normal");
+    doc.text(citName, marginX + 34, y + 17);
+
+    doc.setFont("helvetica", "bold");
+    doc.text("Email:", marginX + 96, y + 17);
+    doc.setFont("helvetica", "normal");
+    doc.text(detail.userEmail || "N/A", marginX + 124, y + 17);
+
+    doc.setFont("helvetica", "bold");
+    doc.text("Service:", marginX + 4, y + 26);
+    doc.setFont("helvetica", "normal");
+    doc.text(srvName.length > 34 ? srvName.substring(0, 31) + "..." : srvName, marginX + 34, y + 26);
+
+    doc.setFont("helvetica", "bold");
+    doc.text("Department:", marginX + 96, y + 26);
+    doc.setFont("helvetica", "normal");
+    doc.text(deptName.length > 25 ? deptName.substring(0, 22) + "..." : deptName, marginX + 124, y + 26);
+
+    doc.setFont("helvetica", "bold");
+    doc.text("Workflow Stage:", marginX + 4, y + 35);
+    doc.setFont("helvetica", "normal");
+    doc.text(`Stage ${stageNum} of ${maxStg}`, marginX + 34, y + 35);
+
+    doc.setFont("helvetica", "bold");
+    doc.text("Current Status:", marginX + 96, y + 35);
+    doc.setFont("helvetica", "normal");
+    doc.text(statusText, marginX + 124, y + 35);
+
+    y += 52;
+
+    // Statutory Fee & Payment Section
+    if (detail.payment) {
+      doc.setFontSize(11);
+      doc.setFont("helvetica", "bold");
+      doc.text("Statutory Fee Verification", marginX, y);
+      y += 6;
+
+      doc.setFontSize(9);
+      doc.setFont("helvetica", "normal");
+      const payState = detail.payment.isVerified ? "VERIFIED & POSTED" : detail.payment.status;
+      doc.text(`Amount: Rs. ${detail.payment.amount.toFixed(2)} | Method: ${detail.payment.method || "Online"} | Status: ${payState}`, marginX, y);
+      y += 10;
     }
+
+    // Citizen Form Answers Section
+    doc.setFontSize(11);
+    doc.setFont("helvetica", "bold");
+    doc.text("Citizen Submitted Application Fields", marginX, y);
+    y += 6;
+
+    const answers = Object.entries(detail.answers || {});
+    if (answers.length === 0) {
+      doc.setFontSize(9);
+      doc.setFont("helvetica", "italic");
+      doc.text("No custom form answers submitted.", marginX, y);
+      y += 8;
+    } else {
+      doc.setFontSize(8.5);
+      for (const [key, val] of answers) {
+        if (y > 270) {
+          doc.addPage();
+          y = 20;
+        }
+        doc.setFont("helvetica", "bold");
+        doc.text(`${key}:`, marginX + 4, y);
+        doc.setFont("helvetica", "normal");
+        const strVal = String(val || "-");
+        doc.text(strVal.length > 55 ? strVal.substring(0, 52) + "..." : strVal, marginX + 60, y);
+        y += 5.5;
+      }
+      y += 4;
+    }
+
+    // Documents Section
+    if (y > 250) {
+      doc.addPage();
+      y = 20;
+    }
+    doc.setFontSize(11);
+    doc.setFont("helvetica", "bold");
+    doc.text("Supporting Verification Documents", marginX, y);
+    y += 6;
+
+    const docs = detail.documents || [];
+    if (docs.length === 0) {
+      doc.setFontSize(9);
+      doc.setFont("helvetica", "italic");
+      doc.text("No attached documents uploaded for this stage.", marginX, y);
+      y += 8;
+    } else {
+      doc.setFontSize(8.5);
+      for (const d of docs) {
+        if (y > 270) {
+          doc.addPage();
+          y = 20;
+        }
+        doc.setFont("helvetica", "bold");
+        doc.text(`• ${d.fieldLabel || d.fileName}:`, marginX + 4, y);
+        doc.setFont("helvetica", "normal");
+        const sizeKb = (d.sizeBytes / 1024).toFixed(1);
+        doc.text(`${d.fileName} (${sizeKb} KB, Category: ${d.category})`, marginX + 62, y);
+        y += 5.5;
+      }
+      y += 6;
+    }
+
+    // Verification Officer Sign-off Block
+    if (y > 240) {
+      doc.addPage();
+      y = 20;
+    }
+    y += 6;
+    doc.setDrawColor(200, 200, 200);
+    doc.line(marginX, y, 195, y);
+    y += 8;
+
+    doc.setFontSize(10);
+    doc.setFont("helvetica", "bold");
+    doc.text("Verification Officer Sign-off & Audit Record", marginX, y);
+    y += 14;
+
+    doc.setFontSize(8.5);
+    doc.setFont("helvetica", "normal");
+    doc.text("Verifying Officer Signature: __________________________", marginX, y);
+    doc.text("Date & Official Seal: __________________________", marginX + 100, y);
+
+    const safeRef = refNo.replace(/[^a-zA-Z0-9_-]/g, "_");
+    doc.save(`GSN_Verification_Dossier_${safeRef}.pdf`);
   };
 
   return (
@@ -403,14 +558,14 @@ export default function VerificationWorkspace() {
             </HeaderName>
             <HeaderGlobalBar style={{ display: 'flex', alignItems: 'center', gap: '0.25rem', paddingRight: '0.5rem' }}>
                <Button
-                 kind="danger--ghost"
+                 kind="secondary"
                  size="sm"
-                 renderIcon={TrashCan}
-                 onClick={() => setDeleteModalOpen(true)}
+                 renderIcon={Document}
+                 onClick={handleExportPdf}
                  style={{ whiteSpace: 'nowrap' }}
                >
-                 <span className="hidden sm:inline">Delete Application</span>
-                 <span className="sm:hidden">Delete</span>
+                 <span className="hidden sm:inline">Export to PDF</span>
+                 <span className="sm:hidden">Export PDF</span>
                </Button>
                <Button 
                  kind="ghost" 
@@ -959,45 +1114,7 @@ export default function VerificationWorkspace() {
               </Column>
             </Grid>
 
-            {/* Delete Confirmation Modal */}
-            <Modal
-              open={deleteModalOpen}
-              modalHeading="Delete Verification Application"
-              primaryButtonText={isDeleting ? "Deleting..." : "Delete Application"}
-              secondaryButtonText="Cancel"
-              danger
-              onRequestClose={() => setDeleteModalOpen(false)}
-              onRequestSubmit={handleDeleteApplication}
-              primaryButtonDisabled={isDeleting}
-            >
-              <p style={{ marginBottom: '1rem', color: '#525252' }}>
-                Are you sure you want to delete application <strong>{detail?.task.referenceNumber}</strong> ({detail?.task.citizenName || detail?.task.citizenNic})?
-                This application will be removed from the verification queue and marked as deleted. An official audit entry will record that you deleted it.
-              </p>
-              <Select
-                id="workspace-delete-reason-select"
-                labelText="Reason for Deletion (Recorded in Audit Section)"
-                value={deleteReason}
-                onChange={(e) => setDeleteReason(e.target.value)}
-                style={{ marginBottom: '1rem' }}
-              >
-                <SelectItem value="Not required for review" text="Not required for review" />
-                <SelectItem value="Duplicate application submitted" text="Duplicate application submitted" />
-                <SelectItem value="Invalid or test application" text="Invalid or test application" />
-                <SelectItem value="Citizen requested cancellation" text="Citizen requested cancellation" />
-                <SelectItem value="Other (specified in notes)" text="Other (specified in notes)" />
-              </Select>
-              <TextArea
-                id="workspace-delete-notes"
-                labelText="Officer Remarks / Justification (Logged to Audit Trail)"
-                placeholder="Explain why this application does not need review..."
-                rows={3}
-                value={deleteNotes}
-                onChange={(e) => setDeleteNotes(e.target.value)}
-                maxCount={1000}
-                enableCounter
-              />
-            </Modal>
+
             <SupervisorCopilotBubble
               applicationId={detail?.task.applicationId}
               serviceName={detail?.task.serviceName ?? "Government Service"}

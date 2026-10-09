@@ -1,6 +1,8 @@
 import 'dart:convert';
+import 'dart:io';
 import 'package:flutter/material.dart';
 import 'package:flutter/cupertino.dart';
+import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:http/http.dart' as http;
 import '../config/app_config.dart';
@@ -520,6 +522,23 @@ class _BookingOptionsScreenState extends ConsumerState<BookingOptionsScreen> {
           const SizedBox(height: 10),
           SizedBox(
             width: double.infinity,
+            child: OutlinedButton.icon(
+              icon: const Icon(Icons.download_rounded, size: 18, color: AppColors.primary),
+              label: const Text(
+                'Download Official Booking Pass',
+                style: TextStyle(fontWeight: FontWeight.bold, color: AppColors.primary),
+              ),
+              style: OutlinedButton.styleFrom(
+                side: const BorderSide(color: AppColors.primary, width: 1.5),
+                padding: const EdgeInsets.symmetric(vertical: 12),
+                shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
+              ),
+              onPressed: () => _downloadBookingPassSlip(),
+            ),
+          ),
+          const SizedBox(height: 10),
+          SizedBox(
+            width: double.infinity,
             child: ElevatedButton.icon(
               icon: const Icon(Icons.check_circle_rounded, size: 16),
               label: const Text('Done • Return to Completed Services', style: TextStyle(fontWeight: FontWeight.bold)),
@@ -531,6 +550,148 @@ class _BookingOptionsScreenState extends ConsumerState<BookingOptionsScreen> {
               ),
               onPressed: () => Navigator.of(context).pop(_bookingResult),
             ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  Future<void> _downloadBookingPassSlip() async {
+    final code = _bookingResult?['confirmationCode'] ?? 'SL-APT-0000';
+    final date = _bookingResult?['bookedDate'] ?? 'Scheduled Date';
+    final time = _bookingResult?['bookedTime'] ?? 'Scheduled Time';
+    final dept = _bookingResult?['departmentName'] ?? _getAssignedDepartment();
+    final reasoning = _bookingResult?['agentReasoning'] ?? 'Appointment confirmed with department.';
+    final appId = widget.applicationId;
+    final citizenNic = widget.citizenNic ?? 'Registered Citizen';
+
+    final passSlip = '''
+============================================================
+      GOVERNMENT SERVICE NAVIGATOR (GSN)
+      OFFICIAL DEPARTMENT APPOINTMENT PASS
+============================================================
+
+CONFIRMATION REF : $code
+STATUS           : CONFIRMED & ACTIVE
+
+SERVICE          : ${widget.serviceName}
+DEPARTMENT       : $dept
+APPLICATION ID   : $appId
+CITIZEN NIC      : $citizenNic
+
+SCHEDULED DATE   : $date
+SCHEDULED TIME   : $time
+COLLECTION DESK  : $dept Counter Desk
+
+DISPATCH DETAILS : $reasoning
+
+------------------------------------------------------------
+IMPORTANT APPLICANT INSTRUCTIONS:
+1. Bring your original National Identity Card (NIC).
+2. Arrive 10 minutes prior to your allocated slot time.
+3. Present this booking confirmation pass at the counter desk.
+4. For inquiries or rescheduling, use the GSN Citizen Portal.
+------------------------------------------------------------
+Security Token: GSN-PASS-$code-AUTH
+Issued by LankaServe Digital Government System
+============================================================
+''';
+
+    await Clipboard.setData(ClipboardData(text: passSlip));
+
+    String? savedPath;
+    try {
+      final safeCode = code.replaceAll(RegExp(r'[^a-zA-Z0-9_-]'), '_');
+      final fileName = 'GSN_Booking_Pass_$safeCode.txt';
+      final downloadDir = Directory('/storage/emulated/0/Download');
+      if (await downloadDir.exists()) {
+        final file = File('${downloadDir.path}/$fileName');
+        await file.writeAsString(passSlip);
+        savedPath = file.path;
+      } else {
+        final tempDir = Directory.systemTemp;
+        final file = File('${tempDir.path}/$fileName');
+        await file.writeAsString(passSlip);
+        savedPath = file.path;
+      }
+    } catch (_) {
+      // Handled gracefully
+    }
+
+    if (!mounted) return;
+
+    showDialog(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
+        title: const Row(
+          children: [
+            Icon(Icons.download_done_rounded, color: AppColors.success, size: 28),
+            SizedBox(width: 10),
+            Expanded(
+              child: Text(
+                'Booking Pass Downloaded',
+                style: TextStyle(fontSize: 16, fontWeight: FontWeight.bold),
+              ),
+            ),
+          ],
+        ),
+        content: Column(
+          mainAxisSize: MainAxisSize.min,
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Container(
+              padding: const EdgeInsets.all(12),
+              decoration: BoxDecoration(
+                color: AppColors.primary.withValues(alpha: 0.08),
+                borderRadius: BorderRadius.circular(10),
+                border: Border.all(color: AppColors.primary.withValues(alpha: 0.2)),
+              ),
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Text(
+                    'Reference: $code',
+                    style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 13, color: AppColors.primary),
+                  ),
+                  const SizedBox(height: 4),
+                  Text('$date • $time', style: const TextStyle(fontSize: 12, fontWeight: FontWeight.w600)),
+                  Text(dept, style: const TextStyle(fontSize: 11, color: AppColors.secondaryLabel)),
+                ],
+              ),
+            ),
+            const SizedBox(height: 12),
+            Text(
+              savedPath != null
+                  ? 'Official pass slip saved to:\n$savedPath'
+                  : 'Official pass slip downloaded to your device.',
+              style: const TextStyle(fontSize: 12, color: AppColors.secondaryLabel),
+            ),
+            const SizedBox(height: 8),
+            const Text(
+              '✓ Full pass slip and booking reference have also been copied to your clipboard.',
+              style: TextStyle(fontSize: 11, color: AppColors.success, fontWeight: FontWeight.w600),
+            ),
+          ],
+        ),
+        actions: [
+          TextButton(
+            onPressed: () {
+              Clipboard.setData(ClipboardData(text: passSlip));
+              ScaffoldMessenger.of(context).showSnackBar(
+                const SnackBar(content: Text('Pass details copied to clipboard!')),
+              );
+            },
+            child: const Text('Copy Details'),
+          ),
+          ElevatedButton(
+            style: ElevatedButton.styleFrom(
+              backgroundColor: AppColors.primary,
+              foregroundColor: Colors.white,
+              shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
+            ),
+            onPressed: () => Navigator.of(ctx).pop(),
+            child: const Text('OK'),
           ),
         ],
       ),

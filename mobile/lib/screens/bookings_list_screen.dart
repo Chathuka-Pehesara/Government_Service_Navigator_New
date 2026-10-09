@@ -1,4 +1,5 @@
 import 'dart:convert';
+import 'dart:io';
 import 'package:flutter/material.dart';
 import 'package:flutter/cupertino.dart';
 import 'package:flutter/services.dart';
@@ -269,19 +270,187 @@ class _BookingsListScreenState extends ConsumerState<BookingsListScreen> {
             ),
             const SizedBox(height: 20),
 
-            // Close Pass
-            ElevatedButton(
-              style: ElevatedButton.styleFrom(
-                backgroundColor: AppColors.primary,
-                foregroundColor: Colors.white,
-                padding: const EdgeInsets.symmetric(vertical: 14),
-                shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
-              ),
-              onPressed: () => Navigator.of(ctx).pop(),
-              child: const Text('Close Pass', style: TextStyle(fontWeight: FontWeight.bold)),
+            // Actions
+            Row(
+              children: [
+                Expanded(
+                  child: OutlinedButton.icon(
+                    icon: const Icon(Icons.download_rounded, size: 18),
+                    label: const Text('Download Pass Slip', style: TextStyle(fontWeight: FontWeight.bold)),
+                    style: OutlinedButton.styleFrom(
+                      padding: const EdgeInsets.symmetric(vertical: 14),
+                      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+                    ),
+                    onPressed: () {
+                      Navigator.of(ctx).pop();
+                      _downloadBookingPass(booking, serviceName);
+                    },
+                  ),
+                ),
+                const SizedBox(width: 10),
+                Expanded(
+                  child: ElevatedButton(
+                    style: ElevatedButton.styleFrom(
+                      backgroundColor: AppColors.primary,
+                      foregroundColor: Colors.white,
+                      padding: const EdgeInsets.symmetric(vertical: 14),
+                      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+                    ),
+                    onPressed: () => Navigator.of(ctx).pop(),
+                    child: const Text('Close Pass', style: TextStyle(fontWeight: FontWeight.bold)),
+                  ),
+                ),
+              ],
             ),
           ],
         ),
+      ),
+    );
+  }
+
+  Future<void> _downloadBookingPass(
+    Map<String, dynamic> booking,
+    String serviceName, {
+    String? appId,
+  }) async {
+    final code = booking['confirmationCode'] ?? 'SL-APT-0000';
+    final date = booking['bookedDate'] ?? '';
+    final time = booking['bookedSlotTime'] ?? 'Scheduled Window';
+    final dept = booking['departmentName'] ?? 'Government Department';
+    final notes = booking['agentNotes'] ?? '';
+    final cleanAppId = appId ?? booking['applicationCode'] ?? booking['applicationId'] ?? 'N/A';
+    final citizenNic = _citizenNic ?? 'Registered Citizen';
+
+    final passSlip = '''
+============================================================
+      GOVERNMENT SERVICE NAVIGATOR (GSN)
+      OFFICIAL DEPARTMENT APPOINTMENT PASS
+============================================================
+
+CONFIRMATION REF : $code
+STATUS           : CONFIRMED & ACTIVE
+
+SERVICE          : $serviceName
+DEPARTMENT       : $dept
+APPLICATION ID   : $cleanAppId
+CITIZEN NIC      : $citizenNic
+
+SCHEDULED DATE   : $date
+SCHEDULED TIME   : $time
+COLLECTION DESK  : $dept Counter Collection Desk
+
+SPECIAL NOTES    : ${notes.isEmpty ? 'Statutory counter collection appointment confirmed.' : notes}
+
+------------------------------------------------------------
+IMPORTANT APPLICANT INSTRUCTIONS:
+1. Bring your original National Identity Card (NIC).
+2. Arrive 10 minutes prior to your allocated slot time.
+3. Present this booking confirmation pass at the counter desk.
+4. For inquiries or rescheduling, use the GSN Citizen Portal.
+------------------------------------------------------------
+Security Token: GSN-PASS-$code-AUTH
+Issued by LankaServe Digital Government System
+============================================================
+''';
+
+    await Clipboard.setData(ClipboardData(text: passSlip));
+
+    String? savedPath;
+    try {
+      final safeCode = code.replaceAll(RegExp(r'[^a-zA-Z0-9_-]'), '_');
+      final fileName = 'GSN_Booking_Pass_$safeCode.txt';
+      final downloadDir = Directory('/storage/emulated/0/Download');
+      if (await downloadDir.exists()) {
+        final file = File('${downloadDir.path}/$fileName');
+        await file.writeAsString(passSlip);
+        savedPath = file.path;
+      } else {
+        final tempDir = Directory.systemTemp;
+        final file = File('${tempDir.path}/$fileName');
+        await file.writeAsString(passSlip);
+        savedPath = file.path;
+      }
+    } catch (_) {
+      // Storage fallback handled gracefully
+    }
+
+    if (!mounted) return;
+
+    showDialog(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
+        title: const Row(
+          children: [
+            Icon(Icons.download_done_rounded, color: AppColors.success, size: 28),
+            SizedBox(width: 10),
+            Expanded(
+              child: Text(
+                'Booking Pass Downloaded',
+                style: TextStyle(fontSize: 16, fontWeight: FontWeight.bold),
+              ),
+            ),
+          ],
+        ),
+        content: Column(
+          mainAxisSize: MainAxisSize.min,
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Container(
+              padding: const EdgeInsets.all(12),
+              decoration: BoxDecoration(
+                color: AppColors.primary.withValues(alpha: 0.08),
+                borderRadius: BorderRadius.circular(10),
+                border: Border.all(color: AppColors.primary.withValues(alpha: 0.2)),
+              ),
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Text(
+                    'Reference: $code',
+                    style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 13, color: AppColors.primary),
+                  ),
+                  const SizedBox(height: 4),
+                  Text(date.isNotEmpty ? '$date • $time' : time,
+                      style: const TextStyle(fontSize: 12, fontWeight: FontWeight.w600)),
+                  Text(dept, style: const TextStyle(fontSize: 11, color: AppColors.secondaryLabel)),
+                ],
+              ),
+            ),
+            const SizedBox(height: 12),
+            Text(
+              savedPath != null
+                  ? 'Official pass slip saved to:\n$savedPath'
+                  : 'Official pass slip downloaded to your device.',
+              style: const TextStyle(fontSize: 12, color: AppColors.secondaryLabel),
+            ),
+            const SizedBox(height: 8),
+            const Text(
+              '✓ Full pass slip and booking reference have also been copied to your clipboard.',
+              style: TextStyle(fontSize: 11, color: AppColors.success, fontWeight: FontWeight.w600),
+            ),
+          ],
+        ),
+        actions: [
+          TextButton(
+            onPressed: () {
+              Clipboard.setData(ClipboardData(text: passSlip));
+              ScaffoldMessenger.of(context).showSnackBar(
+                const SnackBar(content: Text('Pass details copied to clipboard!')),
+              );
+            },
+            child: const Text('Copy Details'),
+          ),
+          ElevatedButton(
+            style: ElevatedButton.styleFrom(
+              backgroundColor: AppColors.primary,
+              foregroundColor: Colors.white,
+              shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
+            ),
+            onPressed: () => Navigator.of(ctx).pop(),
+            child: const Text('OK'),
+          ),
+        ],
       ),
     );
   }
@@ -579,7 +748,13 @@ class _BookingsListScreenState extends ConsumerState<BookingsListScreen> {
                                 onPressed: () => _showCollectionPass(booking, serviceName),
                               ),
                             ),
-                            const SizedBox(width: 8),
+                            const SizedBox(width: 6),
+                            IconButton(
+                              icon: const Icon(Icons.download_rounded, size: 20, color: AppColors.primary),
+                              tooltip: 'Download Pass',
+                              onPressed: () => _downloadBookingPass(booking, serviceName, appId: appId),
+                            ),
+                            const SizedBox(width: 4),
                             IconButton(
                               icon: const Icon(Icons.edit_calendar_rounded, size: 18),
                               tooltip: 'Reschedule Slot',

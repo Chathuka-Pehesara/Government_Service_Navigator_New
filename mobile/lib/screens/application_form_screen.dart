@@ -207,7 +207,7 @@ class _ApplicationFormScreenState extends ConsumerState<ApplicationFormScreen> {
         headers: {'Content-Type': 'application/json'},
         body: jsonEncode({
           'applicationId': _activeApplicationId ?? widget.applicationId ?? 0,
-          'serviceProcedureId': widget.serviceId,
+          'serviceProcedureId': _effectiveServiceId,
           'serviceName': widget.serviceName,
           'citizenNic': userNic,
           'citizenName': session.fullName ?? (session.user?['fullName']?.toString() ?? answers['name'] ?? answers['fullName'] ?? ''),
@@ -495,8 +495,25 @@ class _ApplicationFormScreenState extends ConsumerState<ApplicationFormScreen> {
     return null;
   }
 
+  int get _effectiveServiceId {
+    final allLiveServices = ref.read(servicesProvider).asData?.value ?? [];
+    if (allLiveServices.isNotEmpty && widget.serviceName.trim().isNotEmpty) {
+      final matchedByName = allLiveServices.where(
+        (s) => s['name']?.toString().trim().toLowerCase() == widget.serviceName.trim().toLowerCase(),
+      ).firstOrNull ?? allLiveServices.where(
+        (s) => s['name']?.toString().toLowerCase().contains(widget.serviceName.toLowerCase()) == true ||
+               widget.serviceName.toLowerCase().contains(s['name']?.toString().toLowerCase() ?? ''),
+      ).firstOrNull;
+
+      if (matchedByName != null && matchedByName['id'] != null && (matchedByName['id'] as num) > 0) {
+        return (matchedByName['id'] as num).toInt();
+      }
+    }
+    return widget.serviceId > 0 ? widget.serviceId : 1;
+  }
+
   // Loaded form data. Read (not watched) so these are safe in callbacks; [build] watches.
-  AsyncValue<ApplicationFormData> get _formState => ref.read(applicationFormDataProvider(widget.serviceId));
+  AsyncValue<ApplicationFormData> get _formState => ref.read(applicationFormDataProvider(_effectiveServiceId));
   bool get _isLoading => _isStageMode ? _isLoadingStageForm : _formState.isLoading;
   String? get _loadError => _isStageMode
       ? _stageFormError
@@ -675,7 +692,7 @@ class _ApplicationFormScreenState extends ConsumerState<ApplicationFormScreen> {
         );
       } else {
         result = await ServiceApiClient.submitApplication(
-          serviceId: widget.serviceId,
+          serviceId: _effectiveServiceId,
           applicationId: _activeApplicationId ?? widget.applicationId,
           templateId: _template?['id']?.toString(),
           answers: _collectAnswers(),
@@ -755,7 +772,7 @@ class _ApplicationFormScreenState extends ConsumerState<ApplicationFormScreen> {
 
   @override
   Widget build(BuildContext context) {
-    ref.watch(applicationFormDataProvider(widget.serviceId));
+    ref.watch(applicationFormDataProvider(_effectiveServiceId));
     return PopScope(
       canPop: true,
       onPopInvokedWithResult: (didPop, result) {

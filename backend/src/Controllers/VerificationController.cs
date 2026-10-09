@@ -240,40 +240,40 @@ namespace Government_Service_Navigator.Backend.Controllers
 
             if (submission != null)
             {
-                var stageTemplate = await _context.Templates
+                var serviceTemplates = await _context.Templates
                     .Include(t => t.Fields)
-                    .Where(t => t.ServiceProcedureId == submission.ServiceProcedureId
-                                && t.StageOrder == activeReviewStage)
+                    .Where(t => t.ServiceProcedureId == submission.ServiceProcedureId)
                     .OrderByDescending(t => t.Status == "Active" ? 1 : 0)
-                    .ThenByDescending(t => t.CreatedAt)
-                    .FirstOrDefaultAsync();
+                    .ToListAsync();
 
-                if (stageTemplate != null)
+                foreach (var st in serviceTemplates)
                 {
-                    foreach (var f in stageTemplate.Fields)
+                    foreach (var f in st.Fields)
                     {
                         var clean = f.Label.Trim().TrimEnd(':');
                         if (string.Equals(f.Type, "payment", StringComparison.OrdinalIgnoreCase))
                         {
-                            stageHasPaymentField = true;
-                            stagePaymentLabels.Add(clean);
-                            if (!string.IsNullOrWhiteSpace(f.Options))
+                            if (st.StageOrder == activeReviewStage || serviceTemplates.Count <= 1)
                             {
-                                try
+                                stageHasPaymentField = true;
+                                stagePaymentLabels.Add(clean);
+                                if (!string.IsNullOrWhiteSpace(f.Options))
                                 {
-                                    using var pDoc = JsonDocument.Parse(f.Options);
-                                    if (pDoc.RootElement.TryGetProperty("amount", out var a)) stageFeeAmount = a.GetDecimal();
-                                    if (pDoc.RootElement.TryGetProperty("feeType", out var ft) && !string.IsNullOrWhiteSpace(ft.GetString()))
-                                        stagePaymentLabels.Add(ft.GetString()!.Trim().TrimEnd(':'));
+                                    try
+                                    {
+                                        using var pDoc = JsonDocument.Parse(f.Options);
+                                        if (pDoc.RootElement.TryGetProperty("amount", out var a)) stageFeeAmount = a.GetDecimal();
+                                        if (pDoc.RootElement.TryGetProperty("feeType", out var ft) && !string.IsNullOrWhiteSpace(ft.GetString()))
+                                            stagePaymentLabels.Add(ft.GetString()!.Trim().TrimEnd(':'));
+                                    }
+                                    catch { }
                                 }
-                                catch { }
                             }
                         }
                         else if (string.Equals(f.Type, "file", StringComparison.OrdinalIgnoreCase)
                                  || string.Equals(f.Type, "document", StringComparison.OrdinalIgnoreCase)
                                  || string.Equals(f.Type, "documentUpload", StringComparison.OrdinalIgnoreCase))
                         {
-                            // Only file/document fields configured on this stage template (required or optional) are stage documents
                             stageFileLabels.Add(clean);
                         }
                     }
@@ -290,34 +290,28 @@ namespace Government_Service_Navigator.Backend.Controllers
                 var label = d.FieldLabel?.Trim().TrimEnd(':') ?? "";
                 var normLabel = NormalizeDocLabel(label);
 
-                // 1. Stage document check:
-                // Only matches if it corresponds to an evidentiary file field configured on THIS current stage template.
-                bool isStageDoc = !string.IsNullOrEmpty(normLabel) && stageFileLabels.Any(s =>
-                    string.Equals(NormalizeDocLabel(s), normLabel, StringComparison.OrdinalIgnoreCase)
+                // 1. Payment slip check:
+                bool isPaymentSlip = (payment != null && !string.IsNullOrEmpty(payment.ManualSlipUrl) && payment.ManualSlipUrl.Contains(d.Id.ToString(), StringComparison.OrdinalIgnoreCase))
+                    || (!string.IsNullOrEmpty(normLabel) && stagePaymentLabels.Any(pl => string.Equals(NormalizeDocLabel(pl), normLabel, StringComparison.OrdinalIgnoreCase)))
+                    || normLabel.Contains("slip") || normLabel.Contains("deposit") || normLabel.Contains("transferreceipt");
+
+                // 2. Stage document check:
+                // Matches if configured in templates, or referenced in citizen form answers, or uploaded for this application
+                bool isStageDoc = !isPaymentSlip && (
+                    (!string.IsNullOrEmpty(normLabel) && stageFileLabels.Any(s => string.Equals(NormalizeDocLabel(s), normLabel, StringComparison.OrdinalIgnoreCase)))
+                    || (!string.IsNullOrEmpty(label) && answers.ContainsKey(label))
+                    || answers.Values.Any(v => !string.IsNullOrEmpty(v) && string.Equals(v, d.FileName, StringComparison.OrdinalIgnoreCase))
+                    || stageFileLabels.Count == 0
+                    || (submission?.MaxStages <= 1)
                 );
 
-                if (!isStageDoc && stageFileLabels.Count == 0 && (submission?.MaxStages <= 1))
-                {
-                    isStageDoc = true;
-                }
-
-                // 2. Payment slip check:
-                // Only consider as payment slip if this current stage actually requires a statutory payment,
-                // and it matches the specific slip the citizen uploaded for payment (or the stage payment field label).
-                bool isPaymentSlip = false;
-                if (!isStageDoc && stageHasPaymentField && stageFeeAmount > 0)
-                {
-                    isPaymentSlip = (payment != null && !string.IsNullOrEmpty(payment.ManualSlipUrl) && payment.ManualSlipUrl.Contains(d.Id.ToString(), StringComparison.OrdinalIgnoreCase))
-                        || (!string.IsNullOrEmpty(normLabel) && stagePaymentLabels.Any(pl => string.Equals(NormalizeDocLabel(pl), normLabel, StringComparison.OrdinalIgnoreCase)));
-                }
-
-                if (isStageDoc)
-                {
-                    category = "stage";
-                }
-                else if (isPaymentSlip)
+                if (isPaymentSlip)
                 {
                     category = "payment";
+                }
+                else if (isStageDoc)
+                {
+                    category = "stage";
                 }
                 else
                 {

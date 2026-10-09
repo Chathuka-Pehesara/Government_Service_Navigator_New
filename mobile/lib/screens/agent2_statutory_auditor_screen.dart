@@ -15,8 +15,8 @@ class Agent2StatutoryAuditorScreen extends ConsumerStatefulWidget {
 
   const Agent2StatutoryAuditorScreen({
     super.key,
-    this.serviceId = 37,
-    this.serviceName = 'Certificate of Police Clearance',
+    this.serviceId = 0,
+    this.serviceName = '',
   });
 
   @override
@@ -1374,15 +1374,23 @@ class _Agent2StatutoryAuditorScreenState
                   int effectiveId = _serviceId;
                   String effectiveName = _selectedService;
                   if (_availableServices.isNotEmpty) {
-                    final matchingService = _availableServices.firstWhere(
-                      (s) => s.id == _serviceId,
-                      orElse: () => _availableServices.firstWhere(
-                        (s) => s.name.trim().toLowerCase() == _selectedService.trim().toLowerCase(),
-                        orElse: () => (id: _serviceId, name: _selectedService),
-                      ),
-                    );
-                    effectiveId = matchingService.id;
-                    effectiveName = matchingService.name;
+                    final matchingByName = _availableServices.where(
+                      (s) => s.name.trim().toLowerCase() == _selectedService.trim().toLowerCase(),
+                    ).firstOrNull ?? _availableServices.where(
+                      (s) => s.name.toLowerCase().contains(_selectedService.toLowerCase()) ||
+                             _selectedService.toLowerCase().contains(s.name.toLowerCase()),
+                    ).firstOrNull;
+
+                    if (matchingByName != null) {
+                      effectiveId = matchingByName.id;
+                      effectiveName = matchingByName.name;
+                    } else if (_serviceId > 0) {
+                      final matchingById = _availableServices.where((s) => s.id == _serviceId).firstOrNull;
+                      if (matchingById != null) {
+                        effectiveId = matchingById.id;
+                        effectiveName = matchingById.name;
+                      }
+                    }
                   }
 
                   Navigator.push(

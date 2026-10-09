@@ -38,6 +38,7 @@ import {
   Information,
   Wallet,
 } from "@carbon/icons-react";
+import jsPDF from "jspdf";
 import FinanceShell from "./finance_shell";
 import {
   PAYMENT_METHOD_LABELS,
@@ -416,6 +417,209 @@ export default function FinanceDashboard() {
     setIsEditingStatus(true);
     setEditStatusValue(payment?.status || "Verified");
     setBanner(null);
+  }
+
+  function exportPaymentsLedgerPdf() {
+    const doc = new jsPDF();
+    const marginX = 14;
+    let y = 18;
+
+    doc.setFillColor(15, 98, 254);
+    doc.rect(0, 0, 210, 8, "F");
+
+    doc.setFontSize(15);
+    doc.setFont("helvetica", "bold");
+    doc.setTextColor(22, 22, 22);
+    doc.text("Government Service Navigator - Finance Payment Ledger", marginX, y);
+    y += 6;
+
+    const sectionTitle =
+      activeSection === "application-stage"
+        ? "Service Application Stage Fees Report"
+        : activeSection === "direct-mobile"
+          ? "Direct Mobile Department Payments Report"
+          : "Consolidated Revenue Transactions Report";
+
+    doc.setFontSize(9);
+    doc.setFont("helvetica", "normal");
+    doc.setTextColor(82, 82, 82);
+    doc.text(
+      `${sectionTitle} | Method: ${methodFilter} | Status: ${statusFilter} | Generated: ${new Date().toLocaleString()}`,
+      marginX,
+      y,
+    );
+    y += 6;
+
+    doc.setDrawColor(200, 200, 200);
+    doc.line(marginX, y, 196, y);
+    y += 6;
+
+    // Table Header
+    doc.setFillColor(244, 244, 244);
+    doc.rect(marginX, y, 182, 7, "F");
+    doc.setFontSize(8);
+    doc.setFont("helvetica", "bold");
+    doc.setTextColor(22, 22, 22);
+
+    doc.text("ID", marginX + 2, y + 5);
+    doc.text("Reference / Service", marginX + 16, y + 5);
+    doc.text("Citizen (Name & NIC)", marginX + 66, y + 5);
+    doc.text("Method", marginX + 116, y + 5);
+    doc.text("Amount (Rs.)", marginX + 144, y + 5);
+    doc.text("Status", marginX + 168, y + 5);
+    y += 9;
+
+    doc.setFont("helvetica", "normal");
+    doc.setFontSize(8);
+
+    if (filteredPayments.length === 0) {
+      doc.text("No transactions match the selected filters.", marginX + 2, y + 4);
+    } else {
+      for (const p of filteredPayments) {
+        if (y > 275) {
+          doc.addPage();
+          y = 20;
+          doc.setFillColor(244, 244, 244);
+          doc.rect(marginX, y, 182, 7, "F");
+          doc.setFont("helvetica", "bold");
+          doc.text("ID", marginX + 2, y + 5);
+          doc.text("Reference / Service", marginX + 16, y + 5);
+          doc.text("Citizen (Name & NIC)", marginX + 66, y + 5);
+          doc.text("Method", marginX + 116, y + 5);
+          doc.text("Amount (Rs.)", marginX + 144, y + 5);
+          doc.text("Status", marginX + 168, y + 5);
+          y += 9;
+          doc.setFont("helvetica", "normal");
+        }
+
+        const refText = p.referenceNumber || `APP-${p.applicationId}`;
+        const citText = p.citizenName
+          ? `${p.citizenName.substring(0, 16)} (${p.citizenNic || ""})`
+          : (p.citizenNic || p.userId);
+        const methText = PAYMENT_METHOD_LABELS[p.method] || p.method;
+
+        doc.text(String(p.id), marginX + 2, y);
+        doc.text(refText.substring(0, 24), marginX + 16, y);
+        doc.text(citText.substring(0, 26), marginX + 66, y);
+        doc.text(methText.substring(0, 14), marginX + 116, y);
+        doc.text(p.amount.toFixed(2), marginX + 144, y);
+
+        if (p.status === "Verified") doc.setTextColor(36, 161, 72);
+        else if (p.status === "Rejected") doc.setTextColor(218, 30, 40);
+        else doc.setTextColor(15, 98, 254);
+        doc.text(p.status, marginX + 168, y);
+        doc.setTextColor(22, 22, 22);
+
+        y += 6;
+      }
+    }
+
+    doc.save(`GSN_Payments_Ledger_${new Date().toISOString().slice(0, 10)}.pdf`);
+  }
+
+  function exportSingleReceiptPdf(payment: Payment) {
+    const doc = new jsPDF();
+    const marginX = 20;
+    let y = 22;
+
+    doc.setFillColor(15, 98, 254);
+    doc.rect(0, 0, 210, 10, "F");
+
+    doc.setFontSize(16);
+    doc.setFont("helvetica", "bold");
+    doc.setTextColor(22, 22, 22);
+    doc.text("Democratic Socialist Republic of Sri Lanka", marginX, y);
+    y += 6;
+
+    doc.setFontSize(11);
+    doc.setFont("helvetica", "normal");
+    doc.setTextColor(82, 82, 82);
+    doc.text("Official Treasury Payment Voucher & Audit Receipt", marginX, y);
+    y += 8;
+
+    doc.setDrawColor(200, 200, 200);
+    doc.line(marginX, y, 190, y);
+    y += 10;
+
+    doc.setFillColor(248, 249, 250);
+    doc.rect(marginX, y, 170, 72, "F");
+    doc.rect(marginX, y, 170, 72, "S");
+
+    doc.setFontSize(10);
+    doc.setFont("helvetica", "bold");
+    doc.setTextColor(22, 22, 22);
+
+    doc.text("Receipt / Payment ID:", marginX + 6, y + 10);
+    doc.setFont("helvetica", "normal");
+    doc.text(`#${payment.id}`, marginX + 55, y + 10);
+
+    doc.setFont("helvetica", "bold");
+    doc.text("Application Reference:", marginX + 6, y + 18);
+    doc.setFont("helvetica", "normal");
+    doc.text(payment.referenceNumber || `APP-${payment.applicationId}`, marginX + 55, y + 18);
+
+    doc.setFont("helvetica", "bold");
+    doc.text("Citizen Name & NIC:", marginX + 6, y + 26);
+    doc.setFont("helvetica", "normal");
+    doc.text(`${payment.citizenName || "Citizen"} (${payment.citizenNic || "N/A"})`, marginX + 55, y + 26);
+
+    doc.setFont("helvetica", "bold");
+    doc.text("Government Service:", marginX + 6, y + 34);
+    doc.setFont("helvetica", "normal");
+    doc.text(payment.serviceName || "Public Service Transaction", marginX + 55, y + 34);
+
+    doc.setFont("helvetica", "bold");
+    doc.text("Payment Category:", marginX + 6, y + 42);
+    doc.setFont("helvetica", "normal");
+    doc.text(payment.paymentCategory === "DirectMobile" ? "Direct Citizen Mobile Payment" : "Workflow Stage Fee", marginX + 55, y + 42);
+
+    doc.setFont("helvetica", "bold");
+    doc.text("Payment Method:", marginX + 6, y + 50);
+    doc.setFont("helvetica", "normal");
+    doc.text(PAYMENT_METHOD_LABELS[payment.method] || payment.method, marginX + 55, y + 50);
+
+    doc.setFont("helvetica", "bold");
+    doc.text("Statutory Amount Paid:", marginX + 6, y + 58);
+    doc.setFont("helvetica", "bold");
+    doc.setTextColor(15, 98, 254);
+    doc.text(`Rs. ${payment.amount.toFixed(2)} LKR`, marginX + 55, y + 58);
+
+    y += 84;
+
+    doc.setFontSize(10);
+    doc.setTextColor(22, 22, 22);
+    doc.setFont("helvetica", "bold");
+    doc.text("Audit Verification Status:", marginX, y);
+    doc.setFont("helvetica", "normal");
+    doc.text(payment.status, marginX + 55, y);
+    y += 8;
+
+    if (payment.verifiedAt) {
+      doc.setFont("helvetica", "bold");
+      doc.text("Verified By:", marginX, y);
+      doc.setFont("helvetica", "normal");
+      doc.text(`${payment.verifiedByOfficerName || "Finance Officer"} on ${formatDateTime(payment.verifiedAt)}`, marginX + 55, y);
+      y += 8;
+    }
+
+    if (payment.verificationNotes) {
+      doc.setFont("helvetica", "bold");
+      doc.text("Verification Remarks:", marginX, y);
+      doc.setFont("helvetica", "normal");
+      doc.text(`"${payment.verificationNotes}"`, marginX + 55, y);
+      y += 8;
+    }
+
+    y += 14;
+    doc.setDrawColor(200, 200, 200);
+    doc.line(marginX, y, 190, y);
+    y += 12;
+
+    doc.setFontSize(9);
+    doc.text("Finance Officer Signature: __________________________", marginX, y);
+    doc.text("Treasury Official Seal: __________________________", marginX + 90, y);
+
+    doc.save(`GSN_Payment_Receipt_${payment.id}.pdf`);
   }
 
   function closeDetails() {
@@ -942,6 +1146,15 @@ export default function FinanceDashboard() {
                   placeholder="Search Reference, Citizen NIC, or Service..."
                   onChange={(_event, value) => setSearchTerm(value || "")}
                 />
+                <Button
+                  kind="secondary"
+                  size="md"
+                  renderIcon={Document}
+                  onClick={exportPaymentsLedgerPdf}
+                  style={{ whiteSpace: "nowrap" }}
+                >
+                  Export to PDF
+                </Button>
               </TableToolbarContent>
             </TableToolbar>
             <Table {...getTableProps()}>
@@ -1901,6 +2114,24 @@ export default function FinanceDashboard() {
                     )}
                   </div>
                 )}
+                <div
+                  style={{
+                    marginTop: "1.25rem",
+                    borderTop: "1px solid #e0e0e0",
+                    paddingTop: "0.75rem",
+                    display: "flex",
+                    justifyContent: "flex-end",
+                  }}
+                >
+                  <Button
+                    size="sm"
+                    kind="ghost"
+                    renderIcon={Document}
+                    onClick={() => exportSingleReceiptPdf(selectedPayment)}
+                  >
+                    Export Receipt PDF
+                  </Button>
+                </div>
               </>
             )}
           </div>
