@@ -20,7 +20,8 @@ import {
   Modal,
   InlineNotification,
 } from "@carbon/react";
-import { Renew, View, CheckmarkOutline, Hourglass, MisuseOutline, Money } from "@carbon/icons-react";
+import { Renew, View, CheckmarkOutline, Hourglass, MisuseOutline, Money, Document } from "@carbon/icons-react";
+import jsPDF from "jspdf";
 import FinanceShell from "./finance_shell";
 import { formatCurrency, formatDateTime } from "./format";
 import { getDepartmentPayments, type BackendPayment } from "./paymentsApi";
@@ -108,6 +109,94 @@ export default function FinanceOnlinePayments() {
     });
   }, [payments, statusFilter, searchTerm]);
 
+  function exportPdf() {
+    const doc = new jsPDF();
+    const marginX = 14;
+    let y = 18;
+
+    doc.setFillColor(15, 98, 254);
+    doc.rect(0, 0, 210, 8, "F");
+
+    doc.setFontSize(15);
+    doc.setFont("helvetica", "bold");
+    doc.setTextColor(22, 22, 22);
+    doc.text("Government Service Navigator - Online Card Payments", marginX, y);
+    y += 6;
+
+    doc.setFontSize(9);
+    doc.setFont("helvetica", "normal");
+    doc.setTextColor(82, 82, 82);
+    doc.text(
+      `Stripe Card Payments Ledger | Filter: ${statusFilter} | Generated: ${new Date().toLocaleString()}`,
+      marginX,
+      y,
+    );
+    y += 6;
+
+    doc.setDrawColor(200, 200, 200);
+    doc.line(marginX, y, 196, y);
+    y += 6;
+
+    // Table Header
+    doc.setFillColor(244, 244, 244);
+    doc.rect(marginX, y, 182, 7, "F");
+    doc.setFontSize(8);
+    doc.setFont("helvetica", "bold");
+    doc.setTextColor(22, 22, 22);
+
+    doc.text("ID", marginX + 2, y + 5);
+    doc.text("App Ref & Service", marginX + 16, y + 5);
+    doc.text("Citizen (Name & NIC)", marginX + 70, y + 5);
+    doc.text("Email", marginX + 118, y + 5);
+    doc.text("Amount", marginX + 152, y + 5);
+    doc.text("Status", marginX + 172, y + 5);
+    y += 9;
+
+    doc.setFont("helvetica", "normal");
+    doc.setFontSize(8);
+
+    if (visible.length === 0) {
+      doc.text("No online payments match the selected criteria.", marginX + 2, y + 4);
+    } else {
+      for (const p of visible) {
+        if (y > 275) {
+          doc.addPage();
+          y = 20;
+          doc.setFillColor(244, 244, 244);
+          doc.rect(marginX, y, 182, 7, "F");
+          doc.setFont("helvetica", "bold");
+          doc.text("ID", marginX + 2, y + 5);
+          doc.text("App Ref & Service", marginX + 16, y + 5);
+          doc.text("Citizen (Name & NIC)", marginX + 70, y + 5);
+          doc.text("Email", marginX + 118, y + 5);
+          doc.text("Amount", marginX + 152, y + 5);
+          doc.text("Status", marginX + 172, y + 5);
+          y += 9;
+          doc.setFont("helvetica", "normal");
+        }
+
+        const refText = `APP-${p.applicationId} (${p.serviceName || "Service"})`;
+        const citText = `${p.citizenName || "Citizen"} (${p.citizenNic || "-"})`;
+
+        doc.text(String(p.id), marginX + 2, y);
+        doc.text(refText.substring(0, 26), marginX + 16, y);
+        doc.text(citText.substring(0, 24), marginX + 70, y);
+        doc.text((p.userEmail || "-").substring(0, 18), marginX + 118, y);
+        doc.text(amountLabel(p), marginX + 152, y);
+
+        if (p.status === "Paid") doc.setTextColor(36, 161, 72);
+        else if (p.status === "Failed") doc.setTextColor(218, 30, 40);
+        else doc.setTextColor(15, 98, 254);
+        doc.text(p.status, marginX + 172, y);
+        doc.setTextColor(22, 22, 22);
+
+        y += 6;
+      }
+    }
+
+    doc.save(`GSN_Online_Payments_${new Date().toISOString().slice(0, 10)}.pdf`);
+  }
+
   const tiles = [
     { label: "Total Received (Paid)", value: formatCurrency(summary.received), color: "#24a148", Icon: Money },
     { label: "Paid Transactions", value: String(summary.paid), color: "#0f62fe", Icon: CheckmarkOutline },
@@ -186,6 +275,15 @@ export default function FinanceOnlinePayments() {
               placeholder="Search payment ID, application, NIC, name, email or Stripe reference"
               onChange={(e) => setSearchTerm(typeof e === "string" ? e : e.target.value)}
             />
+            <Button
+              kind="secondary"
+              size="md"
+              renderIcon={Document}
+              onClick={exportPdf}
+              style={{ whiteSpace: "nowrap" }}
+            >
+              Export to PDF
+            </Button>
           </TableToolbarContent>
         </TableToolbar>
         <div style={{ overflowX: "auto" }}>

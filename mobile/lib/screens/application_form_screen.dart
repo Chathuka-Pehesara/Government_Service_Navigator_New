@@ -201,17 +201,19 @@ class _ApplicationFormScreenState extends ConsumerState<ApplicationFormScreen> {
       }
       final parsedAge = int.tryParse(answers['age'] ?? answers['Age'] ?? '');
       final effectiveAge = parsedAge ?? derivedAge ?? 0;
+      final effectiveFee = _currentStatutoryFee;
 
       final response = await http.post(
         Uri.parse('${AppConfig.baseUrl}/validationagent/validate'),
         headers: {'Content-Type': 'application/json'},
         body: jsonEncode({
           'applicationId': _activeApplicationId ?? widget.applicationId ?? 0,
-          'serviceProcedureId': widget.serviceId,
+          'serviceProcedureId': _effectiveServiceId,
           'serviceName': widget.serviceName,
           'citizenNic': userNic,
           'citizenName': session.fullName ?? (session.user?['fullName']?.toString() ?? answers['name'] ?? answers['fullName'] ?? ''),
           'citizenAge': effectiveAge,
+          'calculatedFee': effectiveFee,
           'formFields': answers,
           'attachedDocumentNames': attachedDocs,
           'requiredDocuments': _fields
@@ -336,6 +338,7 @@ class _ApplicationFormScreenState extends ConsumerState<ApplicationFormScreen> {
         'documents': docs,
         'paymentReference': paymentRef,
         'paymentMethod': paymentMethod,
+        'activeApplicationId': _activeApplicationId,
         'savedAt': DateTime.now().toUtc().toIso8601String(),
       };
 
@@ -404,6 +407,12 @@ class _ApplicationFormScreenState extends ConsumerState<ApplicationFormScreen> {
       final documents = (draft['documents'] as Map?)?.cast<String, dynamic>() ?? {};
       final paymentRef = draft['paymentReference']?.toString();
       final paymentMethod = draft['paymentMethod']?.toString();
+      if (_activeApplicationId == null) {
+        final savedAppId = int.tryParse(draft['activeApplicationId']?.toString() ?? '');
+        if (savedAppId != null && savedAppId > 0) {
+          _activeApplicationId = savedAppId;
+        }
+      }
 
       setState(() {
         for (final entry in answers.entries) {
@@ -488,8 +497,25 @@ class _ApplicationFormScreenState extends ConsumerState<ApplicationFormScreen> {
     return null;
   }
 
+  int get _effectiveServiceId {
+    final allLiveServices = ref.read(servicesProvider).asData?.value ?? [];
+    if (allLiveServices.isNotEmpty && widget.serviceName.trim().isNotEmpty) {
+      final matchedByName = allLiveServices.where(
+        (s) => s['name']?.toString().trim().toLowerCase() == widget.serviceName.trim().toLowerCase(),
+      ).firstOrNull ?? allLiveServices.where(
+        (s) => s['name']?.toString().toLowerCase().contains(widget.serviceName.toLowerCase()) == true ||
+               widget.serviceName.toLowerCase().contains(s['name']?.toString().toLowerCase() ?? ''),
+      ).firstOrNull;
+
+      if (matchedByName != null && matchedByName['id'] != null && (matchedByName['id'] as num) > 0) {
+        return (matchedByName['id'] as num).toInt();
+      }
+    }
+    return widget.serviceId > 0 ? widget.serviceId : 1;
+  }
+
   // Loaded form data. Read (not watched) so these are safe in callbacks; [build] watches.
-  AsyncValue<ApplicationFormData> get _formState => ref.read(applicationFormDataProvider(widget.serviceId));
+  AsyncValue<ApplicationFormData> get _formState => ref.read(applicationFormDataProvider(_effectiveServiceId));
   bool get _isLoading => _isStageMode ? _isLoadingStageForm : _formState.isLoading;
   String? get _loadError => _isStageMode
       ? _stageFormError
@@ -515,6 +541,52 @@ class _ApplicationFormScreenState extends ConsumerState<ApplicationFormScreen> {
     final hasFileField = _fields.any((f) => f['type'] == 'file');
     if (hasFileField) return const [];
     return _formState.value?.requiredDocs ?? const [];
+  }
+
+  double get _currentStatutoryFee {
+    for (final field in _fields) {
+      if (field['type'] == 'payment') {
+        final rawOptions = field['options'];
+        if (rawOptions is Map) {
+          final amt = (rawOptions['amount'] as num?)?.toDouble() ??
+                      (rawOptions['feeAmount'] as num?)?.toDouble();
+          if (amt != null && amt > 0) return amt;
+        } else if (rawOptions is String && rawOptions.trim().startsWith('{')) {
+          try {
+            final parsed = jsonDecode(rawOptions);
+            if (parsed is Map) {
+              final amt = (parsed['amount'] as num?)?.toDouble() ??
+                          (parsed['feeAmount'] as num?)?.toDouble();
+              if (amt != null && amt > 0) return amt;
+            }
+          } catch (_) {}
+        } else if (rawOptions is num && rawOptions > 0) {
+          return rawOptions.toDouble();
+        }
+      }
+    }
+    if (_stageFormResponse != null) {
+      final stageFee = (_stageFormResponse!['fee'] as num?)?.toDouble() ??
+                       (_stageFormResponse!['statutoryFee'] as num?)?.toDouble() ??
+                       (_stageFormResponse!['amount'] as num?)?.toDouble();
+      if (stageFee != null && stageFee > 0) return stageFee;
+    }
+    final formVal = _formState.value;
+    if (formVal != null) {
+      for (final field in formVal.fields) {
+        if (field['type'] == 'payment') {
+          final rawOptions = field['options'];
+          if (rawOptions is Map) {
+            final amt = (rawOptions['amount'] as num?)?.toDouble() ??
+                        (rawOptions['feeAmount'] as num?)?.toDouble();
+            if (amt != null && amt > 0) return amt;
+          } else if (rawOptions is num && rawOptions > 0) {
+            return rawOptions.toDouble();
+          }
+        }
+      }
+    }
+    return 0.0;
   }
 
   int get _currentStage => _isStageMode
@@ -668,7 +740,7 @@ class _ApplicationFormScreenState extends ConsumerState<ApplicationFormScreen> {
         );
       } else {
         result = await ServiceApiClient.submitApplication(
-          serviceId: widget.serviceId,
+          serviceId: _effectiveServiceId,
           applicationId: _activeApplicationId ?? widget.applicationId,
           templateId: _template?['id']?.toString(),
           answers: _collectAnswers(),
@@ -748,7 +820,7 @@ class _ApplicationFormScreenState extends ConsumerState<ApplicationFormScreen> {
 
   @override
   Widget build(BuildContext context) {
-    ref.watch(applicationFormDataProvider(widget.serviceId));
+    ref.watch(applicationFormDataProvider(_effectiveServiceId));
     return PopScope(
       canPop: true,
       onPopInvokedWithResult: (didPop, result) {
@@ -1158,24 +1230,58 @@ class _ApplicationFormScreenState extends ConsumerState<ApplicationFormScreen> {
                     const SizedBox(height: 4),
                   ],
                   if (rejectionReasons.isNotEmpty) ...[
-                    for (final r in rejectionReasons) ...[
-                      Padding(
-                        padding: const EdgeInsets.only(bottom: 4),
-                        child: Row(
+                    Builder(
+                      builder: (_) {
+                        final renderedCheckTexts = complianceChecks.map((c) {
+                          if (c is Map) {
+                            final type = c['checkType']?.toString().toLowerCase() ?? '';
+                            final details = c['details']?.toString().toLowerCase() ?? '';
+                            return '$type $details';
+                          }
+                          return '';
+                        }).toList();
+
+                        final distinctReasons = <String>[];
+                        for (final raw in rejectionReasons) {
+                          var text = raw.toString().trim();
+                          if (text.startsWith('INCONSISTENCY-FLAG:')) {
+                            text = text.replaceFirst('INCONSISTENCY-FLAG:', '').trim();
+                          }
+                          if (text.isEmpty) continue;
+                          final lower = text.toLowerCase();
+                          final isAlreadyInChecks = renderedCheckTexts.any((ct) => ct.contains(lower) || lower.contains(ct));
+                          final isAlreadyInReasons = distinctReasons.any((dr) => dr.toLowerCase() == lower || dr.toLowerCase().contains(lower));
+                          if (!isAlreadyInChecks && !isAlreadyInReasons) {
+                            distinctReasons.add(text);
+                          }
+                        }
+
+                        if (distinctReasons.isEmpty) return const SizedBox.shrink();
+
+                        return Column(
                           crossAxisAlignment: CrossAxisAlignment.start,
                           children: [
-                            const Icon(Icons.cancel_rounded, size: 15, color: Color(0xFFDC2626)),
-                            const SizedBox(width: 6),
-                            Expanded(
-                              child: Text(
-                                r.toString(),
-                                style: const TextStyle(fontSize: 12, fontWeight: FontWeight.w600, color: Color(0xFF991B1B)),
+                            for (final r in distinctReasons)
+                              Padding(
+                                padding: const EdgeInsets.only(bottom: 4),
+                                child: Row(
+                                  crossAxisAlignment: CrossAxisAlignment.start,
+                                  children: [
+                                    const Icon(Icons.cancel_rounded, size: 15, color: Color(0xFFDC2626)),
+                                    const SizedBox(width: 6),
+                                    Expanded(
+                                      child: Text(
+                                        r,
+                                        style: const TextStyle(fontSize: 12, fontWeight: FontWeight.w600, color: Color(0xFF991B1B)),
+                                      ),
+                                    ),
+                                  ],
+                                ),
                               ),
-                            ),
                           ],
-                        ),
-                      ),
-                    ],
+                        );
+                      },
+                    ),
                   ],
                   Row(
                     children: [
@@ -2123,11 +2229,14 @@ class _ApplicationFormScreenState extends ConsumerState<ApplicationFormScreen> {
         serviceName: widget.serviceName,
         amount: amount,
         feeType: feeType,
-        applicationId: widget.applicationId,
-        onPaymentCompleted: (reference, method, [docId, docName]) {
+        applicationId: _activeApplicationId ?? widget.applicationId,
+        onPaymentCompleted: (reference, method, [docId, docName, createdAppId]) {
           setState(() {
             controller.text = reference;
             _paymentModes[label] = method;
+            if (createdAppId != null && createdAppId > 0) {
+              _activeApplicationId = createdAppId;
+            }
             if (docId != null && docName != null) {
               _documents[label] = (id: docId, fileName: docName);
             }
@@ -2766,7 +2875,7 @@ class _StagePaymentModal extends ConsumerStatefulWidget {
   final double amount;
   final String feeType;
   final int? applicationId;
-  final Function(String reference, String method, [String? docId, String? docName]) onPaymentCompleted;
+  final Function(String reference, String method, [String? docId, String? docName, int? createdAppId]) onPaymentCompleted;
 
   const _StagePaymentModal({
     required this.department,
@@ -2905,7 +3014,8 @@ class _StagePaymentModalState extends ConsumerState<_StagePaymentModal> {
           ref.invalidate(myApplicationsProvider);
           if (!mounted) return;
           if (status.toLowerCase() == 'paid') {
-            widget.onPaymentCompleted(paymentRef, 'online');
+            final createdAppId = int.tryParse(result['applicationId']?.toString() ?? '');
+            widget.onPaymentCompleted(paymentRef, 'online', null, null, createdAppId);
             Navigator.of(context).pop();
           } else {
             setState(() {
@@ -2926,7 +3036,8 @@ class _StagePaymentModalState extends ConsumerState<_StagePaymentModal> {
       // Bank Transfer completed
       ref.invalidate(myPaymentsProvider);
       ref.invalidate(myApplicationsProvider);
-      widget.onPaymentCompleted(paymentRef, 'slip', uploadedDocId, uploadedDocName);
+      final createdAppId = int.tryParse(result['applicationId']?.toString() ?? '');
+      widget.onPaymentCompleted(paymentRef, 'slip', uploadedDocId, uploadedDocName, createdAppId);
       if (mounted) {
         Navigator.of(context).pop();
       }

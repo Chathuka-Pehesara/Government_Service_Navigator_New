@@ -143,8 +143,8 @@ builder.Services.AddHybridCache(o =>
 {
     o.DefaultEntryOptions = new HybridCacheEntryOptions
     {
-        Expiration = TimeSpan.FromMinutes(10),          // Redis
-        LocalCacheExpiration = TimeSpan.FromSeconds(30) // in-process memory
+        Expiration = TimeSpan.FromSeconds(30),          // Redis
+        LocalCacheExpiration = TimeSpan.FromSeconds(10) // in-process memory
     };
 });
 builder.Services.AddSingleton<TokenRevocationStore>();

@@ -76,15 +76,23 @@ public class IntakePlanningAgent : IIntakePlanningAgent
 
         // Verify that at least one retrieved chunk actually shares keywords with the citizen inquiry
         var queryTokens = TextTokenizer.Tokenize(request.UserNeedDescription);
+        var genericTokens = new HashSet<string>(StringComparer.OrdinalIgnoreCase)
+        {
+            "certificate", "certificat", "copy", "copi", "issuance", "issuanc",
+            "registration", "registr", "renewal", "renew", "license", "licens",
+            "report", "permit", "application", "service", "document", "extract"
+        };
+        var distinctiveQueryTokens = queryTokens.Where(t => !genericTokens.Contains(t)).ToList();
+        var matchTokens = distinctiveQueryTokens.Count > 0 ? distinctiveQueryTokens : queryTokens;
 
-        bool hasRelevantChunk = queryTokens.Count > 0 && topResults.Any(chunk =>
+        bool hasRelevantChunk = matchTokens.Count > 0 && topResults.Any(chunk =>
         {
             var parsed = ServiceCatalogChunk.TryParse(chunk);
             if (parsed != null && !string.IsNullOrWhiteSpace(parsed.ServiceName))
             {
                 var svcTokens = TextTokenizer.Tokenize(parsed.ServiceName);
                 // A policy chunk is only relevant if the citizen's inquiry shares keywords with the service itself
-                if (TextTokenizer.SharesKeyword(queryTokens, svcTokens))
+                if (TextTokenizer.SharesKeyword(matchTokens, svcTokens))
                 {
                     return true;
                 }
@@ -93,7 +101,7 @@ public class IntakePlanningAgent : IIntakePlanningAgent
                 if (!string.IsNullOrWhiteSpace(parsed.Category))
                 {
                     var catTokens = TextTokenizer.Tokenize(parsed.Category);
-                    if (TextTokenizer.SharesKeyword(queryTokens, catTokens))
+                    if (TextTokenizer.SharesKeyword(matchTokens, catTokens))
                     {
                         return true;
                     }
@@ -104,7 +112,7 @@ public class IntakePlanningAgent : IIntakePlanningAgent
             }
 
             var chunkTokens = parsed != null ? parsed.KeywordTokens() : TextTokenizer.Tokenize(chunk);
-            return TextTokenizer.SharesKeyword(queryTokens, chunkTokens);
+            return TextTokenizer.SharesKeyword(matchTokens, chunkTokens);
         });
 
         if (!hasRelevantChunk)
@@ -290,9 +298,20 @@ public class IntakePlanningAgent : IIntakePlanningAgent
     private static IntakePlanResponse GenerateDeterministicPlan(string userNeed, List<string> topResults)
     {
         var queryTokens = TextTokenizer.Tokenize(userNeed);
+        var genericTokens = new HashSet<string>(StringComparer.OrdinalIgnoreCase)
+        {
+            "certificate", "certificat", "copy", "copi", "issuance", "issuanc",
+            "registration", "registr", "renewal", "renew", "license", "licens",
+            "report", "permit", "application", "service", "document", "extract"
+        };
+        var distinctiveQueryTokens = queryTokens.Where(t => !genericTokens.Contains(t)).ToList();
+        var matchTokens = distinctiveQueryTokens.Count > 0 ? distinctiveQueryTokens : queryTokens;
+
         var match = topResults
             .Select(ServiceCatalogChunk.TryParse)
-            .FirstOrDefault(chunk => chunk != null && TextTokenizer.SharesKeyword(queryTokens, chunk.KeywordTokens()));
+            .Where(chunk => chunk != null && TextTokenizer.SharesKeyword(matchTokens, chunk.KeywordTokens()))
+            .OrderByDescending(chunk => chunk!.KeywordTokens().Count(kt => matchTokens.Contains(kt)))
+            .FirstOrDefault();
 
         if (match == null)
         {

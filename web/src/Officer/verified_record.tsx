@@ -1,7 +1,6 @@
 import '@carbon/styles/css/styles.css';
 import { readApiError, v } from '../utils/validation';
 import { useState, useEffect } from 'react';
-import { useNavigate } from 'react-router-dom';
 import { keepPreviousData, useQuery, useQueryClient } from '@tanstack/react-query';
 import { API_BASE_URL, apiFetch, toQuery, type Paged } from '../utils/api';
 import { queryKeys } from '../utils/queryClient';
@@ -53,6 +52,7 @@ import {
   Security,
   Launch
 } from '@carbon/icons-react';
+import jsPDF from "jspdf";
 
 // Table Data for Verified Records
 const headers = [
@@ -121,6 +121,12 @@ interface TaskSummary {
   verified: number;
 }
 
+function isFileValue(val: unknown): boolean {
+  if (!val || typeof val !== 'string') return false;
+  const s = val.trim().toLowerCase();
+  return s.endsWith('.jpg') || s.endsWith('.jpeg') || s.endsWith('.png') || s.endsWith('.pdf') || s.endsWith('.webp');
+}
+
 function toRow(t: TaskData): VerifiedRecordRow {
   const rawDate = (t.verifiedDate || t.createdDate) as string;
   const parsedDate = new Date(rawDate);
@@ -145,7 +151,6 @@ function toRow(t: TaskData): VerifiedRecordRow {
 
 export default function VerifiedRecords() {
   const queryClient = useQueryClient();
-  const navigate = useNavigate();
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   const [editingRecord, setEditingRecord] = useState<any>(null);
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
@@ -157,6 +162,29 @@ export default function VerifiedRecords() {
   const currentDetail = viewingId && fetchedDetail?.id === viewingId ? fetchedDetail : null;
   const viewingDetail = currentDetail?.data ?? null;
   const loadingDetail = !!viewingId && !currentDetail;
+  const [previewLoadingDocId, setPreviewLoadingDocId] = useState<string | number | null>(null);
+
+  const handleViewDocument = async (docId: string | number) => {
+    try {
+      setPreviewLoadingDocId(docId);
+      const token = localStorage.getItem('officerToken');
+      const response = await fetch(`${API_BASE_URL}/api/Verification/documents/${docId}/content`, {
+        headers: token ? { Authorization: `Bearer ${token}` } : {},
+      });
+      if (!response.ok) {
+        throw new Error(`HTTP ${response.status}`);
+      }
+      const blob = await response.blob();
+      const objectUrl = URL.createObjectURL(blob);
+      window.open(objectUrl, '_blank');
+    } catch (e) {
+      console.error('Failed to preview document', e);
+      alert('Could not preview document. Please ensure you are logged in as an officer.');
+    } finally {
+      setPreviewLoadingDocId(null);
+    }
+  };
+
   const [editStatus, setEditStatus] = useState('Approved');
   const [editComments, setEditComments] = useState('');
   const [editError, setEditError] = useState<string | null>(null);
@@ -256,6 +284,158 @@ export default function VerifiedRecords() {
     a.setAttribute('href', url);
     a.setAttribute('download', `verified_records_page_${page}.csv`);
     a.click();
+  };
+
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  const exportDossierPdf = (rec: any, det: any) => {
+    if (!rec) return;
+    const doc = new jsPDF();
+    const marginX = 15;
+    let y = 18;
+
+    doc.setFillColor(15, 98, 254);
+    doc.rect(0, 0, 210, 8, 'F');
+
+    doc.setFontSize(15);
+    doc.setFont('helvetica', 'bold');
+    doc.setTextColor(22, 22, 22);
+    doc.text('Government Service Navigator - Verified Record Dossier', marginX, y);
+    y += 6;
+
+    const appId = rec.cells?.find((c: DataCell) => c.info.header === 'appId')?.value || rec.appId || 'APP';
+    const citizen = det?.task?.citizenName || rec.cells?.find((c: DataCell) => c.info.header === 'citizen')?.value || rec.citizen;
+    const nic = det?.task?.citizenNic || '—';
+    const service = rec.cells?.find((c: DataCell) => c.info.header === 'service')?.value || rec.service;
+    const status = rec.cells?.find((c: DataCell) => c.info.header === 'status')?.value || rec.status;
+    const reviewDate = det?.task?.verifiedDate ? new Date(det.task.verifiedDate).toLocaleString() : rec.dateVerified;
+    const comments = det?.task?.comments || rec.comments || 'No comments provided.';
+
+    doc.setFontSize(9);
+    doc.setFont('helvetica', 'normal');
+    doc.setTextColor(82, 82, 82);
+    doc.text(`Official Historical Record & Audit Archive | Generated: ${new Date().toLocaleString()}`, marginX, y);
+    y += 6;
+
+    doc.setDrawColor(200, 200, 200);
+    doc.line(marginX, y, 195, y);
+    y += 8;
+
+    // Summary Box
+    doc.setFillColor(244, 244, 244);
+    doc.rect(marginX, y, 180, 42, 'F');
+    doc.rect(marginX, y, 180, 42, 'S');
+
+    doc.setFontSize(9);
+    doc.setTextColor(22, 22, 22);
+
+    doc.setFont('helvetica', 'bold');
+    doc.text('Application Ref:', marginX + 4, y + 8);
+    doc.setFont('helvetica', 'normal');
+    doc.text(appId, marginX + 38, y + 8);
+
+    doc.setFont('helvetica', 'bold');
+    doc.text('Citizen NIC:', marginX + 96, y + 8);
+    doc.setFont('helvetica', 'normal');
+    doc.text(nic, marginX + 124, y + 8);
+
+    doc.setFont('helvetica', 'bold');
+    doc.text('Citizen Name:', marginX + 4, y + 17);
+    doc.setFont('helvetica', 'normal');
+    doc.text(citizen, marginX + 38, y + 17);
+
+    doc.setFont('helvetica', 'bold');
+    doc.text('Determination:', marginX + 96, y + 17);
+    doc.setFont('helvetica', 'normal');
+    doc.text(status, marginX + 124, y + 17);
+
+    doc.setFont('helvetica', 'bold');
+    doc.text('Service Type:', marginX + 4, y + 26);
+    doc.setFont('helvetica', 'normal');
+    doc.text(service.length > 30 ? service.substring(0, 27) + '...' : service, marginX + 38, y + 26);
+
+    doc.setFont('helvetica', 'bold');
+    doc.text('Review Date:', marginX + 96, y + 26);
+    doc.setFont('helvetica', 'normal');
+    doc.text(reviewDate, marginX + 124, y + 26);
+
+    doc.setFont('helvetica', 'bold');
+    doc.text('Officer Remarks:', marginX + 4, y + 35);
+    doc.setFont('helvetica', 'normal');
+    doc.text(comments.length > 70 ? comments.substring(0, 67) + '...' : comments, marginX + 38, y + 35);
+
+    y += 50;
+
+    // Attached Documents
+    doc.setFontSize(11);
+    doc.setFont('helvetica', 'bold');
+    doc.text('Submitted Evidentiary & Verification Documents', marginX, y);
+    y += 6;
+
+    const docs = det?.documents || [];
+    if (docs.length === 0) {
+      doc.setFontSize(8.5);
+      doc.setFont('helvetica', 'italic');
+      doc.text('No file attachments found for this record.', marginX, y);
+      y += 8;
+    } else {
+      doc.setFontSize(8.5);
+      for (const d of docs) {
+        if (y > 270) { doc.addPage(); y = 20; }
+        const label = `• ${d.fieldLabel || d.fileName}:`;
+        const val = `${d.fileName} (${d.category || 'attachment'})`;
+        if (label.length > 25) {
+          doc.setFont('helvetica', 'bold');
+          doc.text(label, marginX + 4, y);
+          y += 4.5;
+          doc.setFont('helvetica', 'normal');
+          const lines = doc.splitTextToSize(val, 125);
+          doc.text(lines, marginX + 8, y);
+          y += (lines.length * 4.5) + 1.5;
+        } else {
+          doc.setFont('helvetica', 'bold');
+          doc.text(label, marginX + 4, y);
+          doc.setFont('helvetica', 'normal');
+          const lines = doc.splitTextToSize(val, 125);
+          doc.text(lines, marginX + 60, y);
+          y += Math.max(5.5, (lines.length * 4.5) + 1.5);
+        }
+      }
+      y += 4;
+    }
+
+    // Citizen Form Responses
+    if (det?.answers && Object.keys(det.answers).length > 0) {
+      if (y > 250) { doc.addPage(); y = 20; }
+      doc.setFontSize(11);
+      doc.setFont('helvetica', 'bold');
+      doc.text('Citizen Form Responses', marginX, y);
+      y += 6;
+
+      doc.setFontSize(8.5);
+      for (const [k, v] of Object.entries(det.answers)) {
+        if (y > 270) { doc.addPage(); y = 20; }
+        const label = `${k}:`;
+        const sv = String(v || '-');
+        if (label.length > 25) {
+          doc.setFont('helvetica', 'bold');
+          doc.text(label, marginX + 4, y);
+          y += 4.5;
+          doc.setFont('helvetica', 'normal');
+          const lines = doc.splitTextToSize(sv, 125);
+          doc.text(lines, marginX + 8, y);
+          y += (lines.length * 4.5) + 1.5;
+        } else {
+          doc.setFont('helvetica', 'bold');
+          doc.text(label, marginX + 4, y);
+          doc.setFont('helvetica', 'normal');
+          const lines = doc.splitTextToSize(sv, 125);
+          doc.text(lines, marginX + 60, y);
+          y += Math.max(5.5, (lines.length * 4.5) + 1.5);
+        }
+      }
+    }
+
+    doc.save(`GSN_Verified_Record_${appId.replace(/[^a-zA-Z0-9_-]/g, '_')}.pdf`);
   };
   const handleLogout = async () => {
     const token = localStorage.getItem("officerToken");
@@ -582,16 +762,25 @@ export default function VerifiedRecords() {
 
                 {/* Officer Comments */}
                 <div style={{ borderTop: '1px solid #e0e0e0', paddingTop: '1rem' }}>
-                  <span style={{ fontSize: '0.75rem', color: '#525252', textTransform: 'uppercase', letterSpacing: '0.32px' }}>Officer Determination Comments</span>
-                  <p style={{ marginTop: '0.5rem', fontStyle: viewingRecord.comments ? 'normal' : 'italic', color: viewingRecord.comments ? '#161616' : '#8d8d8d', backgroundColor: '#f4f4f4', padding: '0.75rem', borderRadius: '4px' }}>
-                    {viewingRecord.comments || 'No additional comments provided during verification.'}
+                  <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                    <span style={{ fontSize: '0.75rem', color: '#525252', textTransform: 'uppercase', letterSpacing: '0.32px', fontWeight: 700 }}>
+                      Officer Determination Comments
+                    </span>
+                    {(viewingDetail?.task?.verifiedDate || viewingRecord.dateVerified) && (
+                      <span style={{ fontSize: '0.75rem', color: '#525252' }}>
+                        Reviewed: {viewingDetail?.task?.verifiedDate ? new Date(viewingDetail.task.verifiedDate).toLocaleString() : viewingRecord.dateVerified}
+                      </span>
+                    )}
+                  </div>
+                  <p style={{ marginTop: '0.5rem', fontStyle: (viewingDetail?.task?.comments || viewingRecord.comments) ? 'normal' : 'italic', color: (viewingDetail?.task?.comments || viewingRecord.comments) ? '#161616' : '#8d8d8d', backgroundColor: '#f4f4f4', padding: '0.75rem', borderRadius: '4px' }}>
+                    {viewingDetail?.task?.comments || viewingRecord.comments || 'No additional comments provided during verification.'}
                   </p>
                 </div>
 
                 {/* Submitted Documents & Evidentiary Attachments */}
                 <div style={{ borderTop: '1px solid #e0e0e0', paddingTop: '1rem' }}>
                   {(() => {
-                    const currentDocs = (viewingDetail?.documents ?? []).filter((d: TaskDocument) => d.category === 'stage' || d.category === 'payment');
+                    const currentDocs = viewingDetail?.documents ?? [];
                     return (
                       <>
                         <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '0.75rem' }}>
@@ -610,19 +799,25 @@ export default function VerifiedRecords() {
                                   <Document size={18} style={{ color: '#0f62fe' }} />
                                   <div>
                                     <div style={{ fontWeight: 600, fontSize: '0.875rem' }}>{doc.fileName}</div>
-                                    <div style={{ fontSize: '0.75rem', color: '#525252' }}>
-                                      Label: <strong>{doc.fieldLabel || 'General Upload'}</strong> {doc.category ? `• ${doc.category === 'payment' ? 'Payment Slip' : 'Stage Document'}` : ''}
+                                    <div style={{ fontSize: '0.75rem', color: '#525252', display: 'flex', alignItems: 'center', gap: '0.5rem', marginTop: '0.15rem' }}>
+                                      <span>Label: <strong>{doc.fieldLabel || 'General Upload'}</strong></span>
+                                      <Tag type={doc.category === 'payment' ? 'teal' : doc.category === 'stage' ? 'blue' : 'cool-gray'} size="sm">
+                                        {doc.category === 'payment' ? 'Payment Slip' : doc.category === 'stage' ? 'Evidentiary Document' : 'Supporting Document'}
+                                      </Tag>
                                     </div>
                                   </div>
                                 </div>
-                                <Button
-                                  size="sm"
-                                  kind="ghost"
-                                  renderIcon={Download}
-                                  onClick={() => window.open(`${API_BASE_URL}/api/Verification/documents/${doc.id}/content`, '_blank')}
-                                >
-                                  View
-                                </Button>
+                                <div style={{ display: 'flex', gap: '0.25rem' }}>
+                                  <Button
+                                    size="sm"
+                                    kind="ghost"
+                                    renderIcon={Launch}
+                                    disabled={previewLoadingDocId === doc.id}
+                                    onClick={() => handleViewDocument(doc.id)}
+                                  >
+                                    {previewLoadingDocId === doc.id ? 'Loading...' : 'View'}
+                                  </Button>
+                                </div>
                               </div>
                             ))}
                           </div>
@@ -641,28 +836,46 @@ export default function VerifiedRecords() {
                       Citizen Form Responses
                     </span>
                     <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(220px, 1fr))', gap: '0.75rem' }}>
-                      {Object.entries(viewingDetail.answers).map(([key, val]) => (
-                        <div key={key} style={{ padding: '0.5rem', backgroundColor: '#f4f4f4', borderRadius: '4px' }}>
-                          <div style={{ fontSize: '0.7rem', color: '#525252', textTransform: 'uppercase' }}>{key}</div>
-                          <div style={{ fontSize: '0.875rem', fontWeight: 600 }}>{String(val || '—')}</div>
-                        </div>
-                      ))}
+                      {Object.entries(viewingDetail.answers).map(([key, val]) => {
+                        const strVal = String(val || '—');
+                        const isFile = isFileValue(strVal);
+
+                        return (
+                          <div key={key} style={{ padding: '0.625rem', backgroundColor: '#f4f4f4', borderRadius: '4px', display: 'flex', flexDirection: 'column', justifyContent: 'center' }}>
+                            <div style={{ fontSize: '0.7rem', color: '#525252', textTransform: 'uppercase', fontWeight: 600 }}>{key}</div>
+                            {isFile ? (
+                              <div style={{ display: 'flex', alignItems: 'center', gap: '0.35rem', marginTop: '0.25rem', overflow: 'hidden' }}>
+                                <Document size={16} style={{ color: '#0f62fe', flexShrink: 0 }} />
+                                <span style={{ fontSize: '0.8125rem', fontWeight: 600, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }} title={strVal}>
+                                  {strVal}
+                                </span>
+                              </div>
+                            ) : (
+                              <div style={{ fontSize: '0.875rem', fontWeight: 600, marginTop: '0.25rem' }}>{strVal}</div>
+                            )}
+                          </div>
+                        );
+                      })}
                     </div>
                   </div>
                 )}
 
                 {/* Modal Footer Actions */}
-                <div style={{ borderTop: '1px solid #e0e0e0', paddingTop: '1rem', display: 'flex', justifyContent: 'flex-end', gap: '0.75rem' }}>
+                <div style={{ borderTop: '1px solid #e0e0e0', paddingTop: '1rem', display: 'flex', justifyContent: 'flex-end', gap: '0.75rem', flexWrap: 'wrap' }}>
                   <Button
-                    kind="primary"
+                    kind="secondary"
                     size="md"
-                    renderIcon={Launch}
-                    onClick={() => {
-                      setViewingRecord(null);
-                      navigate(`/officer/workspace/${viewingRecord.id}`);
-                    }}
+                    renderIcon={Document}
+                    onClick={() => exportDossierPdf(viewingRecord, viewingDetail)}
                   >
-                    Open in Full Verification Workspace
+                    Export PDF
+                  </Button>
+                  <Button
+                    kind="tertiary"
+                    size="md"
+                    onClick={() => setViewingRecord(null)}
+                  >
+                    Close
                   </Button>
                 </div>
               </div>

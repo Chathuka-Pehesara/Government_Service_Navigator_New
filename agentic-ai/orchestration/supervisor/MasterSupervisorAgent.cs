@@ -67,7 +67,7 @@ namespace Government_Service_Navigator.AgenticAi.Orchestration
                 }
             }
 
-            int serviceId = caseContext?.ServiceProcedureId ?? request.ServiceProcedureId ?? 1;
+            int serviceId = caseContext?.ServiceProcedureId ?? request.ServiceProcedureId ?? 0;
             string serviceName = caseContext?.ServiceName ?? (!string.IsNullOrWhiteSpace(request.ServiceName) ? request.ServiceName : "Government Service");
             int currentStage = caseContext?.CurrentStage ?? request.Stage ?? 1;
 
@@ -90,52 +90,110 @@ namespace Government_Service_Navigator.AgenticAi.Orchestration
                 .Where(s => !s.StartsWith("test", StringComparison.OrdinalIgnoreCase) && !s.Contains("testing", StringComparison.OrdinalIgnoreCase))
                 .ToList();
 
-            // Resolve service name and ID from Query or History if not provided
-            if (string.IsNullOrWhiteSpace(serviceName) || serviceName.Equals("Government Service", StringComparison.OrdinalIgnoreCase))
+            // Generic administrative words that are shared across many services and should not falsely bias a match
+            var genericServiceWords = new HashSet<string>(StringComparer.OrdinalIgnoreCase)
             {
-                // 1. Dynamic match against active services in database
-                var qTokens = TextTokenizer.Tokenize(queryLower);
-                string? matchedInQuery = null;
+                "certificate", "certificat", "copy", "copi", "issuance", "issuanc",
+                "registration", "registr", "renewal", "renew", "license", "licens",
+                "report", "permit", "application", "service", "statutory", "official",
+                "extract", "guideline", "guidelines", "procedure"
+            };
 
-                foreach (var svc in validActiveServices)
+            var qTokens = TextTokenizer.Tokenize(queryLower);
+            var distinctiveQTokens = qTokens.Where(t => !genericServiceWords.Contains(t)).ToList();
+
+            string? bestMatch = null;
+            int bestScore = 0;
+
+            foreach (var svc in validActiveServices)
+            {
+                var svcLower = svc.ToLowerInvariant();
+                int score = 0;
+
+                // 1. Exact full service name contained in the query
+                if (queryLower.Contains(svcLower))
                 {
-                    if (queryLower.Contains(svc.ToLowerInvariant()))
-                    {
-                        matchedInQuery = svc;
-                        break;
-                    }
-
+                    score = 2000 + svcLower.Length;
+                }
+                else
+                {
                     var svcTokens = TextTokenizer.Tokenize(svc);
-                    if (qTokens.Count > 0 && TextTokenizer.SharesKeyword(qTokens, svcTokens))
+                    var distinctiveSvcTokens = svcTokens.Where(t => !genericServiceWords.Contains(t)).ToList();
+
+                    if (distinctiveQTokens.Count > 0)
                     {
-                        matchedInQuery = svc;
-                        break;
+                        // Count how many distinctive tokens match
+                        int distMatch = distinctiveQTokens.Count(dq =>
+                            distinctiveSvcTokens.Any(ds => ds == dq || (Math.Min(ds.Length, dq.Length) >= 4 && (ds.StartsWith(dq) || dq.StartsWith(ds)))));
+
+                        if (distMatch > 0)
+                        {
+                            score = distMatch * 100 + svcTokens.Count(st => qTokens.Contains(st)) * 10;
+                            if (queryLower.Contains("birth") && svcLower.Contains("birth")) score += 300;
+                            if (queryLower.Contains("police") && svcLower.Contains("police")) score += 300;
+                            if (queryLower.Contains("passport") && svcLower.Contains("passport")) score += 300;
+                            if (queryLower.Contains("driving") && svcLower.Contains("driving")) score += 300;
+                            if (queryLower.Contains("business") && svcLower.Contains("business")) score += 300;
+                            if (queryLower.Contains("death") && svcLower.Contains("death")) score += 300;
+                            if (queryLower.Contains("marriage") && svcLower.Contains("marriage")) score += 300;
+                        }
+                    }
+                    else if (distinctiveSvcTokens.Count == 0 && qTokens.Count > 0)
+                    {
+                        int common = svcTokens.Count(st => qTokens.Contains(st));
+                        if (common > 0) score = common * 10;
                     }
                 }
 
-                if (matchedInQuery != null)
+                if (score > bestScore)
                 {
-                    serviceName = matchedInQuery;
+                    bestScore = score;
+                    bestMatch = svc;
                 }
-                // 2. Check conversation history ONLY if citizen is in an ongoing discussion and query is contextual
-                else if (request.History != null && request.History.Count > 0)
+            }
+
+            // In stateless citizen inquiry (caseContext == null), prioritize query matching:
+            if (caseContext == null)
+            {
+                if (bestMatch != null)
                 {
-                    for (int i = request.History.Count - 1; i >= 0; i--)
+                    serviceName = bestMatch;
+                }
+                else if (distinctiveQTokens.Count > 0)
+                {
+                    // User explicitly asked about a distinct service not found in active catalog
+                    serviceName = "Service Not Found";
+                }
+                else if (string.IsNullOrWhiteSpace(serviceName) || serviceName.Equals("Government Service", StringComparison.OrdinalIgnoreCase))
+                {
+                    // Fall back to history ONLY if query was contextual follow-up
+                    if (request.History != null && request.History.Count > 0)
                     {
-                        var content = request.History[i].Content ?? string.Empty;
-                        var contentLower = content.ToLowerInvariant();
-                        var matchedInHist = validActiveServices.FirstOrDefault(s => contentLower.Contains(s.ToLowerInvariant()));
-                        if (matchedInHist != null)
+                        for (int i = request.History.Count - 1; i >= 0; i--)
                         {
-                            serviceName = matchedInHist;
-                            break;
+                            var content = request.History[i].Content ?? string.Empty;
+                            var contentLower = content.ToLowerInvariant();
+                            var matchedInHist = validActiveServices.FirstOrDefault(s => contentLower.Contains(s.ToLowerInvariant()));
+                            if (matchedInHist != null)
+                            {
+                                serviceName = matchedInHist;
+                                break;
+                            }
                         }
                     }
                 }
             }
+            else
+            {
+                // In an active submitted application (caseContext != null), keep case service unless query specifically targets another
+                if (bestMatch != null && bestScore >= 1000)
+                {
+                    serviceName = bestMatch;
+                }
+            }
 
-            // Map serviceName to database serviceId if unset or invalid
-            if ((serviceId <= 0 || serviceId == 1) && !string.IsNullOrWhiteSpace(serviceName) && !serviceName.Equals("Government Service", StringComparison.OrdinalIgnoreCase))
+            // Map serviceName to database serviceId if resolved or changed
+            if (!string.IsNullOrWhiteSpace(serviceName) && !serviceName.Equals("Government Service", StringComparison.OrdinalIgnoreCase) && !serviceName.Equals("Service Not Found", StringComparison.OrdinalIgnoreCase))
             {
                 if (_contextProvider != null)
                 {

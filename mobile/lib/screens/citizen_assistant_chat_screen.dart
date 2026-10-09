@@ -124,8 +124,8 @@ class _CitizenAssistantChatScreenState extends State<CitizenAssistantChatScreen>
       final res = await SupervisorAgentService.ask(
         query: text,
         applicationId: widget.applicationId,
-        serviceProcedureId: _activeServiceProcedureId ?? widget.serviceProcedureId,
-        serviceName: _activeServiceName ?? widget.serviceName,
+        serviceProcedureId: widget.serviceProcedureId != null ? (_activeServiceProcedureId ?? widget.serviceProcedureId) : null,
+        serviceName: widget.serviceName != null ? (_activeServiceName ?? widget.serviceName) : null,
         stage: widget.stage,
         history: history,
       );
@@ -181,15 +181,25 @@ class _CitizenAssistantChatScreenState extends State<CitizenAssistantChatScreen>
         title: Row(
           children: [
             Container(
-              padding: const EdgeInsets.all(6),
+              width: 38,
+              height: 38,
               decoration: BoxDecoration(
-                color: AppColors.primary.withValues(alpha: 0.1),
                 shape: BoxShape.circle,
+                border: Border.all(color: const Color(0xFFD4AF37), width: 1.5),
               ),
-              child: const Icon(
-                CupertinoIcons.sparkles,
-                color: AppColors.primary,
-                size: 20,
+              child: ClipOval(
+                child: Image.asset(
+                  'assets/icon/master_agent_avatar.png',
+                  fit: BoxFit.cover,
+                  errorBuilder: (ctx, err, stack) => Container(
+                    color: AppColors.primary.withValues(alpha: 0.1),
+                    child: const Icon(
+                      Icons.support_agent,
+                      color: AppColors.primary,
+                      size: 20,
+                    ),
+                  ),
+                ),
               ),
             ),
             const SizedBox(width: 10),
@@ -197,15 +207,15 @@ class _CitizenAssistantChatScreenState extends State<CitizenAssistantChatScreen>
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
                 const Text(
-                  'GovNavigator Guide',
+                  'Master Service Guide',
                   style: TextStyle(
-                    fontSize: 16,
+                    fontSize: 15,
                     fontWeight: FontWeight.w700,
                     color: AppColors.dark,
                   ),
                 ),
                 Text(
-                  widget.serviceName ?? 'Official Citizen Support',
+                  widget.serviceName ?? 'Official Citizen Concierge',
                   style: const TextStyle(
                     fontSize: 11,
                     color: AppColors.secondaryLabel,
@@ -469,12 +479,12 @@ class _CitizenAssistantChatScreenState extends State<CitizenAssistantChatScreen>
       icon = CupertinoIcons.checkmark_circle_fill;
     }
 
-    final currentServiceName = _activeServiceName ?? widget.serviceName ?? 'Certificate of Police Clearance';
+    final currentServiceName = _activeServiceName ?? widget.serviceName ?? 'Public Service';
     final int currentServiceId = (_activeServiceProcedureId != null && _activeServiceProcedureId! > 0)
         ? _activeServiceProcedureId!
         : (widget.serviceProcedureId != null && widget.serviceProcedureId! > 0
             ? widget.serviceProcedureId!
-            : 37);
+            : 0);
 
     final bool isExploreCatalog = rec.actionType == 'ExploreCatalog';
     final bool isEligibilityAction = rec.actionType == 'CheckEligibility' ||

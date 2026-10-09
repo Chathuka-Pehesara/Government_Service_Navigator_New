@@ -231,11 +231,18 @@ class _HomeDashboardTabState extends ConsumerState<HomeDashboardTab> {
     return Container(
       padding: const EdgeInsets.all(18),
       decoration: BoxDecoration(
-        color: AppColors.primary,
+        gradient: const LinearGradient(
+          colors: [
+            Color(0xFF0F2B48),
+            Color(0xFF1B4977),
+          ],
+          begin: Alignment.topLeft,
+          end: Alignment.bottomRight,
+        ),
         borderRadius: BorderRadius.circular(18),
         boxShadow: [
           BoxShadow(
-            color: AppColors.primary.withValues(alpha: 0.25),
+            color: const Color(0xFF0F2B48).withValues(alpha: 0.25),
             blurRadius: 18,
             offset: const Offset(0, 8),
           ),
@@ -247,36 +254,93 @@ class _HomeDashboardTabState extends ConsumerState<HomeDashboardTab> {
           Row(
             children: [
               Container(
-                padding: const EdgeInsets.all(8),
+                width: 48,
+                height: 48,
                 decoration: BoxDecoration(
-                  color: Colors.white.withValues(alpha: 0.18),
-                  borderRadius: BorderRadius.circular(10),
+                  shape: BoxShape.circle,
+                  border: Border.all(color: const Color(0xFFD4AF37), width: 2),
+                  boxShadow: [
+                    BoxShadow(
+                      color: Colors.black.withValues(alpha: 0.25),
+                      blurRadius: 6,
+                    ),
+                  ],
                 ),
-                child: const Icon(
-                  CupertinoIcons.sparkles,
-                  color: Colors.white,
-                  size: 20,
+                child: ClipOval(
+                  child: Image.asset(
+                    'assets/icon/master_agent_avatar.png',
+                    fit: BoxFit.cover,
+                    errorBuilder: (ctx, err, stack) => Container(
+                      color: const Color(0xFF16325C),
+                      child: const Icon(
+                        Icons.support_agent,
+                        color: Color(0xFFD4AF37),
+                        size: 26,
+                      ),
+                    ),
+                  ),
                 ),
               ),
-              const SizedBox(width: 10),
-              const Text(
-                'AI Procedure Navigator',
-                style: TextStyle(
-                  color: Colors.white,
-                  fontSize: 17,
-                  fontWeight: FontWeight.w700,
-                  letterSpacing: -0.2,
+              const SizedBox(width: 12),
+              Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Row(
+                      children: [
+                        const Text(
+                          'Master Service Guide',
+                          style: TextStyle(
+                            color: Colors.white,
+                            fontSize: 17,
+                            fontWeight: FontWeight.w700,
+                            letterSpacing: -0.2,
+                          ),
+                        ),
+                        const SizedBox(width: 8),
+                        Container(
+                          padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
+                          decoration: BoxDecoration(
+                            color: const Color(0xFF10B981).withValues(alpha: 0.2),
+                            borderRadius: BorderRadius.circular(6),
+                            border: Border.all(
+                              color: const Color(0xFF10B981).withValues(alpha: 0.6),
+                              width: 0.8,
+                            ),
+                          ),
+                          child: const Text(
+                            'OFFICIAL GUIDE',
+                            style: TextStyle(
+                              color: Color(0xFF34D399),
+                              fontSize: 8.5,
+                              fontWeight: FontWeight.w800,
+                              letterSpacing: 0.4,
+                            ),
+                          ),
+                        ),
+                      ],
+                    ),
+                    const SizedBox(height: 2),
+                    Text(
+                      'Official Citizen Concierge & Procedure Advisor',
+                      style: TextStyle(
+                        color: Colors.white.withValues(alpha: 0.8),
+                        fontSize: 12,
+                        fontWeight: FontWeight.w500,
+                      ),
+                    ),
+                  ],
                 ),
               ),
             ],
           ),
-          const SizedBox(height: 10),
+          const SizedBox(height: 12),
           Text(
-            'Describe what you need in plain language. Let our AI match your service and build your document checklist.',
+            'Need guidance? Talk directly with your official public service advisor to verify requirements, calculate statutory fees, and prepare your application with ease.',
             style: TextStyle(
-              color: Colors.white.withValues(alpha: 0.9),
-              fontSize: 14,
-              height: 1.35,
+              color: Colors.white.withValues(alpha: 0.92),
+              fontSize: 13.5,
+              height: 1.4,
             ),
           ),
           const SizedBox(height: 16),
@@ -286,13 +350,13 @@ class _HomeDashboardTabState extends ConsumerState<HomeDashboardTab> {
             child: ElevatedButton.icon(
               style: ElevatedButton.styleFrom(
                 backgroundColor: Colors.white,
-                foregroundColor: AppColors.primary,
+                foregroundColor: const Color(0xFF0F2B48),
                 elevation: 0,
                 shape: RoundedRectangleBorder(
                   borderRadius: BorderRadius.circular(12),
                 ),
               ),
-              icon: const Icon(CupertinoIcons.sparkles, size: 18),
+              icon: const Icon(CupertinoIcons.chat_bubble_2_fill, size: 18),
               onPressed: () {
                 Navigator.push(
                   context,
@@ -300,8 +364,8 @@ class _HomeDashboardTabState extends ConsumerState<HomeDashboardTab> {
                 );
               },
               label: const Text(
-                'Ask GovNavigator AI Guide',
-                style: TextStyle(fontWeight: FontWeight.w600, fontSize: 14),
+                'Talk with Master Service Guide',
+                style: TextStyle(fontWeight: FontWeight.w700, fontSize: 14),
               ),
             ),
           ),

@@ -10,10 +10,17 @@ namespace Government_Service_Navigator.Backend.Services
     public class ServiceCatalogService : IServiceCatalogService
     {
         private readonly AppDbContext _context;
+        private readonly global::Backend.Data.VectorDbContext? _vectorDb;
+        private readonly global::AgenticAi.Agents.IntakePlanningAgent.IEmbeddingService? _embeddingService;
 
-        public ServiceCatalogService(AppDbContext context)
+        public ServiceCatalogService(
+            AppDbContext context,
+            global::Backend.Data.VectorDbContext? vectorDb = null,
+            global::AgenticAi.Agents.IntakePlanningAgent.IEmbeddingService? embeddingService = null)
         {
             _context = context;
+            _vectorDb = vectorDb;
+            _embeddingService = embeddingService;
         }
 
         public async Task<ServiceProcedure> CreateServiceAsync(ServiceProcedure service)
@@ -23,6 +30,28 @@ namespace Government_Service_Navigator.Backend.Services
             service.ServiceId = await GenerateNextServiceIdAsync();
             _context.ServiceProcedures.Add(service);
             await _context.SaveChangesAsync();
+
+            if (_vectorDb != null && _embeddingService != null)
+            {
+                try
+                {
+                    var chunk = $"{service.Name} ({service.Category}): Official government procedure for {service.Name}. Citizens can check statutory eligibility, mandatory document requirements, and applicable fee schedules through GovNavigator.";
+                    var embedding = await _embeddingService.GetEmbeddingAsync(chunk);
+                    var categoryTag = $"Service:{service.Id}:{service.ServiceId}";
+                    _vectorDb.KnowledgeChunks.Add(new global::Backend.Data.KnowledgeChunk
+                    {
+                        Content = chunk,
+                        SourceCategory = categoryTag,
+                        Embedding = embedding
+                    });
+                    await _vectorDb.SaveChangesAsync();
+                }
+                catch
+                {
+                    // Non-blocking if vector database is unavailable
+                }
+            }
+
             return service;
         }
 

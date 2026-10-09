@@ -23,7 +23,7 @@ class AuthController extends _$AuthController {
     return _complete(result.success, result.token, email, result.user, result.errorMessage ?? 'Login failed');
   }
 
-  /// Returns true when the new account is created and signed in.
+  /// Returns true when the new account is created.
   Future<bool> signUp({
     required String fullName,
     required String email,
@@ -37,7 +37,13 @@ class AuthController extends _$AuthController {
           password: password,
           nicNumber: nicNumber,
         );
-    return _complete(result.success, result.token, email, result.user, result.errorMessage ?? 'Sign up failed');
+    if (!result.success) {
+      if (ref.mounted) state = AsyncError(result.errorMessage ?? 'Sign up failed', StackTrace.current);
+      return false;
+    }
+    await OnboardingPrefs.markCompleted();
+    if (ref.mounted) state = const AsyncData(null);
+    return true;
   }
 
   Future<bool> _complete(
