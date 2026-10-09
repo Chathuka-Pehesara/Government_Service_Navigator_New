@@ -233,7 +233,7 @@ public class ApplicationDraftingService : IApplicationDraftingService
         draftForValidation.CalculatedFee = effectiveFee;
         draftForValidation.AttachedDocumentNames = stageProvidedDocuments;
 
-        var validation = await _safetyAgent.ValidateAndEnqueueAsync(draftForValidation, eligibility.RequiredDocuments, cancellationToken);
+        var validation = await _safetyAgent.ValidateAndEnqueueAsync(draftForValidation, eligibility.RequiredDocuments, cancellationToken, enqueueTask: false);
 
         var view = new AgentDraftView(submission.Id, DateTime.UtcNow, derivedAge, eligibility, action, validation);
 

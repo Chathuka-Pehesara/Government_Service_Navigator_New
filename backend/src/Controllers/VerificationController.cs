@@ -353,7 +353,7 @@ namespace Government_Service_Navigator.Backend.Controllers
                     };
                 }
             }
-            else if ((submission?.MaxStages <= 1) && payment != null)
+            else if (payment != null)
             {
                 // Template fee could not be read (single-stage) but a real payment record exists
                 paymentInfo = new
@@ -566,27 +566,35 @@ namespace Government_Service_Navigator.Backend.Controllers
                 {
                     int currentStage = sub.CurrentStage > 0 ? sub.CurrentStage : (task.CurrentStage > 0 ? task.CurrentStage : 1);
                     int maxStages = sub.MaxStages > 0 ? sub.MaxStages : (task.MaxStages > 0 ? task.MaxStages : 1);
-                    int finalStage = Math.Max(currentStage, maxStages);
 
                     task.Status = "Approved";
-                    task.CurrentStage = finalStage;
-                    task.StageNumber = finalStage;
-                    task.MaxStages = finalStage;
+                    task.StageNumber = currentStage;
+                    task.CurrentStage = currentStage;
+                    task.MaxStages = maxStages;
 
-                    sub.CurrentStage = finalStage;
-                    sub.MaxStages = finalStage;
-                    sub.StageStatus = "Completed";
-
-                    // Synchronize any remaining pending tasks for this application to Approved
-                    var siblingTasks = await _context.VerificationTasks
-                        .Where(t => t.ApplicationId == task.ApplicationId)
-                        .ToListAsync();
-                    foreach (var st in siblingTasks)
+                    if (currentStage < maxStages)
                     {
-                        st.Status = "Approved";
-                        st.CurrentStage = finalStage;
-                        st.StageNumber = finalStage;
-                        st.MaxStages = finalStage;
+                        sub.CurrentStage = currentStage + 1;
+                        sub.MaxStages = maxStages;
+                        sub.StageStatus = "StageApproved";
+                    }
+                    else
+                    {
+                        sub.CurrentStage = maxStages;
+                        sub.MaxStages = maxStages;
+                        sub.StageStatus = "Completed";
+
+                        // Synchronize any remaining pending tasks for this application to Approved
+                        var siblingTasks = await _context.VerificationTasks
+                            .Where(t => t.ApplicationId == task.ApplicationId && t.Id != task.Id)
+                            .ToListAsync();
+                        foreach (var st in siblingTasks)
+                        {
+                            st.Status = "Approved";
+                            st.CurrentStage = maxStages;
+                            st.StageNumber = maxStages;
+                            st.MaxStages = maxStages;
+                        }
                     }
                 }
                 await _context.SaveChangesAsync();

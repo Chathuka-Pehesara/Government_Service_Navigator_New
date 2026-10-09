@@ -41,9 +41,10 @@ export function documentError(doc: { documentName: string; description?: string 
   if (existingNames.some((n) => n.trim().toLowerCase() === name.toLowerCase())) {
     return "This document is already listed for the service.";
   }
-  const desc = (doc.description ?? "").trim();
-  if (!desc) return "Description is required and cannot be empty.";
-  return v.text("Description", { max: 1000 })(desc);
+  if (doc.description) {
+    return v.text("Description", { max: 1000 })(doc.description.trim());
+  }
+  return null;
 }
 
 export function feeError(fee: { feeType: string; amount: number | string }): string | null {
