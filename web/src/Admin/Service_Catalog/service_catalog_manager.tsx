@@ -76,12 +76,9 @@ export default function ServiceCatalogManager() {
   const [isLoading, setIsLoading] = useState(true);
   const [searchQuery, setSearchQuery] = useState("");
 
-  // Use centralised role helpers from utils/currentUser.
-  // canManageServices → System Admin only: create/edit/delete services & templates.
-  // isDeptAdmin → Department Admin: read-only catalog, manage own officers only.
   const [currentUser] = useState(() => getStoredUser() ?? {});
-  const canWrite = canManageServices(currentUser);          // System Admin only
-  const deptAdmin = isDeptAdmin(currentUser);                // Department Admin
+  const canWrite = canManageServices(currentUser);
+  const deptAdmin = isDeptAdmin(currentUser);
   const scopedCategory = deptAdmin && currentUser.department
     ? getCategoryForDepartment(currentUser.department)
     : null;
@@ -157,7 +154,7 @@ export default function ServiceCatalogManager() {
   };
 
   const openCreateModal = () => {
-    if (!canWrite) return; // guard
+    if (!canWrite) return; 
     setIsEditMode(false);
     setCurrentServiceId(null);
     const defaultDept = currentUser.department || "Civil Department";
@@ -170,6 +167,7 @@ export default function ServiceCatalogManager() {
       totalStages: 1,
       workflowDepartments: [defaultDept],
     });
+    setSaveError(null);
     setIsModalOpen(true);
   };
 
@@ -200,11 +198,24 @@ export default function ServiceCatalogManager() {
       totalStages: stages,
       workflowDepartments: parsedDepts.slice(0, stages),
     });
+    setSaveError(null);
     setIsModalOpen(true);
   };
 
   const handleSaveService = async () => {
     setSaveError(null);
+
+    // --- NEW VALIDATION ADDED HERE ---
+    const nameTrimmed = formData.name.trim();
+    if (!nameTrimmed) {
+      setSaveError("Procedure Name cannot be empty.");
+      return;
+    }
+    if (!/[a-zA-Z]/.test(nameTrimmed)) {
+      setSaveError("Procedure Name must contain at least one letter and cannot be only numbers.");
+      return;
+    }
+
     const problem = serviceError(formData);
     if (problem) {
       setSaveError(problem);
@@ -216,12 +227,10 @@ export default function ServiceCatalogManager() {
         ? `${API_BASE_URL}/api/services/${currentServiceId}`
         : `${API_BASE_URL}/api/services`;
 
-      // WorkflowDepartments is stored as a JSON string in the backend model,
-      // so serialize the array before sending.
       const payload = {
         ...(isEditMode ? { id: parseInt(currentServiceId!) } : {}),
         serviceId: formData.serviceId,
-        name: formData.name,
+        name: nameTrimmed,
         category: formData.category,
         status: formData.status,
         totalStages: formData.totalStages,
@@ -263,7 +272,6 @@ export default function ServiceCatalogManager() {
       });
 
       if (response.ok) {
-        // Immediately update local state to filter out the retired/deleted service
         setServices((prev) => prev.filter((s) => s.id !== id));
       } else {
         console.error("Failed to delete service");
@@ -275,8 +283,6 @@ export default function ServiceCatalogManager() {
 
   const [selectedCategory, setSelectedCategory] = useState<string>("All");
 
-  // Filter out retired services so they don't clutter the active catalog view, plus apply search query and category filter.
-  // Department Admins see only services scoped to their department category (read-only).
   const filteredServices = services
     .filter((service) => service.status !== "Retired")
     .filter((service) => !deptAdmin || !scopedCategory || service.category === scopedCategory)
@@ -291,7 +297,6 @@ export default function ServiceCatalogManager() {
   const [page, setPage] = useState<number>(1);
   const [pageSize, setPageSize] = useState<number>(10);
 
-  // Reset to the first page whenever the filters change (adjusted during render, not in an effect)
   const filterKey = `${searchQuery}|${selectedCategory}`;
   const [prevFilterKey, setPrevFilterKey] = useState(filterKey);
   if (prevFilterKey !== filterKey) {
@@ -367,7 +372,6 @@ export default function ServiceCatalogManager() {
               Overview
             </SideNavLink>
 
-            {/* For Department Admins: All 8 core sections always visible */}
             {!canWrite && deptSlug && (
               <>
                 <SideNavLink
@@ -403,7 +407,6 @@ export default function ServiceCatalogManager() {
               </>
             )}
 
-            {/* For System Admins */}
             {canWrite && (
               <>
                 <SideNavLink renderIcon={Catalog} href="/admin/services" isActive>
@@ -582,7 +585,6 @@ export default function ServiceCatalogManager() {
           </div>
         </Modal>
 
-        {/* Search & Category Filter Bar */}
         <div
           style={{
             backgroundColor: "#ffffff",
