@@ -16,8 +16,6 @@ import {
   TableToolbar,
   TableToolbarContent,
   TableToolbarSearch,
-  ContentSwitcher,
-  Switch,
   Select,
   SelectItem,
   Tag,
