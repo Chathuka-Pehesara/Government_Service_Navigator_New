@@ -10,52 +10,61 @@ namespace Government_Service_Navigator.Backend.Services
 {
     public class NotificationService : INotificationService
     {
-        public async Task SendEmailAsync(string toEmail, string subject, string body, string? htmlBody = null)
+        public Task SendEmailAsync(string toEmail, string subject, string body, string? htmlBody = null)
         {
-            var host = Environment.GetEnvironmentVariable("SMTP_HOST");
-            var portStr = Environment.GetEnvironmentVariable("SMTP_PORT");
-            var user = Environment.GetEnvironmentVariable("SMTP_USER");
-            var pass = Environment.GetEnvironmentVariable("SMTP_PASSWORD");
-            var fromEmail = Environment.GetEnvironmentVariable("SMTP_FROM_EMAIL");
-            if (string.IsNullOrWhiteSpace(fromEmail)) fromEmail = user;
-            var fromName = Environment.GetEnvironmentVariable("SMTP_FROM_NAME");
-            var useSsl = !bool.TryParse(Environment.GetEnvironmentVariable("SMTP_USE_SSL"), out var ssl) || ssl;
+            // Fire-and-forget: execute on background thread pool so SMTP connectivity, handshakes,
+            // or firewall/port issues never delay the HTTP request pipeline or UI responses.
+            _ = Task.Run(async () =>
+            {
+                try
+                {
+                    var host = Environment.GetEnvironmentVariable("SMTP_HOST");
+                    var portStr = Environment.GetEnvironmentVariable("SMTP_PORT");
+                    var user = Environment.GetEnvironmentVariable("SMTP_USER");
+                    var pass = Environment.GetEnvironmentVariable("SMTP_PASSWORD");
+                    var fromEmail = Environment.GetEnvironmentVariable("SMTP_FROM_EMAIL");
+                    if (string.IsNullOrWhiteSpace(fromEmail)) fromEmail = user;
+                    var fromName = Environment.GetEnvironmentVariable("SMTP_FROM_NAME") ?? "Government Service Navigator";
+                    var useSsl = !bool.TryParse(Environment.GetEnvironmentVariable("SMTP_USE_SSL"), out var ssl) || ssl;
 
-            if (string.IsNullOrEmpty(host) || string.IsNullOrEmpty(user) || string.IsNullOrEmpty(pass))
-            {
-                // SMTP not configured yet — log instead of failing the whole request.
-                Console.WriteLine($"[Notification skipped - SMTP not configured] To: {toEmail}, Subject: {subject}");
-                return;
-            }
+                    if (string.IsNullOrEmpty(host) || string.IsNullOrEmpty(user) || string.IsNullOrEmpty(pass))
+                    {
+                        // SMTP not configured yet — log instead of failing the whole request.
+                        Console.WriteLine($"[Notification skipped - SMTP not configured] To: {toEmail}, Subject: {subject}");
+                        return;
+                    }
 
-            var port = int.TryParse(portStr, out var p) ? p : 587;
+                    var port = int.TryParse(portStr, out var p) ? p : 587;
 
-            using var client = new SmtpClient(host, port)
-            {
-                Credentials = new NetworkCredential(user, pass),
-                EnableSsl = useSsl
-            };
+                    using var client = new SmtpClient(host, port)
+                    {
+                        Credentials = new NetworkCredential(user, pass),
+                        EnableSsl = useSsl,
+                        Timeout = 5000 // 5 seconds max timeout to avoid hanging threads
+                    };
 
-            using var message = new MailMessage(new MailAddress(fromEmail!, fromName), new MailAddress(toEmail))
-            {
-                Subject = subject,
-                Body = body
-            };
-            if (!string.IsNullOrEmpty(htmlBody))
-            {
-                // Plain text stays as the main body; clients that render HTML pick this alternate view
-                message.AlternateViews.Add(AlternateView.CreateAlternateViewFromString(htmlBody, Encoding.UTF8, "text/html"));
-            }
+                    using var message = new MailMessage(new MailAddress(fromEmail!, fromName), new MailAddress(toEmail))
+                    {
+                        Subject = subject,
+                        Body = body
+                    };
+                    if (!string.IsNullOrEmpty(htmlBody))
+                    {
+                        // Plain text stays as the main body; clients that render HTML pick this alternate view
+                        message.AlternateViews.Add(AlternateView.CreateAlternateViewFromString(htmlBody, Encoding.UTF8, "text/html"));
+                    }
 
-            try
-            {
-                await client.SendMailAsync(message);
-            }
-            catch (Exception ex)
-            {
-                // Don't let an email failure break the underlying business operation.
-                Console.WriteLine($"[Notification failed] To: {toEmail}, Error: {ex.Message}");
-            }
+                    await client.SendMailAsync(message);
+                    Console.WriteLine($"[Notification sent] To: {toEmail}, Subject: {subject}");
+                }
+                catch (Exception ex)
+                {
+                    // Don't let an email failure break the underlying business operation.
+                    Console.WriteLine($"[Notification failed] To: {toEmail}, Error: {ex.Message}");
+                }
+            });
+
+            return Task.CompletedTask;
         }
 
                 public async Task NotifyRefundStatusAsync(string toEmail, int refundId, string status, string? note)

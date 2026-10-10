@@ -679,39 +679,41 @@ export default function FinanceDashboard() {
         : editStatusValue === "Rejected"
           ? "Failed"
           : "PendingVerification";
+    const prevPayments = payments;
+
+    // Optimistically update payment in local state so the table refreshes immediately
+    const updated = payments.map((p) =>
+      p.id === paymentId
+        ? {
+            ...p,
+            status: editStatusValue,
+            verifiedAt:
+              editStatusValue !== "Pending"
+                ? new Date().toISOString()
+                : undefined,
+            verifiedByOfficerName:
+              editStatusValue !== "Pending" ? officerName : undefined,
+            verificationNotes: currentNotes,
+          }
+        : p,
+    );
+
+    setPayments(updated);
+    setBanner({
+      kind: editStatusValue === "Verified" ? "success" : "info",
+      message: `Payment status for ${targetRef} successfully updated to "${editStatusValue}".`,
+    });
+
+    // Close modal cleanly and reset fields immediately
+    setSelectedPayment(null);
+    setNotes("");
+    notesRef.current = "";
+    setNotesError(null);
+    setIsEditingStatus(false);
 
     setIsSubmittingDecision(true);
     try {
       await updatePaymentStatusApi(paymentId, backendStatus, currentNotes);
-
-      const updated = payments.map((p) =>
-        p.id === paymentId
-          ? {
-              ...p,
-              status: editStatusValue,
-              verifiedAt:
-                editStatusValue !== "Pending"
-                  ? new Date().toISOString()
-                  : undefined,
-              verifiedByOfficerName:
-                editStatusValue !== "Pending" ? officerName : undefined,
-              verificationNotes: currentNotes,
-            }
-          : p,
-      );
-
-      setPayments(updated);
-      setBanner({
-        kind: editStatusValue === "Verified" ? "success" : "info",
-        message: `Payment status for ${targetRef} successfully updated to "${editStatusValue}".`,
-      });
-
-      // Close modal cleanly and reset fields
-      setSelectedPayment(null);
-      setNotes("");
-      notesRef.current = "";
-      setNotesError(null);
-      setIsEditingStatus(false);
 
       // Re-fetch department payments in background to ensure all counters & stats synchronize
       getDepartmentPayments()
@@ -722,6 +724,7 @@ export default function FinanceDashboard() {
         })
         .catch(() => {});
     } catch (err) {
+      setPayments(prevPayments);
       if (err instanceof ApiError && err.status === 400) {
         setBanner({ kind: "error", message: err.message });
         return;
@@ -749,42 +752,44 @@ export default function FinanceDashboard() {
     const targetRef = selectedPayment.referenceNumber || `APP-${selectedPayment.applicationId}`;
     const amountFmt = formatCurrency(selectedPayment.amount);
     const category = selectedPayment.paymentCategory;
+    const prevPayments = payments;
+
+    // Optimistically update payment in local state so the table badge and status reflect instantly
+    const updated = payments.map((p) =>
+      p.id === paymentId
+        ? {
+            ...p,
+            status: decision,
+            verifiedAt: new Date().toISOString(),
+            verifiedByOfficerName: officerName,
+            verificationNotes: currentNotes,
+          }
+        : p,
+    );
+
+    setPayments(updated);
+    setBanner({
+      kind: decision === "Verified" ? "success" : "info",
+      message:
+        decision === "Verified"
+          ? category === "DirectMobile"
+            ? `Direct Payment ${targetRef} (${amountFmt}) verified! Treasury receipt issued and recorded in ledger.`
+            : `Statutory Payment ${targetRef} (${amountFmt}) verified! Receipt recorded and Stage unlocked for Verification Officer.`
+          : category === "DirectMobile"
+            ? `Direct Payment ${targetRef} (${amountFmt}) rejected.`
+            : `Statutory Payment ${targetRef} (${amountFmt}) rejected. Stage verification remains locked for the Verification Officer.`,
+    });
+
+    // Close modal cleanly so user returns to the updated table immediately with 0 delay
+    setSelectedPayment(null);
+    setNotes("");
+    notesRef.current = "";
+    setNotesError(null);
+    setIsEditingStatus(false);
 
     setIsSubmittingDecision(true);
     try {
       await verifyPaymentApi(paymentId, isApproved, currentNotes);
-
-      const updated = payments.map((p) =>
-        p.id === paymentId
-          ? {
-              ...p,
-              status: decision,
-              verifiedAt: new Date().toISOString(),
-              verifiedByOfficerName: officerName,
-              verificationNotes: currentNotes,
-            }
-          : p,
-      );
-
-      setPayments(updated);
-      setBanner({
-        kind: decision === "Verified" ? "success" : "info",
-        message:
-          decision === "Verified"
-            ? category === "DirectMobile"
-              ? `Direct Payment ${targetRef} (${amountFmt}) verified! Treasury receipt issued and recorded in ledger.`
-              : `Statutory Payment ${targetRef} (${amountFmt}) verified! Receipt recorded and Stage unlocked for Verification Officer.`
-            : category === "DirectMobile"
-              ? `Direct Payment ${targetRef} (${amountFmt}) rejected.`
-              : `Statutory Payment ${targetRef} (${amountFmt}) rejected. Stage verification remains locked for the Verification Officer.`,
-      });
-
-      // Close modal cleanly so user returns to the updated table immediately
-      setSelectedPayment(null);
-      setNotes("");
-      notesRef.current = "";
-      setNotesError(null);
-      setIsEditingStatus(false);
 
       // Re-fetch department payments in background to ensure all counters & stats synchronize
       getDepartmentPayments()
@@ -795,6 +800,7 @@ export default function FinanceDashboard() {
         })
         .catch(() => {});
     } catch (err) {
+      setPayments(prevPayments);
       if (err instanceof ApiError && err.status === 400) {
         setBanner({ kind: "error", message: err.message });
         return;

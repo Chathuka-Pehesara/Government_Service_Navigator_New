@@ -334,6 +334,22 @@ export default function VerificationWorkspace() {
     const maxStages = detail?.task.maxStages ?? 1;
     const isMultiStage = maxStages > activeStage;
 
+    const prevDetail = detail;
+    const nextStageNum = (isMultiStage && status === "Approved") ? activeStage + 1 : activeStage;
+    const finalStatus = status === "Revision Requested" ? "Revised" : status;
+
+    // Optimistically update status immediately in UI so status changes with 0ms buffering
+    setDetail(prev => prev ? {
+      ...prev,
+      task: {
+        ...prev.task,
+        status: finalStatus,
+        currentStage: nextStageNum,
+        stageNumber: nextStageNum,
+      },
+    } : prev);
+    setDecision(status);
+
     try {
       const endpoint = (status === "Approved" && isMultiStage)
         ? `${API_BASE_URL}/api/Verification/tasks/${taskId}/approve-stage`
@@ -357,24 +373,14 @@ export default function VerificationWorkspace() {
       });
 
       if (response.ok) {
-        const nextStageNum = (isMultiStage && status === "Approved") ? activeStage + 1 : activeStage;
-        const finalStatus = status === "Revision Requested" ? "Revised" : status;
-        setDetail(prev => prev ? {
-          ...prev,
-          task: {
-            ...prev.task,
-            status: finalStatus,
-            currentStage: nextStageNum,
-            stageNumber: nextStageNum,
-          },
-        } : prev);
-        setDecision(status);
         setSubmitStatus("success");
         setTimeout(() => navigate('/officer/pending-reviews'), 2000);
       } else {
+        setDetail(prevDetail);
         setSubmitStatus("error");
       }
     } catch {
+      setDetail(prevDetail);
       setSubmitStatus("error");
     } finally {
       setIsSubmitting(false);
@@ -1261,7 +1267,7 @@ export default function VerificationWorkspace() {
                             size="sm"
                             renderIcon={Checkmark}
                             onClick={() => { handleDecision("Approved"); }}
-                            disabled={isSubmitting || (detail?.payment != null && !detail.payment.isVerified)}
+                            disabled={isSubmitting || (Boolean(detail?.payment?.hasPayment) && !detail?.payment?.isVerified)}
                           >
                             {isSubmitting && decision === "Approved" ? "Approving..." : "Approve"}
                           </Button>

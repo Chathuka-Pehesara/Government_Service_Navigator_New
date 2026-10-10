@@ -93,20 +93,19 @@ namespace Government_Service_Navigator.Backend.Services
                 payment.Status = "Failed";
             }
 
-            await _context.SaveChangesAsync();
-
-            await _notificationService.NotifyPaymentStatusAsync(payment.UserEmail, payment.Id, payment.Status);
-
             _context.AuditLogs.Add(new AuditLog
             {
                 ApplicationId = payment.ApplicationId,
-                Action = "PaymentVerified",
+                Action = approved ? "PaymentVerified" : "PaymentRejected",
                 PerformedBy = "officer",
                 Timestamp = DateTime.UtcNow,
                 OldValues = $"Status={oldStatus}",
                 NewValues = $"PaymentId={payment.Id}, Status={payment.Status}"
             });
+
             await _context.SaveChangesAsync();
+
+            _ = _notificationService.NotifyPaymentStatusAsync(payment.UserEmail, payment.Id, payment.Status);
 
             return payment;
         }
@@ -150,10 +149,6 @@ namespace Government_Service_Navigator.Backend.Services
                 payment.PaidDate = null;
             }
 
-            await _context.SaveChangesAsync();
-
-            await _notificationService.NotifyPaymentStatusAsync(payment.UserEmail, payment.Id, payment.Status);
-
             _context.AuditLogs.Add(new AuditLog
             {
                 ApplicationId = payment.ApplicationId,
@@ -163,7 +158,10 @@ namespace Government_Service_Navigator.Backend.Services
                 OldValues = $"PaymentId={payment.Id}, Status={oldStatus}",
                 NewValues = $"Status={payment.Status}, Note={note ?? "Status updated by officer"}"
             });
+
             await _context.SaveChangesAsync();
+
+            _ = _notificationService.NotifyPaymentStatusAsync(payment.UserEmail, payment.Id, payment.Status);
 
             return payment;
         }

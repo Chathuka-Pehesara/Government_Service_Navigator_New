@@ -814,7 +814,10 @@ namespace Government_Service_Navigator.Backend.Controllers
                 NewValues = $"Stage: {submission.CurrentStage}, Status: Approved, NextDept: {submission.CurrentDepartment}, Note: {request.Notes}"
             });
 
-            // 3. Trigger citizen notification
+            // 3. Commit DB changes immediately so status updates are persisted instantaneously
+            await _context.SaveChangesAsync();
+
+            // 4. Trigger citizen notification in background (non-blocking)
             var notificationService = HttpContext.RequestServices.GetService<INotificationService>();
             if (notificationService != null && !string.IsNullOrEmpty(submission.UserEmail))
             {
@@ -822,14 +825,13 @@ namespace Government_Service_Navigator.Backend.Controllers
                     ? $"Please open the app to submit the Stage {task.CurrentStage} form for {submission.CurrentDepartment}."
                     : $"Please open the app to complete Stage {task.CurrentStage}.";
 
-                await notificationService.SendEmailAsync(
+                _ = notificationService.SendEmailAsync(
                     submission.UserEmail,
                     $"Stage {prevStage} Approved by {prevDept}!",
                     $"Your Stage {prevStage} application has been verified and approved by {prevDept}. {nextNotice}"
                 );
             }
 
-            await _context.SaveChangesAsync();
             return Ok(new { currentStage = task.CurrentStage, maxStages = task.MaxStages, status = task.Status, currentDepartment = submission.CurrentDepartment });
         }
 
