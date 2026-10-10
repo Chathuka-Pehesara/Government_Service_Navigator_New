@@ -702,13 +702,13 @@ export default function SupervisorCopilotBubble({
                           backgroundColor:
                             m.recommendation.actionType === "Approve"
                               ? "#defbe6"
-                              : m.recommendation.actionType === "RequestRevision"
+                              : m.recommendation.actionType === "RequestRevision" || m.recommendation.actionType === "ActionRequired"
                               ? "#fef0c7"
                               : "#fde8e8",
                           border: `1px solid ${
                             m.recommendation.actionType === "Approve"
                               ? "#24a148"
-                              : m.recommendation.actionType === "RequestRevision"
+                              : m.recommendation.actionType === "RequestRevision" || m.recommendation.actionType === "ActionRequired"
                               ? "#f1c21b"
                               : "#da1e28"
                           }`,
@@ -720,7 +720,7 @@ export default function SupervisorCopilotBubble({
                           {m.recommendation.actionType === "Approve" ? (
                             <CheckmarkFilled size={14} style={{ color: "#24a148" }} />
                           ) : (
-                            <WarningAltFilled size={14} style={{ color: "#da1e28" }} />
+                            <WarningAltFilled size={14} style={{ color: m.recommendation.actionType === "Reject" ? "#da1e28" : "#b28600" }} />
                           )}
                           Official Recommendation: {m.recommendation.title}
                         </div>

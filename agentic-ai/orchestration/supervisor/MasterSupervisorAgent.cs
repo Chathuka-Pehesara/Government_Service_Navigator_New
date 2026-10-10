@@ -246,6 +246,14 @@ namespace Government_Service_Navigator.AgenticAi.Orchestration
                 }
             }
 
+            bool isInitialBriefing = isWeb && (
+                string.IsNullOrWhiteSpace(request.Query)
+                || queryLower.Contains("initial case verification summary")
+                || queryLower.Contains("initial case summary")
+                || queryLower.Contains("initial summary")
+                || (queryLower.Contains("case overview") && !queryLower.Contains("why") && !queryLower.Contains("how"))
+                || queryLower.Contains("initial case briefing"));
+
             // ── Step 1: Agent 1 Intake & Procedure Discovery
             // Only prepend service name when user is in a specific active case submission
             string intakeQuery = request.Query ?? "Public service inquiry";
@@ -255,9 +263,14 @@ namespace Government_Service_Navigator.AgenticAi.Orchestration
                 intakeQuery = $"{serviceName} {intakeQuery}";
             }
 
-            var intakeOutcome = await _intakeTool.ProcessIntakeAsync(intakeQuery, cancellationToken);
-            trace.Add(intakeOutcome.Trace);
-            agent1Result = intakeOutcome.Data;
+            bool runIntake = !isWeb || isInitialBriefing || string.IsNullOrWhiteSpace(serviceName) || serviceName.Equals("Government Service", StringComparison.OrdinalIgnoreCase) || queryLower.Contains("roadmap") || queryLower.Contains("step") || queryLower.Contains("procedure");
+
+            if (runIntake)
+            {
+                var intakeOutcome = await _intakeTool.ProcessIntakeAsync(intakeQuery, cancellationToken);
+                trace.Add(intakeOutcome.Trace);
+                agent1Result = intakeOutcome.Data;
+            }
 
             bool isServiceNotFound = agent1Result == null 
                 || string.IsNullOrWhiteSpace(agent1Result.RecommendedService)
@@ -304,13 +317,18 @@ namespace Government_Service_Navigator.AgenticAi.Orchestration
             // ── Step 2: Agent 2 Statutory Eligibility & Evidentiary Document Analysis
             // Runs only when citizen explicitly asks about eligibility/documents/criteria, or for web officer verification
             EligibilityPlanResponse? agent2Result = null;
-            bool checkEligibilityOrDocs = isWeb
+            bool checkEligibilityOrDocs = isInitialBriefing
                                          || queryLower.Contains("document") || queryLower.Contains("evidence")
                                          || queryLower.Contains("eligible") || queryLower.Contains("eligib")
                                          || queryLower.Contains("check") || queryLower.Contains("qualify") || queryLower.Contains("qualif")
                                          || queryLower.Contains("requirement") || queryLower.Contains("criteria") || queryLower.Contains("criterion")
                                          || queryLower.Contains("photo") || queryLower.Contains("receipt")
-                                         || queryLower.Contains("bring") || queryLower.Contains("upload");
+                                         || queryLower.Contains("bring") || queryLower.Contains("upload")
+                                         || queryLower.Contains("nic") || queryLower.Contains("birth")
+                                         || queryLower.Contains("age") || queryLower.Contains("rule")
+                                         || queryLower.Contains("verify") || queryLower.Contains("inspect")
+                                         || queryLower.Contains("manual") || queryLower.Contains("draft")
+                                         || queryLower.Contains("determination") || queryLower.Contains("decision");
 
             if (checkEligibilityOrDocs)
             {
@@ -329,8 +347,11 @@ namespace Government_Service_Navigator.AgenticAi.Orchestration
             // Strictly invoked only when citizen asks about fees, costs, appointments, or counter slots (or web officer)
             FeeCalculationResult? feeResult = null;
             AppointmentSlotResult? slotResult = null;
-            bool checkFee = isWeb
-                            || queryLower.Contains("fee") || queryLower.Contains("cost") || queryLower.Contains("pay") || queryLower.Contains("charge") || queryLower.Contains("price");
+            bool checkFee = isInitialBriefing
+                            || queryLower.Contains("fee") || queryLower.Contains("cost") || queryLower.Contains("pay")
+                            || queryLower.Contains("charge") || queryLower.Contains("price") || queryLower.Contains("tariff")
+                            || queryLower.Contains("slip") || queryLower.Contains("receipt") || queryLower.Contains("finance")
+                            || queryLower.Contains("audit") || queryLower.Contains("draft") || queryLower.Contains("determination");
 
             bool checkSlot = queryLower.Contains("slot") || queryLower.Contains("appointment") || queryLower.Contains("book") || queryLower.Contains("counter") || queryLower.Contains("schedule") || queryLower.Contains("visit");
 
@@ -350,11 +371,14 @@ namespace Government_Service_Navigator.AgenticAi.Orchestration
 
             // ── Step 4: Agent 4 Safety & Duplicate Check (For Web Officers & Cases)
             DuplicateCheckOutcome? duplicateResult = null;
-            bool checkDuplicateOrSafety = isWeb || queryLower.Contains("duplicate") || queryLower.Contains("safety") || queryLower.Contains("fraud") || queryLower.Contains("valid");
-            if (caseContext != null && checkDuplicateOrSafety)
+            bool checkDuplicateOrSafety = (caseContext != null) && (isInitialBriefing
+                || queryLower.Contains("duplicate") || queryLower.Contains("safety") || queryLower.Contains("fraud")
+                || queryLower.Contains("valid") || queryLower.Contains("collision") || queryLower.Contains("registry")
+                || queryLower.Contains("draft") || queryLower.Contains("determination"));
+            if (checkDuplicateOrSafety)
             {
                 var safetyOutcome = await _safetyTool.AuditSafetyAndDuplicateAsync(
-                    caseContext.CitizenNic,
+                    caseContext!.CitizenNic,
                     serviceId,
                     caseContext.ApplicationId,
                     caseContext.CitizenAge,
@@ -369,13 +393,14 @@ namespace Government_Service_Navigator.AgenticAi.Orchestration
             // 3. Supervisor Cognitive Synthesis (Role-specific tone & strict grounding)
             string tone = isWeb ? "StatutoryOfficial" : "CitizenSupportive";
             string answer;
-            SupervisorRecommendation recommendation = new();
+            SupervisorRecommendation? recommendation = null;
 
             if (_llmService != null && _llmService.IsConfigured)
             {
                 answer = await GenerateLlmSupervisorAnswerAsync(
                     request,
                     isWeb,
+                    isInitialBriefing,
                     caseContext,
                     serviceName,
                     currentStage,
@@ -392,6 +417,7 @@ namespace Government_Service_Navigator.AgenticAi.Orchestration
                 answer = GenerateFallbackSupervisorAnswer(
                     request,
                     isWeb,
+                    isInitialBriefing,
                     caseContext,
                     serviceName,
                     trace,
@@ -405,58 +431,93 @@ namespace Government_Service_Navigator.AgenticAi.Orchestration
             // 4. Determine Recommended Officer/Citizen Action
             if (isWeb)
             {
-                bool hasMissingDocs = agent2Result?.MissingDocuments.Count > 0;
-                bool hasIneligibility = agent2Result != null && (!agent2Result.IsEligible || agent2Result.MissingCriteria.Count > 0);
-                bool hasAgent4Issues = trace.Any(t => t.AgentId == "agent-4" && (t.Status == "AttentionRequired" || t.Summary.Contains("SCHEMA-", StringComparison.OrdinalIgnoreCase) || t.Summary.Contains("DOC-", StringComparison.OrdinalIgnoreCase) || t.Summary.Contains("SAFETY-", StringComparison.OrdinalIgnoreCase)));
-                bool isExplicitlyNonCompliant = answer.Contains("Non-compliant", StringComparison.OrdinalIgnoreCase)
-                                                || answer.Contains("fails initial statutory compliance", StringComparison.OrdinalIgnoreCase)
-                                                || answer.Contains("Conflict Identified", StringComparison.OrdinalIgnoreCase)
-                                                || answer.Contains("Deficiency", StringComparison.OrdinalIgnoreCase)
-                                                || answer.Contains("Deficiencies", StringComparison.OrdinalIgnoreCase);
+                if (isInitialBriefing || queryLower.Contains("recommend") || queryLower.Contains("determination") || queryLower.Contains("decision") || queryLower.Contains("draft"))
+                {
+                    bool hasMissingDocs = agent2Result?.MissingDocuments.Count > 0;
+                    bool hasIneligibility = agent2Result != null && (!agent2Result.IsEligible || agent2Result.MissingCriteria.Count > 0);
+                    bool hasAgent4Issues = trace.Any(t => t.AgentId == "agent-4" && (t.Status == "AttentionRequired" || t.Summary.Contains("SCHEMA-", StringComparison.OrdinalIgnoreCase) || t.Summary.Contains("DOC-", StringComparison.OrdinalIgnoreCase) || t.Summary.Contains("SAFETY-", StringComparison.OrdinalIgnoreCase)));
+                    bool isPaymentPending = caseContext != null && (!caseContext.IsPaymentVerified && ((feeResult != null && feeResult.TotalAmount > 0) || caseContext.PaidAmount > 0));
+                    bool requiresVisualInspection = caseContext != null && caseContext.UploadedDocumentNames.Any(name =>
+                        name.Contains("image", StringComparison.OrdinalIgnoreCase) ||
+                        name.Contains("capture", StringComparison.OrdinalIgnoreCase) ||
+                        name.Contains("whatsapp", StringComparison.OrdinalIgnoreCase) ||
+                        name.EndsWith(".jpg", StringComparison.OrdinalIgnoreCase) ||
+                        name.EndsWith(".jpeg", StringComparison.OrdinalIgnoreCase) ||
+                        name.EndsWith(".png", StringComparison.OrdinalIgnoreCase));
+                    bool isExplicitlyNonCompliant = answer.Contains("Non-compliant", StringComparison.OrdinalIgnoreCase)
+                                                    || answer.Contains("fails initial statutory compliance", StringComparison.OrdinalIgnoreCase)
+                                                    || answer.Contains("Conflict Identified", StringComparison.OrdinalIgnoreCase)
+                                                    || answer.Contains("Deficiency", StringComparison.OrdinalIgnoreCase)
+                                                    || answer.Contains("Deficiencies", StringComparison.OrdinalIgnoreCase);
 
-                if (duplicateResult?.IsDuplicate == true)
-                {
-                    recommendation = new SupervisorRecommendation
+                    if (duplicateResult?.IsDuplicate == true)
                     {
-                        ActionType = "Reject",
-                        Title = "Investigate Duplicate Submission",
-                        Rationale = $"Collision detected with existing application {duplicateResult.ExistingReference}.",
-                        RiskLevel = "High"
-                    };
-                }
-                else if (hasMissingDocs || hasIneligibility || hasAgent4Issues || isExplicitlyNonCompliant)
-                {
-                    var issues = new List<string>();
-                    if (hasAgent4Issues)
-                    {
-                        var agent4Trace = trace.FirstOrDefault(t => t.AgentId == "agent-4");
-                        var msg = agent4Trace != null && !string.IsNullOrWhiteSpace(agent4Trace.Summary)
-                            ? agent4Trace.Summary
-                            : "Safety schema or document anomaly detected";
-                        issues.Add(msg);
+                        recommendation = new SupervisorRecommendation
+                        {
+                            ActionType = "Reject",
+                            Title = "Investigate Duplicate Submission",
+                            Rationale = $"Collision detected with existing application {duplicateResult.ExistingReference}.",
+                            RiskLevel = "High"
+                        };
                     }
-                    if (hasMissingDocs) issues.Add($"Missing: {string.Join(", ", agent2Result!.MissingDocuments)}");
-                    if (hasIneligibility) issues.Add($"Criteria: {string.Join(", ", agent2Result!.MissingCriteria)}");
-
-                    recommendation = new SupervisorRecommendation
+                    else if (hasMissingDocs || hasIneligibility || hasAgent4Issues || isExplicitlyNonCompliant)
                     {
-                        ActionType = "RequestRevision",
-                        Title = "Request Evidentiary Revision",
-                        Rationale = issues.Any()
-                            ? string.Join("; ", issues) + "."
-                            : "Application fails statutory compliance. Advise citizen to submit verified identity document and date of birth proof.",
-                        RiskLevel = "Medium"
-                    };
+                        var issues = new List<string>();
+                        if (hasAgent4Issues)
+                        {
+                            var agent4Trace = trace.FirstOrDefault(t => t.AgentId == "agent-4");
+                            var msg = agent4Trace != null && !string.IsNullOrWhiteSpace(agent4Trace.Summary)
+                                ? agent4Trace.Summary
+                                : "Safety schema or document anomaly detected";
+                            issues.Add(msg);
+                        }
+                        if (hasMissingDocs) issues.Add($"Missing: {string.Join(", ", agent2Result!.MissingDocuments)}");
+                        if (hasIneligibility) issues.Add($"Criteria: {string.Join(", ", agent2Result!.MissingCriteria)}");
+
+                        recommendation = new SupervisorRecommendation
+                        {
+                            ActionType = "RequestRevision",
+                            Title = "Request Evidentiary Revision",
+                            Rationale = issues.Any()
+                                ? string.Join("; ", issues) + "."
+                                : "Application fails statutory compliance. Advise citizen to submit verified identity document and date of birth proof.",
+                            RiskLevel = "Medium"
+                        };
+                    }
+                    else if (isPaymentPending)
+                    {
+                        recommendation = new SupervisorRecommendation
+                        {
+                            ActionType = "ActionRequired",
+                            Title = "Finance Audit Clearance Pending",
+                            Rationale = $"Statutory payment of LKR {(feeResult?.TotalAmount ?? caseContext?.PaidAmount ?? 0):N2} is awaiting Finance Officer audit and verification.",
+                            RiskLevel = "Low"
+                        };
+                    }
+                    else if (requiresVisualInspection)
+                    {
+                        recommendation = new SupervisorRecommendation
+                        {
+                            ActionType = "ActionRequired",
+                            Title = "Manual Document Inspection Required",
+                            Rationale = "Uploaded documents are image/camera captures. Visually verify legibility and authenticity before approving stage.",
+                            RiskLevel = "Low"
+                        };
+                    }
+                    else
+                    {
+                        recommendation = new SupervisorRecommendation
+                        {
+                            ActionType = "Approve",
+                            Title = $"Approve Stage {currentStage}",
+                            Rationale = "All statutory eligibility rules, evidentiary proofs, and anti-fraud criteria satisfied.",
+                            RiskLevel = "Low"
+                        };
+                    }
                 }
                 else
                 {
-                    recommendation = new SupervisorRecommendation
-                    {
-                        ActionType = "Approve",
-                        Title = $"Approve Stage {currentStage}",
-                        Rationale = "All statutory eligibility rules, evidentiary proofs, and anti-fraud criteria satisfied.",
-                        RiskLevel = "Low"
-                    };
+                    recommendation = null;
                 }
             }
             else
@@ -557,15 +618,30 @@ namespace Government_Service_Navigator.AgenticAi.Orchestration
                 }
             }
 
-            var followups = isWeb
-                ? new List<string>
+            List<string> followups;
+            if (isWeb)
+            {
+                var allOptions = new List<string>
                 {
                     "Check missing documents & age rules",
                     "Explain fee calculation for this stage",
                     "Verify duplicate applications in registry",
                     "Draft official determination remarks"
+                };
+
+                followups = allOptions
+                    .Where(opt => !queryLower.Contains(opt.ToLowerInvariant().Substring(0, Math.Min(8, opt.Length))))
+                    .Take(3)
+                    .ToList();
+
+                if (followups.Count == 0)
+                {
+                    followups = allOptions.Take(3).ToList();
                 }
-                : (!string.IsNullOrWhiteSpace(serviceName) && !serviceName.Equals("Government Service", StringComparison.OrdinalIgnoreCase))
+            }
+            else
+            {
+                followups = (!string.IsNullOrWhiteSpace(serviceName) && !serviceName.Equals("Government Service", StringComparison.OrdinalIgnoreCase))
                     ? new List<string>
                     {
                         $"Am I eligible for {serviceName}?",
@@ -580,6 +656,7 @@ namespace Government_Service_Navigator.AgenticAi.Orchestration
                         "Can I book a counter appointment?",
                         "What happens after I submit?"
                     };
+            }
 
             return new SupervisorChatResponse
             {
@@ -597,6 +674,7 @@ namespace Government_Service_Navigator.AgenticAi.Orchestration
         private async Task<string> GenerateLlmSupervisorAnswerAsync(
             SupervisorChatRequest request,
             bool isWeb,
+            bool isInitialBriefing,
             ApplicationCaseContext? caseContext,
             string serviceName,
             int currentStage,
@@ -613,17 +691,14 @@ namespace Government_Service_Navigator.AgenticAi.Orchestration
             {
                 systemPrompt =
                     "You are the GovNavigator Supervisor — the official administrative advisory co-pilot assisting Sri Lanka Government Verification Officers.\n" +
-                    "Your role is to help the human officer quickly verify application completeness, identify any missing documents or discrepancies, and recommend clear next steps.\n\n" +
+                    "Your role is to help the human officer quickly verify application completeness, answer specific procedural questions, and recommend clear next steps.\n\n" +
                     "COMMUNICATION DIRECTIVES FOR HUMAN OFFICERS:\n" +
                     "- Write in clear, professional, human-readable administrative English. Speak directly as an experienced government advisor.\n" +
-                    "- ABSOLUTELY NO INTERNAL AI JARGON: NEVER mention internal AI architecture such as 'sub-agents', 'Agent 1', 'Agent 2', 'Agent 3', 'Agent 4', 'deterministic verification', 'cognitive AI assessment', 'semantic document interpretation', 'schema codes (like SCHEMA-AGE-002, DOC-002)', or 'algorithmic fee math'. A verification officer needs practical, plain-language facts, not system logs.\n" +
-                    "- STRUCTURE CASE BRIEFINGS CLEARLY:\n" +
-                    "  1. Case Overview: 1-2 sentences stating the applicant, service, and immediate status (e.g. ⚠️ Action Required — Incomplete Submission, or ✅ Ready for Determination).\n" +
-                    "  2. Key Verification Findings: Clear, scannable bullet points detailing what is missing or problematic, and what was verified successfully (e.g. 'Missing Document: National Identity Card (NIC) was not uploaded', 'Data Discrepancy: Applicant age is entered as 0 years (minimum required age is 16)', 'Duplicate Check: Clean — no duplicate application found', 'Stage Statutory Fee: LKR [reconciled fee]').\n" +
-                    "  3. Recommended Officer Action: 2-3 concrete, actionable steps for the officer (e.g. 'Request the applicant to upload a clear copy of their NIC (front & back)', 'Verify the applicant's date of birth before granting approval').\n" +
-                    "- DIRECT ANSWERS TO QUESTIONS: When the officer asks a specific question (e.g., about fees, rules, or duplicate checks), answer directly, concisely, and practically in 1-2 paragraphs in plain terms without re-pasting system logs or internal engineering terms.\n" +
-                    "- DETERMINATION INTEGRITY: If any required document is missing or any eligibility rule is violated, conclude clearly that the application CANNOT be approved yet and requires evidentiary revision. Never say all rules are satisfied when deficiencies exist.\n" +
-                    "- STRICT FACTUAL GROUNDING: Rely strictly on the provided case data, verified catalog rules, and fee schedules. Never invent unverified policies or requirements.";
+                    "- ABSOLUTELY NO INTERNAL AI JARGON: NEVER mention internal AI architecture such as 'sub-agents', 'Agent 1', 'Agent 2', 'Agent 3', 'Agent 4', 'deterministic verification', 'cognitive AI assessment', 'semantic document interpretation', 'schema codes (like SCHEMA-AGE-002, DOC-002)', or 'algorithmic fee math'.\n" +
+                    "- FOCUSED DIRECT ANSWERS: When the officer asks a specific question (e.g. about verifying NIC, fee calculation, missing documents, age rules, or duplicate checks), answer ONLY that specific question directly and concisely in 1-2 focused paragraphs. Do NOT repeat the full case briefing or unrelated sections.\n" +
+                    "- INITIAL BRIEFINGS ONLY: Present the structured 4-part case briefing (Case Overview, Statutory Fee, Key Verification Findings, Recommended Officer Action) ONLY during the initial case summary or when specifically asked for a full overview.\n" +
+                    "- DETERMINATION INTEGRITY: If any required document is missing, uninspected, or any eligibility rule is violated, state clearly what needs to be verified before approval. Never claim all rules are satisfied when uninspected files or unverified fees exist.\n" +
+                    "- STRICT FACTUAL GROUNDING: Rely strictly on the provided case data, uploaded document names, verified catalog rules, and fee schedules.";
             }
             else
             {
@@ -660,19 +735,44 @@ namespace Government_Service_Navigator.AgenticAi.Orchestration
             string userPrompt;
             if (isWeb)
             {
-                userPrompt =
-                    $"PLATFORM: Government Verification Officer Workspace\n" +
-                    $"SERVICE: {serviceName} (Stage {currentStage})\n" +
-                    $"CITIZEN NIC: {caseContext?.CitizenNic ?? "N/A"} | APPLICANT: {caseContext?.CitizenName ?? "N/A"}\n" +
-                    $"ACTIVE STAGE STATUTORY FEE: LKR {activeStageFee:N2}{paymentStatusNote}\n" +
-                    $"VERIFICATION AUDIT FINDINGS:\n{findingsSummary}\n" +
-                    intakeSummary + "\n" +
-                    $"OFFICER QUERY: \"{request.Query}\"\n\n" +
-                    $"Respond to the officer query adhering strictly to your human-friendly advisory directives:\n" +
-                    $"- CASE OVERVIEW: State applicant name, NIC, service, and immediate status. If any document is a generic camera/WhatsApp capture needing visual audit, or payment is pending finance audit, report status as '⚠️ Action Required — Manual Document Verification & Finance Audit Required'. Never claim Ready for Approval if generic uploads or unverified payments exist.\n" +
-                    $"- STATUTORY FEE: State the exact Stage Statutory Fee given above: LKR {activeStageFee:N2}{paymentStatusNote}. Never state LKR 0.00 unless the active stage fee is truly 0.00. Never say fee exemption or zero fee.\n" +
-                    $"- FINDINGS: Explicitly distinguish between documents whose filenames match the requirement (e.g. NIC) and generic uploads that require officer visual verification (e.g. Birth Certificate uploaded as a camera/WhatsApp capture).\n" +
-                    $"- RECOMMENDED ACTION: Provide practical, concrete next steps (e.g. '1. Visually inspect the attached file to confirm it is an authentic Birth Certificate. 2. Verify statutory fee payment of LKR {activeStageFee:N2}.').";
+                if (isInitialBriefing)
+                {
+                    userPrompt =
+                        $"PLATFORM: Government Verification Officer Workspace (Initial Case Assessment)\n" +
+                        $"SERVICE: {serviceName} (Stage {currentStage})\n" +
+                        $"CITIZEN NIC: {caseContext?.CitizenNic ?? "N/A"} | APPLICANT: {caseContext?.CitizenName ?? "N/A"}\n" +
+                        $"ACTIVE STAGE STATUTORY FEE: LKR {activeStageFee:N2}{paymentStatusNote}\n" +
+                        $"ATTACHED DOCUMENTS IN CASE: {(caseContext != null && caseContext.UploadedDocumentNames.Count > 0 ? string.Join(", ", caseContext.UploadedDocumentNames) : "None")}\n" +
+                        $"VERIFICATION AUDIT FINDINGS:\n{findingsSummary}\n" +
+                        intakeSummary + "\n" +
+                        $"Provide an initial structured case briefing for the verification officer with the following sections:\n" +
+                        $"- Case Overview: State applicant name, NIC, service, and immediate status. If any document is a generic camera/WhatsApp capture needing visual audit, or payment is pending finance audit, report status as '⚠️ Action Required — Manual Document Verification & Finance Audit Required'. Never claim Ready for Approval if generic uploads or unverified payments exist.\n" +
+                        $"- Statutory Fee: State the exact Stage Statutory Fee given above: LKR {activeStageFee:N2}{paymentStatusNote}. Never state LKR 0.00 unless the active stage fee is truly 0.00. Never say fee exemption or zero fee.\n" +
+                        $"- Key Verification Findings: Explicitly distinguish between documents whose filenames match the requirement (e.g. NIC) and generic uploads that require officer visual verification (e.g. Birth Certificate uploaded as a camera/WhatsApp capture).\n" +
+                        $"- Recommended Officer Action: Provide practical, concrete next steps (e.g. '1. Visually inspect the attached file to confirm it is an authentic Birth Certificate. 2. Verify statutory fee payment of LKR {activeStageFee:N2}.').";
+                }
+                else
+                {
+                    userPrompt =
+                        $"PLATFORM: Government Verification Officer Workspace (Specific Follow-up Question)\n" +
+                        $"SERVICE: {serviceName} (Stage {currentStage})\n" +
+                        $"CITIZEN NIC: {caseContext?.CitizenNic ?? "N/A"} | APPLICANT: {caseContext?.CitizenName ?? "N/A"}\n" +
+                        $"ACTIVE STAGE STATUTORY FEE: LKR {activeStageFee:N2}{paymentStatusNote}\n" +
+                        $"ATTACHED DOCUMENTS IN CASE: {(caseContext != null && caseContext.UploadedDocumentNames.Count > 0 ? string.Join(", ", caseContext.UploadedDocumentNames) : "None")}\n" +
+                        $"CASE CONTEXT & FINDINGS:\n{findingsSummary}\n" +
+                        intakeSummary + "\n" +
+                        $"OFFICER'S SPECIFIC QUESTION: \"{request.Query}\"\n\n" +
+                        $"CRITICAL INSTRUCTIONS FOR DIRECT QUESTION:\n" +
+                        $"- Answer ONLY the specific question asked above by the officer directly, accurately, and concisely.\n" +
+                        $"- DO NOT include 'Case Overview', 'Statutory Fee', or generic 3-step action checklist unless the question specifically asked for them.\n" +
+                        $"- Ground your answer strictly in the case data and statutory regulations.\n" +
+                        $"- If asking about document inspection (e.g. whether manual verification is needed for the uploaded NIC): Answer directly whether manual verification is required and explain specifically what the officer must inspect (e.g. confirming front & back legibility, photo authenticity, matching applicant NIC {caseContext?.CitizenNic ?? "N/A"}, applicant age ≥ 16).\n" +
+                        $"- If asking about missing documents or age rules: List only the document status and age requirements.\n" +
+                        $"- If asking about fees: Explain the specific statutory fee breakdown.\n" +
+                        $"- If asking about duplicate checks: Explain only the registry collision check.\n" +
+                        $"- If asking for determination remarks: Provide concise, ready-to-use official finding text.\n" +
+                        $"- Keep the tone professional, direct, and concise (1 to 2 paragraphs or focused bullet points).";
+                }
             }
             else
             {
@@ -720,12 +820,13 @@ namespace Government_Service_Navigator.AgenticAi.Orchestration
                 return aiContent.Trim();
             }
 
-            return GenerateFallbackSupervisorAnswer(request, isWeb, caseContext, serviceName, trace, agent1, agent2, fee, slot, dup);
+            return GenerateFallbackSupervisorAnswer(request, isWeb, isInitialBriefing, caseContext, serviceName, trace, agent1, agent2, fee, slot, dup);
         }
 
         private static string GenerateFallbackSupervisorAnswer(
             SupervisorChatRequest request,
             bool isWeb,
+            bool isInitialBriefing,
             ApplicationCaseContext? caseContext,
             string serviceName,
             List<AgentExecutionTraceItem> trace,
@@ -737,6 +838,76 @@ namespace Government_Service_Navigator.AgenticAi.Orchestration
         {
             if (isWeb)
             {
+                var queryLower = (request.Query ?? string.Empty).ToLowerInvariant();
+                if (!isInitialBriefing)
+                {
+                    var focusedSb = new System.Text.StringBuilder();
+
+                    if (queryLower.Contains("nic") || queryLower.Contains("document") || queryLower.Contains("evidence") || queryLower.Contains("photo") || queryLower.Contains("manual") || queryLower.Contains("inspect") || queryLower.Contains("upload") || queryLower.Contains("age") || queryLower.Contains("rule"))
+                    {
+                        focusedSb.AppendLine($"**Document Verification Analysis — {serviceName}**\n");
+                        if (queryLower.Contains("nic"))
+                        {
+                            focusedSb.AppendLine("Yes, manual visual verification is required for the uploaded National Identity Card (NIC):");
+                            focusedSb.AppendLine("- Confirm both the front and reverse sides are clearly legible and uncropped.");
+                            focusedSb.AppendLine($"- Verify the NIC number matches applicant NIC ({caseContext?.CitizenNic ?? "N/A"}) and the photograph is authentic and unaltered.");
+                            focusedSb.AppendLine("- Ensure the applicant meets statutory age requirements (minimum 16 years for independent applications).");
+                        }
+                        else if (agent2 != null && agent2.MissingDocuments.Count > 0)
+                        {
+                            focusedSb.AppendLine($"⚠️ **Missing Required Documents:** {string.Join(", ", agent2.MissingDocuments)}.");
+                            focusedSb.AppendLine("Please request evidentiary resubmission from the applicant before approving this stage.");
+                        }
+                        else
+                        {
+                            focusedSb.AppendLine("All mandatory documents are present. For camera or WhatsApp image captures, visually inspect document legibility and security seals before recording your determination.");
+                        }
+                        return focusedSb.ToString();
+                    }
+                    else if (queryLower.Contains("fee") || queryLower.Contains("tariff") || queryLower.Contains("cost") || queryLower.Contains("pay") || queryLower.Contains("slip") || queryLower.Contains("finance"))
+                    {
+                        focusedSb.AppendLine($"**Statutory Fee Analysis — {serviceName} (Stage {caseContext?.CurrentStage ?? 1})**\n");
+                        decimal feeAmt = fee?.TotalAmount ?? caseContext?.PaidAmount ?? 0m;
+                        focusedSb.AppendLine($"- Stage Statutory Fee: **LKR {feeAmt:N2}**");
+                        if (caseContext != null)
+                        {
+                            focusedSb.AppendLine($"- Payment Status: {(caseContext.IsPaymentVerified ? "✅ Verified and reconciled in treasury ledger." : "⚠️ Deposit slip uploaded — awaiting Finance Officer audit clearance.")}");
+                        }
+                        return focusedSb.ToString();
+                    }
+                    else if (queryLower.Contains("duplicate") || queryLower.Contains("collision") || queryLower.Contains("registry") || queryLower.Contains("fraud") || queryLower.Contains("safety"))
+                    {
+                        focusedSb.AppendLine($"**National Registry Duplicate & Anti-Fraud Audit:**\n");
+                        if (dup?.IsDuplicate == true)
+                        {
+                            focusedSb.AppendLine($"⚠️ **Duplicate Collision Detected:** Existing submission #{dup.ExistingReference} matches applicant NIC {caseContext?.CitizenNic}. Investigate prior case history.");
+                        }
+                        else
+                        {
+                            focusedSb.AppendLine($"✅ **Clean Anti-Collision Status:** No duplicate applications or conflicting active submissions found for NIC {caseContext?.CitizenNic} in the registry.");
+                        }
+                        return focusedSb.ToString();
+                    }
+                    else if (queryLower.Contains("draft") || queryLower.Contains("remark") || queryLower.Contains("determination") || queryLower.Contains("decision"))
+                    {
+                        focusedSb.AppendLine($"**Draft Determination Order Remarks:**\n");
+                        bool isPaymentPending = caseContext != null && !caseContext.IsPaymentVerified && (fee?.TotalAmount > 0 || caseContext.PaidAmount > 0);
+                        if (isPaymentPending)
+                        {
+                            focusedSb.AppendLine($"\"Application #{caseContext?.ApplicationId} documentation reviewed. Statutory approval pending confirmation of LKR {(fee?.TotalAmount ?? caseContext?.PaidAmount ?? 0):N2} payment clearance from Finance Division.\"");
+                        }
+                        else if (agent2 != null && agent2.MissingDocuments.Count > 0)
+                        {
+                            focusedSb.AppendLine($"\"Evidentiary Revision Requested: Missing statutory proofs ({string.Join(", ", agent2.MissingDocuments)}). Citizen notified to submit compliant documents.\"");
+                        }
+                        else
+                        {
+                            focusedSb.AppendLine($"\"Stage {caseContext?.CurrentStage ?? 1} Approved: Evidentiary proofs, identity credentials, and statutory payment for application #{caseContext?.ApplicationId} verified in compliance with departmental gazette regulations.\"");
+                        }
+                        return focusedSb.ToString();
+                    }
+                }
+
                 var sb = new System.Text.StringBuilder();
                 sb.AppendLine($"### Administrative Evidentiary Audit: {serviceName}");
                 sb.AppendLine();
