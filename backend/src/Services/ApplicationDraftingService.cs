@@ -151,7 +151,19 @@ public class ApplicationDraftingService : IApplicationDraftingService
             if (currentStageFieldLabels != null && currentStageFieldLabels.Count > 0)
             {
                 stageProvidedDocuments = dbDocs
-                    .Where(d => !string.IsNullOrWhiteSpace(d.FieldLabel) && currentStageFieldLabels.Contains(d.FieldLabel.Trim().TrimEnd(':').Trim()))
+                    .Where(d =>
+                    {
+                        if (string.IsNullOrWhiteSpace(d.FieldLabel)) return false;
+                        var stageMatch = System.Text.RegularExpressions.Regex.Match(d.FieldLabel, @"^\[Stage\s+(\d+)\]\s*(.*)$", System.Text.RegularExpressions.RegexOptions.IgnoreCase);
+                        if (stageMatch.Success)
+                        {
+                            if (int.TryParse(stageMatch.Groups[1].Value, out var stg) && stg != currentStage)
+                                return false;
+                            var cleanLabel = stageMatch.Groups[2].Value.Trim().TrimEnd(':').Trim();
+                            return currentStageFieldLabels.Contains(cleanLabel) || currentStageFieldLabels.Contains(d.FieldLabel.Trim().TrimEnd(':').Trim());
+                        }
+                        return currentStageFieldLabels.Contains(d.FieldLabel.Trim().TrimEnd(':').Trim());
+                    })
                     .Select(d => $"{d.FieldLabel}: {d.FileName}")
                     .Distinct(StringComparer.OrdinalIgnoreCase)
                     .ToList();

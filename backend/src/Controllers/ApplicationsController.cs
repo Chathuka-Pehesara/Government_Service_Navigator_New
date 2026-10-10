@@ -486,7 +486,9 @@ namespace Government_Service_Navigator.Backend.Controllers
             foreach (var (label, id) in request.Documents)
             {
                 documents[id].ApplicationId = submission.Id;
-                documents[id].FieldLabel = label;
+                documents[id].FieldLabel = label.StartsWith("[Stage", StringComparison.OrdinalIgnoreCase)
+                    ? label
+                    : $"[Stage {stageOrder}] {label}";
             }
             if (documents.Count > 0) await _context.SaveChangesAsync();
 
@@ -790,7 +792,9 @@ namespace Government_Service_Navigator.Backend.Controllers
                 {
                     request.Answers[label] = doc.FileName;
                     doc.ApplicationId = submission.Id;
-                    doc.FieldLabel = label;
+                    doc.FieldLabel = label.StartsWith("[Stage", StringComparison.OrdinalIgnoreCase)
+                        ? label
+                        : $"[Stage {template.StageOrder}] {label}";
                 }
             }
 

@@ -229,53 +229,97 @@ namespace Government_Service_Navigator.Backend.Controllers
 
             // Load active template for the current stage to inspect required file & payment fields
             string[] paymentKeywords = ["bank slip", "deposit slip", "payment slip", "transfer slip", "bank deposit", "bank transfer", "remittance slip", "challan"];
-            HashSet<string> stageFileLabels = new(StringComparer.OrdinalIgnoreCase);
-            HashSet<string> stagePaymentLabels = new(StringComparer.OrdinalIgnoreCase);
-            decimal stageFeeAmount = 0m;
-            bool stageHasPaymentField = false;
+            int activeReviewStage = task.StageNumber > 0
+                ? task.StageNumber
+                : (task.CurrentStage > 0 ? task.CurrentStage : (submission?.CurrentStage > 0 ? submission.CurrentStage : 1));
 
-            int activeReviewStage = submission?.CurrentStage > 0
-                ? submission.CurrentStage
-                : (task.CurrentStage > 0 ? task.CurrentStage : (task.StageNumber > 0 ? task.StageNumber : 1));
-
-            if (submission != null)
-            {
-                var serviceTemplates = await _context.Templates
+            var serviceTemplates = submission != null
+                ? await _context.Templates
                     .Include(t => t.Fields)
                     .Where(t => t.ServiceProcedureId == submission.ServiceProcedureId)
                     .OrderByDescending(t => t.Status == "Active" ? 1 : 0)
-                    .ToListAsync();
+                    .ToListAsync()
+                : new List<Template>();
 
-                foreach (var st in serviceTemplates)
+            int maxStages = submission?.MaxStages > 0 ? submission.MaxStages : (task.MaxStages > 0 ? task.MaxStages : 1);
+            bool isMultiStage = maxStages > 1 || serviceTemplates.Count > 1;
+
+            var currentStageTemplate = serviceTemplates.FirstOrDefault(t => t.StageOrder == activeReviewStage)
+                ?? (serviceTemplates.Count == 1 ? serviceTemplates[0] : null);
+
+            var stageFileLabels = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+            var stagePaymentLabels = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+            decimal stageFeeAmount = 0m;
+            bool stageHasPaymentField = false;
+
+            if (currentStageTemplate != null)
+            {
+                foreach (var f in currentStageTemplate.Fields)
                 {
-                    foreach (var f in st.Fields)
+                    var clean = f.Label.Trim().TrimEnd(':');
+                    if (string.Equals(f.Type, "payment", StringComparison.OrdinalIgnoreCase))
                     {
-                        var clean = f.Label.Trim().TrimEnd(':');
-                        if (string.Equals(f.Type, "payment", StringComparison.OrdinalIgnoreCase))
+                        stageHasPaymentField = true;
+                        stagePaymentLabels.Add(clean);
+                        if (!string.IsNullOrWhiteSpace(f.Options))
                         {
-                            if (st.StageOrder == activeReviewStage || serviceTemplates.Count <= 1)
+                            try
                             {
-                                stageHasPaymentField = true;
-                                stagePaymentLabels.Add(clean);
-                                if (!string.IsNullOrWhiteSpace(f.Options))
-                                {
-                                    try
-                                    {
-                                        using var pDoc = JsonDocument.Parse(f.Options);
-                                        if (pDoc.RootElement.TryGetProperty("amount", out var a)) stageFeeAmount = a.GetDecimal();
-                                        if (pDoc.RootElement.TryGetProperty("feeType", out var ft) && !string.IsNullOrWhiteSpace(ft.GetString()))
-                                            stagePaymentLabels.Add(ft.GetString()!.Trim().TrimEnd(':'));
-                                    }
-                                    catch { }
-                                }
+                                using var pDoc = JsonDocument.Parse(f.Options);
+                                if (pDoc.RootElement.TryGetProperty("amount", out var a)) stageFeeAmount = a.GetDecimal();
+                                if (pDoc.RootElement.TryGetProperty("feeType", out var ft) && !string.IsNullOrWhiteSpace(ft.GetString()))
+                                    stagePaymentLabels.Add(ft.GetString()!.Trim().TrimEnd(':'));
                             }
+                            catch { }
                         }
-                        else if (string.Equals(f.Type, "file", StringComparison.OrdinalIgnoreCase)
-                                 || string.Equals(f.Type, "document", StringComparison.OrdinalIgnoreCase)
-                                 || string.Equals(f.Type, "documentUpload", StringComparison.OrdinalIgnoreCase))
-                        {
-                            stageFileLabels.Add(clean);
-                        }
+                    }
+                    else if (string.Equals(f.Type, "file", StringComparison.OrdinalIgnoreCase)
+                             || string.Equals(f.Type, "document", StringComparison.OrdinalIgnoreCase)
+                             || string.Equals(f.Type, "documentUpload", StringComparison.OrdinalIgnoreCase))
+                    {
+                        stageFileLabels.Add(clean);
+                    }
+                }
+            }
+
+            var otherStageFileLabels = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+            var otherStagePaymentLabels = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+            foreach (var st in serviceTemplates.Where(t => t.StageOrder != activeReviewStage))
+            {
+                foreach (var f in st.Fields)
+                {
+                    var clean = f.Label.Trim().TrimEnd(':');
+                    if (string.Equals(f.Type, "payment", StringComparison.OrdinalIgnoreCase))
+                        otherStagePaymentLabels.Add(clean);
+                    else if (string.Equals(f.Type, "file", StringComparison.OrdinalIgnoreCase)
+                             || string.Equals(f.Type, "document", StringComparison.OrdinalIgnoreCase)
+                             || string.Equals(f.Type, "documentUpload", StringComparison.OrdinalIgnoreCase))
+                        otherStageFileLabels.Add(clean);
+                }
+            }
+
+            var currentStageAnswerFileNames = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+            var otherStageAnswerFileNames = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+
+            if (isMultiStage)
+            {
+                foreach (var kvp in answers)
+                {
+                    var match = System.Text.RegularExpressions.Regex.Match(kvp.Key, @"^\[Stage\s+(\d+)\]\s*(.*)$", System.Text.RegularExpressions.RegexOptions.IgnoreCase);
+                    if (match.Success)
+                    {
+                        int stageNum = int.Parse(match.Groups[1].Value);
+                        if (stageNum == activeReviewStage)
+                            currentStageAnswerFileNames.Add(kvp.Value);
+                        else
+                            otherStageAnswerFileNames.Add(kvp.Value);
+                    }
+                    else
+                    {
+                        if (activeReviewStage == 1)
+                            currentStageAnswerFileNames.Add(kvp.Value);
+                        else
+                            otherStageAnswerFileNames.Add(kvp.Value);
                     }
                 }
             }
@@ -283,43 +327,66 @@ namespace Government_Service_Navigator.Backend.Controllers
             static string NormalizeDocLabel(string val) =>
                 new string(val.Where(char.IsLetterOrDigit).ToArray()).ToLowerInvariant();
 
-            // Tag each document: "stage" | "payment" | "other"
-            var documents = allDocuments.Select(d =>
-            {
-                string category;
-                var label = d.FieldLabel?.Trim().TrimEnd(':') ?? "";
-                var normLabel = NormalizeDocLabel(label);
+            static string StripStagePrefix(string val) =>
+                System.Text.RegularExpressions.Regex.Replace(val, @"^\[Stage\s+\d+\]\s*", "", System.Text.RegularExpressions.RegexOptions.IgnoreCase).Trim();
 
-                // 1. Payment slip check:
-                bool isPaymentSlip = (payment != null && !string.IsNullOrEmpty(payment.ManualSlipUrl) && payment.ManualSlipUrl.Contains(d.Id.ToString(), StringComparison.OrdinalIgnoreCase))
-                    || (!string.IsNullOrEmpty(normLabel) && stagePaymentLabels.Any(pl => string.Equals(NormalizeDocLabel(pl), normLabel, StringComparison.OrdinalIgnoreCase)))
-                    || normLabel.Contains("slip") || normLabel.Contains("deposit") || normLabel.Contains("transferreceipt");
-
-                // 2. Stage document check:
-                // Matches if configured in templates, or referenced in citizen form answers, or uploaded for this application
-                bool isStageDoc = !isPaymentSlip && (
-                    (!string.IsNullOrEmpty(normLabel) && stageFileLabels.Any(s => string.Equals(NormalizeDocLabel(s), normLabel, StringComparison.OrdinalIgnoreCase)))
-                    || (!string.IsNullOrEmpty(label) && answers.ContainsKey(label))
-                    || answers.Values.Any(v => !string.IsNullOrEmpty(v) && string.Equals(v, d.FileName, StringComparison.OrdinalIgnoreCase))
-                    || stageFileLabels.Count == 0
-                    || (submission?.MaxStages <= 1)
-                );
-
-                if (isPaymentSlip)
+            // Filter documents stage-wise: only documents belonging to this active review stage are returned
+            var documents = allDocuments
+                .Select(d =>
                 {
-                    category = "payment";
-                }
-                else if (isStageDoc)
-                {
-                    category = "stage";
-                }
-                else
-                {
-                    category = "other";
-                }
+                    var rawLabel = d.FieldLabel?.Trim() ?? "";
+                    var strippedLabel = StripStagePrefix(rawLabel).TrimEnd(':');
+                    var normLabel = NormalizeDocLabel(strippedLabel);
 
-                return new { d.Id, d.FieldLabel, d.FileName, d.ContentType, d.SizeBytes, d.UploadedAt, category };
-            }).ToList();
+                    int? explicitStage = null;
+                    var m = System.Text.RegularExpressions.Regex.Match(rawLabel, @"^\[Stage\s+(\d+)\]", System.Text.RegularExpressions.RegexOptions.IgnoreCase);
+                    if (m.Success) explicitStage = int.Parse(m.Groups[1].Value);
+
+                    bool belongsToCurrentStage;
+                    if (!isMultiStage)
+                    {
+                        belongsToCurrentStage = true;
+                    }
+                    else if (explicitStage.HasValue)
+                    {
+                        belongsToCurrentStage = explicitStage.Value == activeReviewStage;
+                    }
+                    else if (currentStageAnswerFileNames.Contains(d.FileName))
+                    {
+                        belongsToCurrentStage = true;
+                    }
+                    else if (otherStageAnswerFileNames.Contains(d.FileName))
+                    {
+                        belongsToCurrentStage = false;
+                    }
+                    else if (stageFileLabels.Any(s => string.Equals(NormalizeDocLabel(s), normLabel, StringComparison.OrdinalIgnoreCase)))
+                    {
+                        belongsToCurrentStage = true;
+                    }
+                    else if (otherStageFileLabels.Any(s => string.Equals(NormalizeDocLabel(s), normLabel, StringComparison.OrdinalIgnoreCase)))
+                    {
+                        belongsToCurrentStage = false;
+                    }
+                    else
+                    {
+                        // Fallback: If stage 1, docs without other-stage indicators belong to stage 1. If stage 2+, they do not.
+                        belongsToCurrentStage = activeReviewStage == 1;
+                    }
+
+                    if (!belongsToCurrentStage)
+                    {
+                        return new { d.Id, d.FieldLabel, d.FileName, d.ContentType, d.SizeBytes, d.UploadedAt, category = "other" };
+                    }
+
+                    bool isPaymentSlip = (payment != null && !string.IsNullOrEmpty(payment.ManualSlipUrl) && payment.ManualSlipUrl.Contains(d.Id.ToString(), StringComparison.OrdinalIgnoreCase))
+                        || (!string.IsNullOrEmpty(normLabel) && stagePaymentLabels.Any(pl => string.Equals(NormalizeDocLabel(pl), normLabel, StringComparison.OrdinalIgnoreCase)))
+                        || (stageHasPaymentField && (normLabel.Contains("slip") || normLabel.Contains("deposit") || normLabel.Contains("transferreceipt")));
+
+                    string category = isPaymentSlip ? "payment" : "stage";
+                    return new { d.Id, d.FieldLabel, d.FileName, d.ContentType, d.SizeBytes, d.UploadedAt, category };
+                })
+                .Where(d => d.category != "other")
+                .ToList();
 
             object? paymentInfo = null;
             if (stageHasPaymentField && stageFeeAmount > 0)

@@ -145,9 +145,8 @@ export default function VerificationWorkspace() {
         ? (paymentDocs.find(d => detail?.payment?.slipUrl && detail.payment.slipUrl.includes(d.id))
           ?? (paymentDocs.length > 0 ? paymentDocs[paymentDocs.length - 1] : null))
         : null;
-      const otherDocs = uploaded.filter(d => d.category !== 'stage' && d.category !== 'payment');
-      const relevant = activeSlip ? [...stageDocs, activeSlip, ...otherDocs] : [...stageDocs, ...otherDocs];
-      const order: Record<string, number> = { stage: 0, payment: 1, other: 2 };
+      const relevant = activeSlip ? [...stageDocs, activeSlip] : stageDocs;
+      const order: Record<string, number> = { stage: 0, payment: 1 };
       const sorted = [...relevant].sort((a, b) => (order[a.category] ?? 99) - (order[b.category] ?? 99));
 
       attached = sorted.map(d => ({
@@ -636,7 +635,7 @@ export default function VerificationWorkspace() {
                   <div>
                     <h2 style={{ fontSize: '1.25rem', fontWeight: 600 }}>Submitted Documents</h2>
                     <p style={{ fontSize: '0.875rem', color: '#525252' }}>
-                      Swipe to review all uploads. Verify toggle is active for current-stage documents only.
+                      Swipe to review current stage uploads. Verify toggle is active for current-stage documents.
                     </p>
                   </div>
                   {currentDoc && currentDoc.isStageDoc && currentDoc.docCategory === 'stage' && (
