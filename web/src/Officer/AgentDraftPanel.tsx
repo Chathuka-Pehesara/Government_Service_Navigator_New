@@ -386,26 +386,44 @@ export default function AgentDraftPanel({
               {/* Render Combined Official Verification Dossier & Legal Decree */}
               {(dossier || decisionOrder) && (
                 <div style={{
-                  backgroundColor: "#fff",
-                  border: "2px solid #0f62fe",
-                  borderRadius: "6px",
+                  backgroundColor: "#ffffff",
+                  border: "1.5px solid #0f62fe",
+                  borderRadius: "8px",
                   padding: "1rem",
-                  marginTop: "1rem"
+                  marginTop: "1rem",
+                  boxShadow: "0 2px 6px rgba(15, 98, 254, 0.08)"
                 }}>
-                  <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: "0.5rem" }}>
-                    <div style={{ display: "flex", alignItems: "center", gap: "0.5rem" }}>
-                      <Tag type={decisionOrder?.orderType === "Approval" ? "green" : "red"}>
-                        {(decisionOrder?.orderType ?? "OFFICIAL").toUpperCase()} DETERMINATION DECREE
+                  <div style={{
+                    display: "flex",
+                    flexWrap: "wrap",
+                    alignItems: "center",
+                    justifyContent: "space-between",
+                    gap: "0.5rem",
+                    marginBottom: "0.75rem",
+                    paddingBottom: "0.625rem",
+                    borderBottom: "1px solid #e0e0e0"
+                  }}>
+                    <div style={{ display: "flex", flexWrap: "wrap", alignItems: "center", gap: "0.5rem" }}>
+                      <Tag type={decisionOrder?.orderType === "Approval" ? "green" : "red"} size="sm" style={{ margin: 0, fontWeight: 700 }}>
+                        {(decisionOrder?.orderType ?? "OFFICIAL").toUpperCase()} DECREE
                       </Tag>
                       {dossier && (
-                        <span style={{ fontSize: "0.8125rem", color: "#525252" }}>
-                          Ref: <strong>{dossier.dossierNumber}</strong>
+                        <span style={{
+                          fontSize: "0.75rem",
+                          color: "#525252",
+                          backgroundColor: "#f4f4f4",
+                          padding: "2px 8px",
+                          borderRadius: "4px",
+                          border: "1px solid #e0e0e0"
+                        }}>
+                          Ref: <strong style={{ color: "#161616" }}>{dossier.dossierNumber}</strong>
                         </span>
                       )}
                     </div>
                     <Button
                       size="sm"
                       kind="ghost"
+                      style={{ padding: "0 0.5rem", minHeight: "1.75rem", fontSize: "0.75rem" }}
                       onClick={() => {
                         const copyContent = `${decisionOrder?.orderTitle ?? "Official Decree"}\n\n${decisionOrder?.legalStatutoryBasis ?? ""}\n\nFindings: ${decisionOrder?.findingsAndEvidence ?? ""}\n\nDirective: ${decisionOrder?.officerSignOffText ?? ""}\n\nCryptographic Seal (SHA-256): ${dossier?.integritySealHash ?? ""}`;
                         navigator.clipboard.writeText(copyContent);
@@ -413,18 +431,18 @@ export default function AgentDraftPanel({
                         setTimeout(() => setCopiedText(false), 2000);
                       }}
                     >
-                      {copiedText ? "✓ Copied" : "Copy Official Decree Text"}
+                      {copiedText ? "✓ Copied" : "Copy Decree Text"}
                     </Button>
                   </div>
 
                   {decisionOrder?.orderTitle && (
-                    <h4 style={{ fontSize: "0.9375rem", fontWeight: 700, margin: "0.35rem 0", color: "#0f62fe" }}>
+                    <h4 style={{ fontSize: "0.9375rem", fontWeight: 700, margin: "0.35rem 0", color: "#0f62fe", lineHeight: 1.35 }}>
                       {decisionOrder.orderTitle}
                     </h4>
                   )}
 
                   {decisionOrder?.legalStatutoryBasis && (
-                    <p style={{ fontSize: "0.8125rem", color: "#525252", fontStyle: "italic", margin: "0 0 0.5rem" }}>
+                    <p style={{ fontSize: "0.8125rem", color: "#525252", fontStyle: "italic", margin: "0 0 0.5rem", lineHeight: 1.4 }}>
                       Statutory Basis: {decisionOrder.legalStatutoryBasis}
                     </p>
                   )}
@@ -436,17 +454,17 @@ export default function AgentDraftPanel({
                   )}
 
                   {dossier && (
-                    <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: "0.5rem", fontSize: "0.8125rem", margin: "0.5rem 0", backgroundColor: "#f4f7fb", padding: "0.5rem 0.75rem", borderRadius: "4px" }}>
+                    <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(180px, 1fr))", gap: "0.5rem", fontSize: "0.8125rem", margin: "0.5rem 0", backgroundColor: "#f4f7fb", padding: "0.5rem 0.75rem", borderRadius: "4px" }}>
                       <div><strong>Assigned Queue:</strong> {dossier.assignedQueueTier}</div>
                       <div><strong>Audit Status:</strong> {dossier.statutoryComplianceSummary}</div>
-                      <div style={{ gridColumn: "1 / -1", fontFamily: "monospace", fontSize: "0.75rem", color: "#495057" }}>
+                      <div style={{ gridColumn: "1 / -1", fontFamily: "monospace", fontSize: "0.75rem", color: "#495057", wordBreak: "break-all" }}>
                         Cryptographic Seal (SHA-256): {dossier.integritySealHash}
                       </div>
                     </div>
                   )}
 
                   {decisionOrder?.officerSignOffText && (
-                    <div style={{ backgroundColor: "#edf5ff", padding: "0.75rem", borderRadius: "4px", borderLeft: "3px solid #0043ce", fontSize: "0.8125rem", marginTop: "0.5rem" }}>
+                    <div style={{ backgroundColor: "#edf5ff", padding: "0.75rem", borderRadius: "4px", borderLeft: "3px solid #0043ce", fontSize: "0.8125rem", marginTop: "0.5rem", lineHeight: 1.4 }}>
                       <strong>Officer Seal & Sign-Off Directive:</strong>
                       <p style={{ margin: "0.25rem 0 0" }}>{decisionOrder.officerSignOffText}</p>
                     </div>
