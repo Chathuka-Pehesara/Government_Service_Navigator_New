@@ -215,7 +215,7 @@ public class ApplicationsControllerTests
 
         var stored = await _db.SubmissionDocuments.SingleAsync();
         Assert.Equal((await _db.ApplicationSubmissions.SingleAsync()).Id, stored.ApplicationId);
-        Assert.Equal("National Identity Card", stored.FieldLabel);
+        Assert.Equal("[Stage 1] National Identity Card", stored.FieldLabel);
     }
 
     [Fact]

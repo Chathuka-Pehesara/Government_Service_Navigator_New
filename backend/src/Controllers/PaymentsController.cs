@@ -384,6 +384,23 @@ namespace Government_Service_Navigator.Backend.Controllers
                 .Where(s => appIds.Contains(s.Id))
                 .ToDictionaryAsync(s => s.Id);
 
+            // For workflow applications (ApplicationId > 0), only the current stage payment record
+            // must be sent to the Financial Officer (preventing duplicate rows across multiple stages).
+            var directPayments = payments.Where(p => p.ApplicationId == 0).ToList();
+            var appPayments = payments
+                .Where(p => p.ApplicationId > 0)
+                .GroupBy(p => p.ApplicationId)
+                .Select(g => g
+                    .OrderByDescending(p => p.Status == "PendingVerification" || p.Status == "Pending" ? 1 : 0)
+                    .ThenByDescending(p => p.Id)
+                    .First())
+                .ToList();
+
+            payments = directPayments.Concat(appPayments)
+                .OrderByDescending(p => p.CreatedDate)
+                .ThenByDescending(p => p.Id)
+                .ToList();
+
             // Metadata only: never pull the file bytes (Content) into a list
             var submissionDocs = await _context.SubmissionDocuments
                 .AsNoTracking()

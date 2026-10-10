@@ -233,6 +233,36 @@ function DepositSlipPreview({
   );
 }
 
+function deduplicateAppStagePayments(list: Payment[]): Payment[] {
+  const direct = list.filter((p) => p.paymentCategory === "DirectMobile");
+  const appStage = list.filter((p) => p.paymentCategory !== "DirectMobile");
+
+  const byApp = new Map<string, Payment[]>();
+  for (const p of appStage) {
+    const key = p.applicationId || `ID-${p.id}`;
+    const group = byApp.get(key) ?? [];
+    group.push(p);
+    byApp.set(key, group);
+  }
+
+  const dedupedAppStage: Payment[] = [];
+  for (const group of byApp.values()) {
+    if (group.length === 1) {
+      dedupedAppStage.push(group[0]);
+    } else {
+      const sorted = [...group].sort((a, b) => {
+        const aPending = a.status === "Pending" ? 1 : 0;
+        const bPending = b.status === "Pending" ? 1 : 0;
+        if (aPending !== bPending) return bPending - aPending;
+        return b.id - a.id;
+      });
+      dedupedAppStage.push(sorted[0]);
+    }
+  }
+
+  return [...direct, ...dedupedAppStage].sort((a, b) => b.id - a.id);
+}
+
 export default function FinanceDashboard() {
   const [payments, setPayments] = useState<Payment[]>([]);
   const [activeSection, setActiveSection] =
@@ -259,7 +289,7 @@ export default function FinanceDashboard() {
     getDepartmentPayments()
       .then((backendPayments) => {
         if (backendPayments && backendPayments.length > 0) {
-          const mapped = backendPayments.map(mapBackendPayment);
+          const mapped = deduplicateAppStagePayments(backendPayments.map(mapBackendPayment));
 
           setPayments(mapped);
 
@@ -719,7 +749,7 @@ export default function FinanceDashboard() {
       getDepartmentPayments()
         .then((backendPayments) => {
           if (backendPayments && backendPayments.length > 0) {
-            setPayments(backendPayments.map(mapBackendPayment));
+            setPayments(deduplicateAppStagePayments(backendPayments.map(mapBackendPayment)));
           }
         })
         .catch(() => {});
@@ -795,7 +825,7 @@ export default function FinanceDashboard() {
       getDepartmentPayments()
         .then((backendPayments) => {
           if (backendPayments && backendPayments.length > 0) {
-            setPayments(backendPayments.map(mapBackendPayment));
+            setPayments(deduplicateAppStagePayments(backendPayments.map(mapBackendPayment)));
           }
         })
         .catch(() => {});
