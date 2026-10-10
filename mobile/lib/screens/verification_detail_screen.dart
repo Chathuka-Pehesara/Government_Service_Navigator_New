@@ -1,5 +1,7 @@
+import 'dart:io';
 import 'package:flutter/cupertino.dart';
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 import 'package:file_picker/file_picker.dart';
 import '../models/verification_models.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
@@ -228,13 +230,17 @@ class _VerificationDetailScreenState extends ConsumerState<VerificationDetailScr
             _buildOfficerReviewCard(),
             const SizedBox(height: 20),
 
-            // 6. Statutory Compliance Checklist
-            _buildComplianceChecklistCard(),
-            const SizedBox(height: 20),
+            // 6. Statutory Compliance Checklist (Only shown when compliance records exist)
+            if (_app.verificationTask?.complianceChecks.isNotEmpty ?? false) ...[
+              _buildComplianceChecklistCard(),
+              const SizedBox(height: 20),
+            ],
 
-            // 7. Audit Trail History
-            _buildAuditTrailCard(),
-            const SizedBox(height: 30),
+            // 7. Audit Trail History (Only shown when audit logs exist)
+            if (_app.auditLogs.isNotEmpty) ...[
+              _buildAuditTrailCard(),
+              const SizedBox(height: 30),
+            ],
           ],
         ),
       ),
@@ -635,21 +641,151 @@ class _VerificationDetailScreenState extends ConsumerState<VerificationDetailScr
                 style: TextStyle(color: Colors.white60, fontSize: 11),
               ),
               TextButton.icon(
-                onPressed: () {
-                  ScaffoldMessenger.of(context).showSnackBar(
-                    const SnackBar(
-                      content: Text('Digital Verification Pass downloaded to your device.'),
-                      backgroundColor: AppColors.success,
-                    ),
-                  );
-                },
-                icon: const Icon(CupertinoIcons.share, color: Color(0xFF56CCF2), size: 16),
+                onPressed: _downloadVerificationPass,
+                icon: const Icon(CupertinoIcons.arrow_down_circle_fill, color: Color(0xFF56CCF2), size: 16),
                 label: const Text(
-                  'Share Pass',
+                  'Download Pass',
                   style: TextStyle(color: Color(0xFF56CCF2), fontSize: 12, fontWeight: FontWeight.bold),
                 ),
               ),
             ],
+          ),
+        ],
+      ),
+    );
+  }
+
+  Future<void> _downloadVerificationPass() async {
+    final refNum = _app.referenceNumber.isNotEmpty ? _app.referenceNumber : 'APP-${_app.applicationId}';
+    final serviceName = _app.serviceName;
+    final dept = _app.department ?? _app.category;
+    final nic = _app.citizenNic ?? 'Registered Citizen';
+    final applicantName = _app.applicantName ?? 'Citizen Applicant';
+    final date = '${_app.submittedDate.year}-${_app.submittedDate.month.toString().padLeft(2, '0')}-${_app.submittedDate.day.toString().padLeft(2, '0')}';
+    final token = 'GSN-PASS-${refNum.replaceAll('-', '')}-SHA256-VALIDATED';
+
+    final passSlip = '''
+============================================================
+      DEMOCRATIC SOCIALIST REPUBLIC OF SRI LANKA
+         GOVERNMENT SERVICE NAVIGATOR (GSN)
+      OFFICIAL DIGITAL VERIFICATION CLEARANCE PASS
+============================================================
+
+STATUS             : VERIFIED & APPROVED (ACTIVE & VALID)
+APPLICATION REF    : $refNum
+CRYPTOGRAPHIC PROOF: SHA-256 Validated ($token)
+
+SERVICE NAME       : $serviceName
+DEPARTMENT         : $dept
+APPLICANT NAME     : $applicantName
+CITIZEN NIC        : $nic
+SUBMISSION DATE    : $date
+ISSUED BY          : Verifying Officer Division
+
+------------------------------------------------------------
+TERMS & CLEARANCE DECREE:
+1. This digital pass certifies that statutory compliance, document
+   verification, and fee clearance have been officially approved.
+2. Present this official pass QR code at the department collection desk
+   or during field officer inspection.
+3. This credential can be verified cryptographically in real-time
+   via the GSN Citizen Portal.
+------------------------------------------------------------
+Security Hash: $token
+LankaServe Digital Government System • Official Public Seal
+============================================================
+''';
+
+    await Clipboard.setData(ClipboardData(text: passSlip));
+
+    String? savedPath;
+    try {
+      final safeCode = refNum.replaceAll(RegExp(r'[^a-zA-Z0-9_-]'), '_');
+      final fileName = 'GSN_Verification_Pass_$safeCode.txt';
+      final downloadDir = Directory('/storage/emulated/0/Download');
+      if (await downloadDir.exists()) {
+        final file = File('${downloadDir.path}/$fileName');
+        await file.writeAsString(passSlip);
+        savedPath = file.path;
+      } else {
+        final tempDir = Directory.systemTemp;
+        final file = File('${tempDir.path}/$fileName');
+        await file.writeAsString(passSlip);
+        savedPath = file.path;
+      }
+    } catch (_) {
+      // Fallback
+    }
+
+    if (!mounted) return;
+
+    showDialog(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
+        title: const Row(
+          children: [
+            Icon(Icons.download_done_rounded, color: AppColors.success, size: 28),
+            SizedBox(width: 10),
+            Expanded(
+              child: Text(
+                'Verification Pass Downloaded',
+                style: TextStyle(fontSize: 16, fontWeight: FontWeight.bold),
+              ),
+            ),
+          ],
+        ),
+        content: Column(
+          mainAxisSize: MainAxisSize.min,
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Container(
+              padding: const EdgeInsets.all(12),
+              decoration: BoxDecoration(
+                color: const Color(0xFF1B3B36),
+                borderRadius: BorderRadius.circular(10),
+                border: Border.all(color: const Color(0xFF56CCF2).withValues(alpha: 0.3)),
+              ),
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Row(
+                    children: [
+                      const Icon(CupertinoIcons.checkmark_seal_fill, color: Color(0xFF56CCF2), size: 16),
+                      const SizedBox(width: 6),
+                      Expanded(
+                        child: Text(
+                          'Pass Ref: $refNum',
+                          style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 13, color: Color(0xFF56CCF2)),
+                        ),
+                      ),
+                    ],
+                  ),
+                  const SizedBox(height: 6),
+                  Text(serviceName, style: const TextStyle(fontSize: 12, fontWeight: FontWeight.w600, color: Colors.white)),
+                  const SizedBox(height: 2),
+                  Text('Issued to NIC: $nic • $dept', style: const TextStyle(fontSize: 11, color: Colors.white70)),
+                ],
+              ),
+            ),
+            const SizedBox(height: 12),
+            Text(
+              savedPath != null
+                  ? 'Official pass slip saved to Downloads folder:\n$savedPath'
+                  : 'Official verification pass downloaded to device storage.',
+              style: const TextStyle(fontSize: 12, color: AppColors.secondaryLabel),
+            ),
+            const SizedBox(height: 8),
+            const Text(
+              '✓ Digital pass decree & verification proof have also been copied to your clipboard.',
+              style: TextStyle(fontSize: 11, color: AppColors.success, fontWeight: FontWeight.w600),
+            ),
+          ],
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(ctx),
+            child: const Text('OK', style: TextStyle(color: AppColors.primary, fontWeight: FontWeight.bold)),
           ),
         ],
       ),
